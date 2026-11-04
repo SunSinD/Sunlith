@@ -75,6 +75,7 @@ For `0.0.1-alpha.1`, verified on November 4, 2026:
 | Desktop MCP tests | 26 passed |
 | Desktop MCP syntax check | Passed |
 | Desktop MCP dependency audit | 0 vulnerabilities |
+| GitHub MCP checks on Windows, macOS, Linux (Node 22) | All passed |
 
 The selected emulator suite comprises `CalendarRepositoryTest`, `ReminderNotificationsTest`, `CalendarUiTest`, `WidgetSmokeTest`, and `AiOnboardingTest`. The French app-locale case requires API 33 and is excluded on API 30. Notification permission recovery runs separately with its explicit argument, rather than being silently counted as verified in a normal run. All selected tests completed without failures.
 
