@@ -39,7 +39,7 @@ function toEventBody(input, eventId) {
   if (input.description !== undefined) body.description = input.description;
   if (input.location !== undefined) body.location = input.location;
   if (input.recurrence) body.recurrence = input.recurrence;
-  if (input.reminderMinutes) body.reminders = { useDefault: false, overrides: input.reminderMinutes.map(minutes => ({ method: 'popup', minutes })) };
+  body.reminders = { useDefault: false, overrides: (input.reminderMinutes ?? []).map(minutes => ({ method: 'popup', minutes })) };
   return body;
 }
 function fromGoogleEvent(event) { return { id: event.id, etag: event.etag, status: event.status, title: event.summary ?? '', description: event.description ?? '', location: event.location ?? '', start: event.start, end: event.end, ...(event.recurrence === undefined ? {} : { recurrence: event.recurrence }), recurringEventId: event.recurringEventId ?? null, eventType: event.eventType ?? 'default', reminders: event.reminders ?? { useDefault: true }, hasGuests: (event.attendees?.length ?? 0) > 0, htmlLink: event.htmlLink }; }
@@ -85,6 +85,7 @@ export async function updateEvent(api, input) {
   if (input.start) { validateTiming(input.start, input.end, input.recurrence ?? current.recurrence); body.start = toGooglePatchTime(input.start); body.end = toGooglePatchTime(input.end); }
   if (input.recurrence !== undefined) {
     if (current.recurringEventId) throw new Error('Recurrence rules can be edited on the whole-series master only.');
+    if (current.recurrence?.length && (current.recurrence.length !== 1 || !current.recurrence[0].startsWith('RRULE:'))) throw new Error('This series has additional recurrence rules or exceptions. Edit its repeat rule in your calendar app.');
     validateTiming(input.start ?? current.start, input.end ?? current.end, input.recurrence);
     body.recurrence = input.recurrence;
   }

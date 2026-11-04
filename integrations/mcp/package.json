@@ -1,6 +1,6 @@
 {
   "name": "@sunlith/calendar-mcp",
-  "version": "0.0.1-alpha.1",
+  "version": "0.1.0-beta.1",
   "private": true,
   "description": "Local MCP companion for shared Google calendars displayed in Sunlith.",
   "type": "module",

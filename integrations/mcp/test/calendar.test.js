@@ -56,6 +56,31 @@ test('create sends no invitation and retries with stable ID', async () => {
   assert.equal(event.id, operationEventId('abc-12345678', 'primary'));
 });
 const input = { calendarId: 'personal@example.test', operationId: 'retry-safe-123', title: 'Dentist', start: { date: '2026-11-05' }, end: { date: '2026-11-06' } };
+
+test('creation uses only requested popup reminders and never calendar email defaults', async () => {
+  for (const reminderMinutes of [undefined, [], [15, 60]]) {
+    const api = { events: { insert: async ({ requestBody }) => {
+      assert.deepEqual(requestBody.reminders, { useDefault: false, overrides: (reminderMinutes ?? []).map(minutes => ({ method: 'popup', minutes })) });
+      return { data: requestBody };
+    } } };
+    await createEvent(api, { ...input, reminderMinutes });
+  }
+});
+
+test('repeat edits refuse complex stored rules while unrelated edits preserve them', async () => {
+  for (const recurrence of [['RRULE:FREQ=WEEKLY', 'EXDATE:20261112T170000Z'], ['RDATE:20261112T170000Z'], ['RRULE:FREQ=WEEKLY', 'RRULE:FREQ=MONTHLY']]) {
+    let patches = 0;
+    const api = { events: {
+      get: async () => ({ data: { id: 'abc', etag: '"1"', start: input.start, end: input.end, recurrence } }),
+      patch: async ({ requestBody }) => { patches++; assert.deepEqual(requestBody, { summary: 'Renamed' }); return { data: { id: 'abc', recurrence, ...requestBody } }; }
+    } };
+    await assert.rejects(updateEvent(api, { calendarId: 'primary', eventId: 'abc', etag: '"1"', recurrence: ['RRULE:FREQ=DAILY'] }), /additional recurrence rules or exceptions/);
+    assert.equal(patches, 0);
+    const updated = await updateEvent(api, { calendarId: 'primary', eventId: 'abc', etag: '"1"', title: 'Renamed' });
+    assert.deepEqual(updated.recurrence, recurrence);
+    assert.equal(patches, 1);
+  }
+});
 test('retry after an ambiguous response returns existing creation', async () => {
   let stored;
   const api = { events: { insert: async args => { stored = { ...args.requestBody, etag: '"1"' }; throw new Error('Connection closed'); }, get: async () => ({ data: stored }) } };

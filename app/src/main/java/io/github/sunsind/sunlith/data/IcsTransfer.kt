@@ -155,7 +155,7 @@ internal object IcsCodec {
                 try {
                     require(event.recurrenceId == null && event.uid?.value !in exceptionUids && event.exceptionDates.isEmpty()
                         && event.recurrenceDates.isEmpty() && event.exceptionRules.isEmpty()) {
-                        "repeating series with exceptions are not imported in this alpha; use your calendar account to keep them intact"
+                        "repeating series with exceptions are not imported; use your calendar account to keep them intact"
                     }
                     require(!event.status?.value.equals("CANCELLED", true) && !event.status?.value.equals("CANCELED", true)) {
                         "canceled event was skipped"
@@ -176,7 +176,7 @@ internal object IcsCodec {
                     if (!allDay && recurrence != null && nominalDuration != null &&
                         ((nominalDuration.days ?: 0) > 0 || (nominalDuration.weeks ?: 0) > 0)) {
                         require(ZoneId.of(tz).rules.nextTransition(Instant.ofEpochMilli(start)) == null) {
-                            "timed repeating events with day/week durations in a timezone with clock changes cannot be imported safely in this alpha"
+                            "timed repeating events with day/week durations in a timezone with clock changes cannot be imported safely"
                         }
                     }
                     require(event.dateEnd == null || event.dateEnd.value.hasTime() == startValue.hasTime()) {

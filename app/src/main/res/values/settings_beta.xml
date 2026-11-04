@@ -1,0 +1,26 @@
+<resources>
+    <string name="beta_settings_appearance">Appearance</string>
+    <string name="beta_settings_calendar">Calendar</string>
+    <string name="beta_settings_widget">Widget</string>
+    <string name="beta_settings_reminders">Reminders</string>
+    <string name="beta_settings_transfer">Import and export</string>
+    <string name="beta_settings_about">About</string>
+    <string name="beta_follow_system">Follow system theme</string>
+    <string name="beta_dark_theme">Dark theme</string>
+    <string name="beta_navigation_animation">Navigation animations</string>
+    <string name="beta_swipe_navigation">Swipe to change dates</string>
+    <string name="beta_start_view">Open app in</string>
+    <string name="beta_last_view">Last used view</string>
+    <string name="beta_agenda_display">Agenda days</string>
+    <string name="beta_all_days">Show every day</string>
+    <string name="beta_compact_days">Group empty days</string>
+    <string name="beta_event_days">Only days with events</string>
+    <string name="beta_widget_days">Days to show</string>
+    <plurals name="beta_widget_days_value">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <string name="beta_widget_empty_days">Show empty days</string>
+    <string name="beta_widget_calendar_name">Show calendar names</string>
+    <string name="beta_notification_settings">Phone notification settings</string>
+</resources>

@@ -1,0 +1,8 @@
+<resources>
+    <string name="widget_your_week">Your week</string>
+    <string name="widget_relative_date">%1$s, %2$s</string>
+    <string name="widget_empty_day_action">%1$s, no events. Add an event.</string>
+    <string name="widget_calendar_access">Open Sunlith to allow calendar access.</string>
+    <string name="widget_choose_calendars">Open Sunlith to choose calendars.</string>
+    <string name="widget_calendar_unavailable">Calendar unavailable. Open Sunlith to retry.</string>
+</resources>

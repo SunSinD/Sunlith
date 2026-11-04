@@ -4,7 +4,7 @@ Connect your assistant to personal Google Calendar events. Sunlith on Android us
 
 There is no AI chat or server inside the APK. The MCP companion uses standard input/output. Only the five-minute Google authorization flow opens a temporary listener, bound to `127.0.0.1`.
 
-Requires Node.js 22 or later. [Download and extract the companion ZIP](https://github.com/SunSinD/Sunlith/releases/download/v0.0.1-alpha.1/Sunlith-companion-v0.0.1-alpha.1.zip), or clone the repository and open `integrations/mcp`. Install with `npm ci`, connect an account with `npm run auth`, and configure your assistant to launch `node` with the full path to `src/index.js`. Authentication prints a Google sign-in URL; open it in a browser on the same computer.
+Requires Node.js 22 or later. [Download and extract the companion ZIP](https://github.com/SunSinD/Sunlith/releases/latest), or clone the repository and open `integrations/mcp`. Install with `npm ci`, connect an account with `npm run auth`, and configure your assistant to launch `node` with the full path to `src/index.js`. Authentication prints a Google sign-in URL; open it in a browser on the same computer.
 
 See [setup and client configurations](../../docs/AI-INTEGRATION.md) and [research and limitations](../../docs/RESEARCH-AI.md).
 
@@ -18,4 +18,4 @@ The seven tools are `list_calendars`, `list_events`, `get_event`, `create_event`
 
 `get_current_time` defaults to the computer's IANA timezone, falling back to UTC. It includes `localIso` with the numeric UTC offset and an English `weekday`; pass `timeZone` explicitly when scheduling for another zone.
 
-This is an alpha integration. Tests use mock Calendar API methods plus a real local MCP handshake. Real Google authorization and phone sync require your account and device, and have not been verified by those tests.
+This is a beta integration. Tests use mock Calendar API methods plus a real local MCP handshake. Real Google authorization and phone sync require your account and device, and have not been verified by those tests.

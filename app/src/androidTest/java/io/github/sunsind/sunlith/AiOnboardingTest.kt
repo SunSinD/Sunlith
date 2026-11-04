@@ -96,6 +96,8 @@ class AiOnboardingTest {
     fun setupCanGoBackAndContinueWithoutClaimingAConnection() {
         node(R.string.action_set_up_ai).click()
         node(R.string.ai_setup_title)
+        requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).text(english.getString(R.string.action_open_setup, "Codex"))), 10_000))
+        node(R.string.action_continue_calendar)
         requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).desc(english.getString(R.string.action_back))), 10_000)).click()
         node(R.string.ai_intro_title)
         node(R.string.action_set_up_ai).click()

@@ -1,0 +1,27 @@
+<resources>
+    <string name="beta_settings_appearance">Apparence</string>
+    <string name="beta_settings_calendar">Agenda</string>
+    <string name="beta_settings_widget">Widget</string>
+    <string name="beta_settings_reminders">Rappels</string>
+    <string name="beta_settings_transfer">Import et export</string>
+    <string name="beta_settings_about">À propos</string>
+    <string name="beta_follow_system">Suivre le thème du système</string>
+    <string name="beta_dark_theme">Thème sombre</string>
+    <string name="beta_navigation_animation">Animations de navigation</string>
+    <string name="beta_swipe_navigation">Balayer pour changer de date</string>
+    <string name="beta_start_view">Vue au démarrage</string>
+    <string name="beta_last_view">Dernière vue utilisée</string>
+    <string name="beta_agenda_display">Jours de la liste</string>
+    <string name="beta_all_days">Afficher tous les jours</string>
+    <string name="beta_compact_days">Regrouper les jours vides</string>
+    <string name="beta_event_days">Jours avec événements seulement</string>
+    <string name="beta_widget_days">Jours à afficher</string>
+    <plurals name="beta_widget_days_value">
+        <item quantity="one">%d jour</item>
+        <item quantity="many">%d jours</item>
+        <item quantity="other">%d jours</item>
+    </plurals>
+    <string name="beta_widget_empty_days">Afficher les jours vides</string>
+    <string name="beta_widget_calendar_name">Afficher les noms des agendas</string>
+    <string name="beta_notification_settings">Réglages de notification du téléphone</string>
+</resources>

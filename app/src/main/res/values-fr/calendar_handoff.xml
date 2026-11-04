@@ -1,0 +1,9 @@
+<resources>
+    <string name="handoff_phone_guide">Utiliser un assistant sur le téléphone</string>
+    <string name="handoff_waiting">Élément d’agenda en attente</string>
+    <string name="handoff_invalid_file">Ouvrez un fichier d’agenda partagé par une autre app.</string>
+    <string name="handoff_invalid_event">Cet élément d’agenda ne peut pas être ouvert.</string>
+    <string name="handoff_invalid_time">Incluez une heure de début et de fin valides.</string>
+    <string name="handoff_personal_events_only">Ouvrez les événements répétés et les invitations dans un fichier d’agenda.</string>
+    <string name="handoff_already_waiting">Terminez ou annulez l’élément d’agenda déjà en attente.</string>
+</resources>

@@ -23,6 +23,18 @@ Fantastical's site currently advertises Android phone support for 2027; it is de
 
 Public Play review snapshots praise aCalendar's navigation, colors, all-day visibility and syncing. DigiCal reviews report delayed or missing reminders and sync difficulties. Proton reviews request search and dependable, readable widgets. These support prioritizing reliability, readable widgets, search and speed. They are individual reports, not independently reproduced product defects.
 
+## Beta interface decisions
+
+The beta uses a fixed six-row month grid with centered dates to keep its size predictable. A clear Today action and animated swipe navigation help move between dates. The default agenda includes empty days so the sequence remains visible, with compact and event-days-only modes available. Settings are grouped; the system theme is the default, with a manual dark override and a startup-view choice.
+
+The widget defaults to seven days, includes empty days and day dividers, and hides calendar names to reduce clutter. Its range is configurable from 1 to 31 days. Opacity defaults to 100%, adjustable in 5% steps. These are product decisions, not findings that one layout suits every user.
+
+- [Compose accessibility defaults](https://developer.android.com/develop/ui/compose/accessibility/api-defaults) recommends minimum 48dp interactive targets. Material controls provide useful defaults, but custom arrangements still need checking.
+- [Android dark theme](https://developer.android.com/develop/ui/views/theming/darktheme) supports following the system theme, which Sunlith uses by default.
+- [Compose drag, swipe and fling](https://developer.android.com/develop/ui/compose/touch-input/pointer-input/drag-swipe-fling) describes higher-level gesture APIs and state/animation handling used to guide navigation work.
+
+The [Material 3 date-picker page](https://m3.material.io/components/date-pickers/overview) returned only a JavaScript-required shell when fetched. Its full guidance was not read; the Android documentation above was used instead. Device and accessibility testing remain necessary.
+
 ## Architecture
 
 Sunlith uses Kotlin and native Android UI. Its data layer reads and writes the shared Android Calendar Provider. Sync belongs to installed account adapters, including Google or a CalDAV adapter; Sunlith does not implement its own cloud service.
@@ -54,19 +66,19 @@ The [open-source Google Calendar MCP server](https://github.com/nspady/google-ca
 
 [Google's official Workspace MCP servers](https://developers.google.com/workspace/guides/configure-mcp-servers) are another option but currently require Developer Preview Program access, a Cloud project and OAuth configuration. Their [security setup](https://developers.google.com/workspace/guides/configure-mcp-security) is separate. They are not Sunlith's default dependency.
 
-## First alpha limits
+## Beta limits
 
 Existing device calendars and their recurring events are displayed through the provider. The editor handles whole simple recurring series. It refuses edits to series with exceptions or exception rows rather than damaging them; use the existing calendar app or service for those edits.
 
-Unchanged reminder settings leave the existing provider reminder rows and methods intact. When reminder times change, unrelated email/SMS/default-offset rows are preserved. Editing or deleting meetings with attendee records is refused in this alpha; use the existing calendar app to review invitation or cancellation messages before sending them. Guest, read-only, exception-series and malformed-provider restrictions are exposed to the interface as typed edit-block reasons.
+Unchanged reminder settings leave the existing provider reminder rows and methods intact. When reminder times change, unrelated email/SMS/default-offset rows are preserved. Editing or deleting meetings with attendee records is refused in this beta; use the existing calendar app to review invitation or cancellation messages before sending them. Guest, read-only, exception-series and malformed-provider restrictions are exposed to the interface as typed edit-block reasons.
 
 ICS import accepts files up to 5 MB and 2,000 events. It supports ordinary timed/all-day events, basic recurrence, text and start-relative minute reminders. It skips entire recurrence groups containing exceptions, explicit recurrence dates or exception rules and reports this. Unsupported alarms are reported. Guests are not invited; imported meetings become personal copies. Duplicate source UIDs are skipped. Files without UIDs use matching event details for deduplication; distinct supplied UIDs remain separate events. Import is atomic per event, not across the entire file; the report identifies partial results.
 
-Timezone identifiers must be recognized by Android's IANA timezone database. Windows-style identifiers such as `Eastern Standard Time` are not mapped in this alpha; affected events are reported and skipped instead of being assigned a guessed timezone. Timed recurring events with nominal day/week durations in a timezone with clock changes are also reported and skipped when their duration cannot be preserved safely.
+Timezone identifiers must be recognized by Android's IANA timezone database. Windows-style identifiers such as `Eastern Standard Time` are not mapped in this beta; affected events are reported and skipped instead of being assigned a guessed timezone. Timed recurring events with nominal day/week durations in a timezone with clock changes are also reported and skipped when their duration cannot be preserved safely.
 
 Imported reminders are trimmed to the destination calendar's supported count, methods and offset range, with a message; an unsupported reminder does not by itself discard the event. Google's maximum reminder offset is 40,320 minutes according to the [event reference](https://developers.google.com/workspace/calendar/api/v3/reference/events).
 
-Export reads source events, not expanded occurrences. Timezones use IANA global identifiers without a runtime network request for timezone definitions. Receiving software must understand those identifiers. Malformed provider durations and affected recurring groups are skipped with export warnings; they are not silently changed into zero-duration events. Some unusual provider recurrence-date encodings are refused before writing. Proprietary metadata, task objects, attachments, guest lists and account credentials are outside the portable fields supported in this alpha.
+Export reads source events, not expanded occurrences. Timezones use IANA global identifiers without a runtime network request for timezone definitions. Receiving software must understand those identifiers. Malformed provider durations and affected recurring groups are skipped with export warnings; they are not silently changed into zero-duration events. Some unusual provider recurrence-date encodings are refused before writing. Proprietary metadata, task objects, attachments, guest lists and account credentials are outside the portable fields supported in this beta.
 
 Physical-device behavior, Google authorization, real account sync, Samsung battery behavior and individual launchers must be checked on the user's device. Emulator tests cannot prove those conditions.
 
@@ -74,7 +86,7 @@ Physical-device behavior, Google authorization, real account sync, Samsung batte
 
 Added after a user recommendation. Dux Calendar is a Linux/FreeBSD desktop calendar from Dux Labs, built with Quickshell/QML and Go, rather than an Android application. Its documented strengths include a unified agenda across local, Google, Microsoft, CalDAV and iCloud calendars; background sync; keyboard navigation; quick search; configurable reminders; and account credentials stored in the system keyring.
 
-The month and agenda source files show clear selected/today states, restrained event cards with a calendar-color stripe, readable time/title hierarchy, and condensed empty states. Search is debounced and separates loading, error and no-result states. Calendar-file import offers a destination picker, duplicate skipping and an advisory overlap preview. Those are useful patterns for Sunlith: readable agenda rows, clear selection, explicit import destinations and accurate error feedback. The initial Android alpha does not claim Dux's direct multi-provider sync, invitation RSVP, subscription support or import overlap preview.
+The month and agenda source files show clear selected/today states, restrained event cards with a calendar-color stripe, readable time/title hierarchy, and condensed empty states. Search is debounced and separates loading, error and no-result states. Calendar-file import offers a destination picker, duplicate skipping and an advisory overlap preview. Those are useful patterns for Sunlith: readable agenda rows, clear selection, explicit import destinations and accurate error feedback. The Android beta does not claim Dux's direct multi-provider sync, invitation RSVP, subscription support or import overlap preview.
 
 Reviewed the README plus these source/documentation files, without copying code or assets:
 
@@ -84,4 +96,4 @@ Reviewed the README plus these source/documentation files, without copying code 
 - https://github.com/duxlabs-dev/dux-calendar/blob/master/quickshell/Modals/SearchModal.qml
 - https://github.com/duxlabs-dev/dux-calendar/blob/master/docs/calendar-file-import.md
 
-The README's screenshot/demo section was still a placeholder when checked. Visual observations above come from its source layout, not a running desktop app or a screenshot review.
+Dux Calendar's README screenshot/demo section was still a placeholder when checked. Visual observations above come from its source layout, not a running desktop app or a screenshot review.

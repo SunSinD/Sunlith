@@ -1,14 +1,32 @@
 # Connect your assistant
 
-Sunlith is a clean Android calendar with widgets and reminders. Connecting the [MCP companion](../integrations/mcp) to your preferred assistant is recommended if you want to add, move, or cancel events from a prompt. Your assistant changes your Google calendar; Android account sync brings those changes into Sunlith and its widget. You can also use Sunlith without connecting an assistant.
+Sunlith is a clean Android calendar with widgets and reminders. On your phone, an assistant can hand over a calendar file or event draft for you to approve. For automatic computer control, connect the optional [MCP companion](../integrations/mcp): your assistant changes your Google calendar, then Android account sync brings those changes into Sunlith and its widget. You can also use Sunlith without connecting an assistant.
 
-The phone app does not contain an AI model, collect AI API keys, or keep a server running. Your computer is needed while the local assistant performs a task. It does not need to stay on afterward for Android to show synced events or reminders.
+The phone app does not contain an AI model, collect AI API keys, or keep a server running.
+
+## On your phone without a computer
+
+No Google account is needed for this workflow. Use a writable calendar already on your phone, or create an on-device calendar in Settings > Calendar.
+
+1. Ask a mobile assistant that can generate downloadable files to create a `.ics` file for your event. Give the date, start/end time, timezone, and reminder you want. Check those details before importing.
+2. Download the file and open or share it with Sunlith. If your file app does not offer Sunlith, use Settings > Import and export > Import .ics file instead.
+3. Review the preview, select the destination calendar, and tap Import. Check the saved event and reminder.
+
+Opening or sharing a supported calendar attachment starts the import preview. It does not save events automatically. Direct file handoff supports `text/calendar`, `text/x-vcalendar`, and `application/ics` attachments provided through Android's content-file access. Generic file types can use the in-app picker instead. The assistant must be able to produce a file; Sunlith does not interpret chat messages or plain text as event commands.
+
+Assistant or voice apps that support Android's standard `ACTION_INSERT` calendar intent can open a personal event draft in Sunlith. Review the calendar, time, and reminders, then tap Save. This handoff requires explicit valid start and end times; recurrence and guest extras are rejected. It does not support editing or deleting existing events. Whether an assistant can launch this intent depends on that assistant, and support has not been verified for every mobile app.
+
+Neither handoff gives a computer assistant access to read or edit your phone-only or Samsung-account calendar. Automatic remote control of those calendars would need a separate authenticated bridge, which is not implemented.
+
+## Automatic control from your computer
+
+The following setup uses Google Calendar. Your computer is needed while the local assistant performs a task. It does not need to stay on afterward for Android to show synced events or reminders.
 
 ## Before connecting
 
 1. Add your Google account in Android's account settings and enable Calendar sync.
 2. Give Sunlith calendar permission and select the Google calendar you want to display. Select that same calendar when saving events you want to control from your computer.
-3. On your computer, install Node.js 22 or later and [download the companion ZIP](https://github.com/SunSinD/Sunlith/releases/download/v0.0.1-alpha.1/Sunlith-companion-v0.0.1-alpha.1.zip). Extract it and read `START-HERE.md`. You can also clone the repository and use `integrations/mcp`.
+3. On your computer, install Node.js 22 or later and [download the companion ZIP](https://github.com/SunSinD/Sunlith/releases/latest). Extract it and read `START-HERE.md`. You can also clone the repository and use `integrations/mcp`.
 4. In Google Cloud Console, create a project, enable **Google Calendar API**, configure the OAuth consent screen, and create an OAuth client of type **Desktop app**. If the app is in Testing, add your own Google account as a test user.
 5. Download the client JSON into your private user profile, outside the repository. Example: `C:\Users\you\.config\sunlith\google-desktop.json`.
 
@@ -47,7 +65,7 @@ All eight providers below have a documented local MCP interface. These are host-
 | Muse Code | `~/.config/muse/settings.json` | `/mcp` |
 | Pi | `~/.pi/agent/mcp.json` | `pi mcp list` |
 
-These clients launch the same local Sunlith server. There is no AI subscription or provider account inside the APK. A client without local stdio MCP support needs another adapter; this alpha does not supply an HTTP gateway.
+These clients launch the same local Sunlith server. There is no AI subscription or provider account inside the APK. A client without local stdio MCP support needs another adapter; this beta does not supply an HTTP gateway.
 
 ## Claude Code
 
@@ -186,7 +204,8 @@ Use Sunlith's get_current_time and list_calendars tools. Show my writable calend
 - All-day events use dates. The end is exclusive: one day on November 5 uses start `2026-11-05` and end `2026-11-06`.
 - Read an event before updating/deleting it and pass the returned `etag`. If it has changed, read it again. Deletion also requires `confirm: true` after the user requests cancellation of that exact event.
 - The companion handles personal events. It does not add guests or send invitations, and rejects edits/deletes of events that already have guests. Use your calendar app for those events.
-- Recurrence accepts a single basic `RRULE` with daily, weekly, monthly or yearly frequency. `list_events` expands series into instances and returns each instance's `recurringEventId`. For one occurrence, read/edit/delete its exact instance ID; for the whole series, call `get_event` using `recurringEventId`, then use the master ID and its etag. Recurrence-rule changes require that master. There is no separate `instances` tool or “this and following” series split.
+- Recurrence accepts a single basic `RRULE` with daily, weekly, monthly or yearly frequency. `list_events` expands series into instances and returns each instance's `recurringEventId`. For one occurrence, read/edit/delete its exact instance ID; for the whole series, call `get_event` using `recurringEventId`, then use the master ID and its etag. Recurrence-rule changes require that master and are refused when its stored rules include additional rules or exception dates. There is no separate `instances` tool or “this and following” series split.
+- New events use only the requested popup reminders. Omitting `reminderMinutes` or sending an empty list creates no reminders, including calendar email defaults. On update, omitting it preserves existing reminders; an empty list removes them.
 - `list_events` defaults to ordinary (`default`) events. Its `eventTypes` option can read the listed Google special types, but mutation tools only support active ordinary events.
 - Event query bounds mean `event.end > timeMin` and `event.start < timeMax`; events touching a boundary without overlapping are excluded. Query bounds may use UTC independently of an event's own timezone.
 - List tools return at most 100 items per page and expose `nextPageToken`. Event queries are limited to 366 days per request. Request the next page if necessary; the first page is not a complete archive.
@@ -195,7 +214,11 @@ Use Sunlith's get_current_time and list_calendars tools. Show my writable calend
 
 Events already stored in your Google account appear through the same synced calendar. Connecting an assistant does not copy them into another calendar.
 
-Phone-only events are not visible to a Google API companion. Back them up/export them with a calendar app that can export those events, then import into a chosen synced calendar if you want computer control. Verify dates, recurrence and reminders after migration, and keep the original backup. Merely selecting a local calendar in Sunlith does not upload it to Google.
+Samsung Calendar is an app that can display several kinds of calendar. An event shown there might belong to a Google account, another account, or a phone-only calendar. Check the calendar/account name on the event; using Samsung Calendar does not by itself make the event available through Google's API.
+
+Sunlith can use phone-only calendars without a Google account. The computer companion cannot currently read or edit those calendars, or a Samsung account calendar. Direct automatic updates would require a separate authenticated bridge, which is not implemented. Merely selecting a local calendar in Sunlith does not upload it to Google.
+
+If you choose to move phone-only events into a synced calendar for computer control, save an ICS backup first, import into the chosen destination, and verify dates, recurrence and reminders. Keep the original backup. Moving your events is optional.
 
 Sunlith's Android calendar provider can also show accounts supplied by other sync adapters. For an open-source backend, Nextcloud Calendar with DAVx⁵ is an option. This companion's current adapter is Google-only; CalDAV, Outlook/Microsoft Graph and direct phone-local control are not implemented.
 

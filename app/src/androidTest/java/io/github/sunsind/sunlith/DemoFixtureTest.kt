@@ -59,7 +59,7 @@ class DemoFixtureTest {
                 endMillis = start + durationMinutes * 60_000L,
                 timeZone = zone.id,
                 rrule = recurrence,
-                reminderMinutes = listOf(15),
+                reminderMinutes = emptyList(),
             ))
         }
         add(firstEventDay, 17, 120, "Driving class", "Laval")

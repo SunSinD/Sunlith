@@ -60,7 +60,7 @@ export const eventFields = {
   start: eventTime,
   end: eventTime.describe('End is exclusive. For a one-day all-day event, use the following date.'),
   recurrence: recurrence.optional(),
-  reminderMinutes: reminders.optional()
+  reminderMinutes: reminders.optional().describe('Popup reminder offsets in minutes. On creation, omitted or empty means no reminders; on update, omitted preserves existing reminders and empty removes them.')
 };
 
 export const schemas = {

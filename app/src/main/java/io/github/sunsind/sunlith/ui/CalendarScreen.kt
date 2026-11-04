@@ -1,21 +1,36 @@
 package io.github.sunsind.sunlith.ui
 
+import android.provider.Settings
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -30,7 +45,6 @@ import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
@@ -41,22 +55,39 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -68,29 +99,58 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private const val GRID_ROWS = 6
+private const val EDGE_ROWS = 12
 
 private sealed interface AgendaRow {
-    data class Day(val date: LocalDate, val events: List<CalendarEvent>) : AgendaRow
-    data class Empty(val from: LocalDate, val to: LocalDate) : AgendaRow
+    val key: String
+
+    data class MonthLabel(val month: YearMonth) : AgendaRow { override val key get() = "m-$month" }
+    data class Day(val date: LocalDate, val events: List<CalendarEvent>) : AgendaRow { override val key get() = "d-$date" }
+
+    // Keyed by its last day: when the window grows backward, a range at the top only changes its first day,
+    // so the list keeps its scroll position.
+    data class Empty(val from: LocalDate, val to: LocalDate) : AgendaRow { override val key get() = "e-$to" }
 }
 
-private fun buildAgenda(from: LocalDate, to: LocalDate, index: Map<LocalDate, List<CalendarEvent>>, keep: Set<LocalDate>): List<AgendaRow> {
+/**
+ * Builds one row per day ("all"), groups runs of empty days ("compact", keeping [keep] as single days), or keeps
+ * only days with events ("events"). Empty runs never cross a month, so every month label sits above its days.
+ */
+private fun buildAgenda(from: LocalDate, to: LocalDate, index: Map<LocalDate, List<CalendarEvent>>, display: String, keep: Set<LocalDate>): List<AgendaRow> {
     val rows = mutableListOf<AgendaRow>()
+    var lastMonth: YearMonth? = null
+    fun label(day: LocalDate) {
+        val month = YearMonth.from(day)
+        if (month != lastMonth) { rows += AgendaRow.MonthLabel(month); lastMonth = month }
+    }
     var emptyStart: LocalDate? = null
     var day = from
     while (!day.isAfter(to)) {
         val events = index[day].orEmpty()
-        if (events.isEmpty() && day !in keep) {
-            if (emptyStart == null) emptyStart = day
-        } else {
-            emptyStart?.let { rows += AgendaRow.Empty(it, day.minusDays(1)); emptyStart = null }
+        val show = events.isNotEmpty() || display == "all" || (display == "compact" && day in keep)
+        emptyStart?.let { start ->
+            if (show || day.dayOfMonth == 1) { rows += AgendaRow.Empty(start, day.minusDays(1)); emptyStart = null }
+        }
+        if (show) {
+            label(day)
             rows += AgendaRow.Day(day, events)
+        } else if (display == "compact" && emptyStart == null) {
+            label(day)
+            emptyStart = day
         }
         day = day.plusDays(1)
     }
@@ -98,18 +158,57 @@ private fun buildAgenda(from: LocalDate, to: LocalDate, index: Map<LocalDate, Li
     return rows
 }
 
+/** The row to show at the top for [date]: its own row, the range containing it, or the next shown day. */
+private fun targetIndex(rows: List<AgendaRow>, date: LocalDate): Int {
+    if (rows.isEmpty()) return -1
+    val found = rows.indexOfFirst { row ->
+        when (row) {
+            is AgendaRow.Day -> !row.date.isBefore(date)
+            is AgendaRow.Empty -> !row.to.isBefore(date)
+            is AgendaRow.MonthLabel -> false
+        }
+    }
+    val index = if (found < 0) rows.lastIndex else found
+    return if (index > 0 && rows[index - 1] is AgendaRow.MonthLabel) index - 1 else index
+}
+
+/** Animations run only when the in-app setting allows them and Android's "Remove animations" is off. */
+@Composable
+fun rememberMotion(enabled: Boolean): Boolean {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val systemOff = remember(context, configuration) {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
+    return enabled && !systemOff
+}
+
 @Composable
 fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
     val p = LocalPalette.current
     val f = rememberFormats()
     val zone = ZoneId.systemDefault()
-    val today = LocalDate.now()
     val from = vm.loadedFrom
     val to = vm.loadedTo
     val index = remember(vm.events, from, to, zone) {
         if (from == null || to == null) emptyMap() else indexByDay(vm.events, zone, from, to)
     }
+    val motion = rememberMotion(vm.navigationAnimation)
+    val collapse = remember(vm.viewMode) { HeaderCollapse() }
     var showPicker by rememberSaveable { mutableStateOf(false) }
+    var highlightToday by remember { mutableStateOf(false) }
+    var handledToday by rememberSaveable { mutableIntStateOf(vm.todayRequest) }
+    LaunchedEffect(vm.todayRequest) {
+        if (vm.todayRequest <= handledToday) return@LaunchedEffect
+        handledToday = vm.todayRequest
+        launch {
+            if (motion) animate(collapse.offset, 0f, animationSpec = tween(220)) { value, _ -> collapse.offset = value }
+            else collapse.offset = 0f
+        }
+        highlightToday = true
+        delay(1200)
+        highlightToday = false
+    }
 
     Scaffold(
         modifier = modifier,
@@ -127,28 +226,25 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
             ) { Icon(Icons.Outlined.Add, stringResource(R.string.action_new_event)) }
         },
     ) { pad ->
-        val swipe = Modifier.swipeDays(onPrevious = { vm.step(-1) }, onNext = { vm.step(1) })
-        Column(Modifier.fillMaxSize().padding(pad)) {
+        val swipe = Modifier.pageSwipe(vm.swipeNavigation, motion, onPrevious = { vm.step(-1) }, onNext = { vm.step(1) })
+        val today = LocalDate.now()
+        Column(Modifier.fillMaxSize().padding(pad).then(swipe)) {
+            if (vm.viewMode != ViewMode.Day) StatusCards(vm, Modifier.padding(horizontal = 12.dp))
             when (vm.viewMode) {
-                ViewMode.Month -> {
-                    Agenda(vm, index, f, vm.selectedDate, vm.selectedDate.plusDays(SunlithViewModel.AGENDA_DAYS), Modifier) {
-                        MonthGrid(vm.month, vm.selectedDate, today, vm.weekStartsMonday, index, f, vm::select, swipe)
+                ViewMode.Month -> CollapsingHeader(collapse, Modifier.weight(1f), header = {
+                    Column {
+                        MonthGrid(vm.month, vm.selectedDate, today, vm.weekStartsMonday, index, f, highlightToday, motion, vm::select, Modifier)
                         HorizontalDivider(color = p.line)
                     }
-                }
-                ViewMode.Week -> {
-                    val start = weekStart(vm.selectedDate, vm.weekStartsMonday)
-                    WeekdayLabels(vm.weekStartsMonday, f)
-                    Row(swipe.fillMaxWidth().padding(horizontal = 4.dp)) {
-                        (0L until 7L).forEach { i ->
-                            val day = start.plusDays(i)
-                            DayCell(day, vm.selectedDate == day, day == today, true, index[day].orEmpty(), f, Modifier.weight(1f)) { vm.select(it) }
-                        }
+                }) { Agenda(vm, index, f, collapse, motion, highlightToday) }
+                ViewMode.Week -> CollapsingHeader(collapse, Modifier.weight(1f), header = {
+                    Column {
+                        WeekdayLabels(vm.weekStartsMonday, f)
+                        WeekStrip(vm, today, index, f, highlightToday, motion, Modifier)
+                        HorizontalDivider(color = p.line)
                     }
-                    HorizontalDivider(color = p.line)
-                    Agenda(vm, index, f, start, start.plusDays(6), Modifier)
-                }
-                ViewMode.Day -> DayView(vm, index[vm.selectedDate].orEmpty(), f, swipe)
+                }) { Agenda(vm, index, f, collapse, motion, highlightToday) }
+                ViewMode.Day -> DayView(vm, index[vm.selectedDate].orEmpty(), f, Modifier)
             }
         }
     }
@@ -173,7 +269,7 @@ private fun Header(vm: SunlithViewModel, f: Formats, onTitle: () -> Unit) {
             Text(f.monthName(shown), color = p.ink, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         IconButton(onClick = vm::openSearch) { Icon(Icons.Outlined.Search, stringResource(R.string.action_search), tint = p.ink) }
-        IconButton(onClick = vm::goToday) { Icon(Icons.Outlined.Today, stringResource(R.string.action_today), tint = p.ink) }
+        TodayButton(vm::goToday)
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more), tint = p.ink) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -181,6 +277,27 @@ private fun Header(vm: SunlithViewModel, f: Formats, onTitle: () -> Unit) {
                 DropdownMenuItem(text = { Text(stringResource(R.string.title_settings)) }, onClick = { menu = false; vm.open(Screen.Settings) })
             }
         }
+    }
+}
+
+/** A labelled pill, so the action reads as "Today" instead of a generic calendar glyph. Large text shows today's number. */
+@Composable
+private fun TodayButton(onClick: () -> Unit) {
+    val p = LocalPalette.current
+    val label = stringResource(R.string.action_today)
+    val compact = LocalDensity.current.fontScale > 1.5f
+    val shape = RoundedCornerShape(50)
+    Box(
+        Modifier.minimumInteractiveComponentSize().padding(horizontal = 4.dp).clip(shape).border(1.dp, p.faint, shape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .clearAndSetSemantics { contentDescription = label; role = Role.Button }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (compact) LocalDate.now().dayOfMonth.toString() else stringResource(R.string.today),
+            color = p.ink, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+        )
     }
 }
 
@@ -217,19 +334,118 @@ private fun ModeBar(vm: SunlithViewModel) {
     }
 }
 
+/**
+ * Horizontal swipe to the previous or next page. The content follows the finger (slowed down) and fades, then
+ * slides in from the other side. A swipe counts only past a quarter of the width (at least 64dp), or a fast
+ * fling past 40dp, so small sideways movement while scrolling never changes the date.
+ */
 @Composable
-private fun Modifier.swipeDays(onPrevious: () -> Unit, onNext: () -> Unit): Modifier {
+private fun Modifier.pageSwipe(enabled: Boolean, motion: Boolean, onPrevious: () -> Unit, onNext: () -> Unit): Modifier {
     val prev by rememberUpdatedState(onPrevious)
     val next by rememberUpdatedState(onNext)
-    val threshold = with(LocalDensity.current) { 72.dp.toPx() }
-    return this.pointerInput(Unit) {
-        var total = 0f
-        detectHorizontalDragGestures(
-            onDragStart = { total = 0f },
-            onDragEnd = { if (total > threshold) prev() else if (total < -threshold) next() },
-        ) { change, amount ->
-            total += amount
-            change.consume()
+    val scope = rememberCoroutineScope()
+    val shift = remember { Animatable(0f) }
+    val density = LocalDensity.current
+    val minDistance = with(density) { 64.dp.toPx() }
+    val flingDistance = with(density) { 40.dp.toPx() }
+    val flingVelocity = with(density) { 1000.dp.toPx() }
+    LaunchedEffect(enabled, motion) { shift.snapTo(0f) }
+    return this
+        .pointerInput(enabled, motion) {
+            val tracker = VelocityTracker()
+            var total = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { total = 0f; tracker.resetTracking() },
+                onDragCancel = { scope.launch { if (motion) shift.animateTo(0f) else shift.snapTo(0f) } },
+                onDragEnd = {
+                    if (!enabled) return@detectHorizontalDragGestures
+                    val velocity = tracker.calculateVelocity().x
+                    val width = size.width.toFloat()
+                    val distance = maxOf(minDistance, width * 0.25f)
+                    val forward = when {
+                        total <= -distance || (total <= -flingDistance && velocity <= -flingVelocity) -> true
+                        total >= distance || (total >= flingDistance && velocity >= flingVelocity) -> false
+                        else -> null
+                    }
+                    scope.launch {
+                        if (forward == null) {
+                            if (motion) shift.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) else shift.snapTo(0f)
+                            return@launch
+                        }
+                        if (!motion) {
+                            if (forward) next() else prev()
+                            return@launch
+                        }
+                        if (forward) next() else prev()
+                        val direction = if (forward) -1f else 1f
+                        shift.snapTo(-direction * width * 0.3f)
+                        shift.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+                    }
+                },
+            ) { change, amount ->
+                change.consume()
+                tracker.addPosition(change.uptimeMillis, change.position)
+                total += amount
+                if (enabled && motion) scope.launch { shift.snapTo(total * 0.4f) }
+            }
+        }
+        .graphicsLayer {
+            if (enabled && motion) {
+                translationX = shift.value
+                alpha = 1f - (abs(shift.value) / size.width.coerceAtLeast(1f) * 2f).coerceIn(0f, 0.7f)
+            }
+        }
+}
+
+/**
+ * Collapse state for the grid above the agenda. Scrolling the agenda forward (or dragging the grid) first slides
+ * the grid away. Scrolling back only brings it back once the agenda is at the selected day again ([canExpand]),
+ * so reading earlier rows does not keep pulling the grid in, and the agenda can scroll both ways.
+ */
+@Stable
+private class HeaderCollapse {
+    var offset by mutableFloatStateOf(0f)
+    var headerHeight = 0
+    var canExpand: () -> Boolean = { true }
+
+    fun consume(delta: Float): Float {
+        val height = headerHeight.toFloat()
+        val old = offset.coerceIn(-height, 0f)
+        val new = (old + delta).coerceIn(-height, 0f)
+        offset = new
+        return new - old
+    }
+
+    val connection = object : NestedScrollConnection {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset =
+            if (available.y > 0f && !canExpand()) Offset.Zero else Offset(0f, consume(available.y))
+    }
+}
+
+/**
+ * Places [header] above [body]. When the header is taller than about two thirds of the space (landscape or very
+ * large text), only half the space shows it at once, and it scrolls inside that area, so the agenda stays visible.
+ */
+@Composable
+private fun CollapsingHeader(state: HeaderCollapse, modifier: Modifier, header: @Composable () -> Unit, body: @Composable () -> Unit) {
+    val p = LocalPalette.current
+    Layout(
+        content = {
+            Box(Modifier.draggable(rememberDraggableState { state.consume(it) }, Orientation.Vertical)) { header() }
+            Box(Modifier.background(p.background)) { body() }
+        },
+        modifier = modifier.fillMaxWidth().clipToBounds().nestedScroll(state.connection),
+    ) { measurables, constraints ->
+        val head = measurables[0].measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+        state.headerHeight = head.height
+        val total = constraints.maxHeight
+        val cap = if (head.height > total * 0.65f) total / 2 else head.height
+        val offset = state.offset.coerceIn(-head.height.toFloat(), 0f).roundToInt()
+        val visible = (head.height + offset).coerceIn(0, cap)
+        val content = measurables[1].measure(Constraints.fixed(constraints.maxWidth, (total - visible).coerceAtLeast(0)))
+        layout(constraints.maxWidth, total) {
+            head.place(0, offset)
+            content.place(0, visible)
         }
     }
 }
@@ -248,22 +464,27 @@ private fun WeekdayLabels(mondayFirst: Boolean, f: Formats) {
     }
 }
 
+/** Always six rows, so the grid keeps the same height in every month and the agenda never jumps. */
 @Composable
 private fun MonthGrid(
-    month: YearMonth, selected: LocalDate, today: LocalDate, mondayFirst: Boolean,
-    index: Map<LocalDate, List<CalendarEvent>>, f: Formats, onSelect: (LocalDate) -> Unit, swipe: Modifier,
+    month: YearMonth, selected: LocalDate, today: LocalDate, mondayFirst: Boolean, index: Map<LocalDate, List<CalendarEvent>>,
+    f: Formats, pulseToday: Boolean, motion: Boolean, onSelect: (LocalDate) -> Unit, swipe: Modifier,
 ) {
     val start = gridStart(month, mondayFirst)
-    val first = month.atDay(1)
-    val leading = java.time.temporal.ChronoUnit.DAYS.between(start, first).toInt()
-    val rows = (leading + month.lengthOfMonth() + 6) / 7
-    Column(swipe.fillMaxWidth().padding(horizontal = 4.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
         WeekdayLabels(mondayFirst, f)
-        repeat(rows) { r ->
-            Row(Modifier.fillMaxWidth()) {
-                repeat(7) { c ->
-                    val day = start.plusDays((r * 7 + c).toLong())
-                    DayCell(day, day == selected, day == today, YearMonth.from(day) == month, index[day].orEmpty(), f, Modifier.weight(1f), onSelect)
+        Column(swipe.fillMaxWidth()) {
+            repeat(GRID_ROWS) { r ->
+                Row(Modifier.fillMaxWidth()) {
+                    repeat(7) { c ->
+                        val day = start.plusDays((r * 7 + c).toLong())
+                        key(day) {
+                            DayCell(
+                                day, day == selected, day == today, YearMonth.from(day) == month, index[day].orEmpty(), f,
+                                pulseToday && day == today, motion, Modifier.weight(1f), onSelect,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -272,9 +493,32 @@ private fun MonthGrid(
 }
 
 @Composable
+private fun WeekStrip(
+    vm: SunlithViewModel, today: LocalDate, index: Map<LocalDate, List<CalendarEvent>>, f: Formats,
+    pulseToday: Boolean, motion: Boolean, swipe: Modifier,
+) {
+    val start = weekStart(vm.selectedDate, vm.weekStartsMonday)
+    Row(swipe.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
+        (0L until 7L).forEach { i ->
+            val day = start.plusDays(i)
+            key(day) {
+                DayCell(day, vm.selectedDate == day, day == today, true, index[day].orEmpty(), f, pulseToday && day == today, motion, Modifier.weight(1f)) { vm.select(it) }
+            }
+        }
+    }
+}
+
+/** Circle size for a date number: grows with the font size, but never wider than its column. */
+@Composable
+private fun dayCircle(): Dp {
+    val size = MaterialTheme.typography.bodyLarge.fontSize
+    return with(LocalDensity.current) { maxOf(40.dp, (size * 2.25f).toDp()) }
+}
+
+@Composable
 private fun DayCell(
     day: LocalDate, isSelected: Boolean, isToday: Boolean, inMonth: Boolean, events: List<CalendarEvent>, f: Formats,
-    modifier: Modifier, onSelect: (LocalDate) -> Unit,
+    pulse: Boolean, motion: Boolean, modifier: Modifier, onSelect: (LocalDate) -> Unit,
 ) {
     val p = LocalPalette.current
     val count = events.size
@@ -284,29 +528,39 @@ private fun DayCell(
         if (isToday) append(", ").append(context.getString(R.string.today))
         append(", ").append(context.resources.getQuantityString(R.plurals.event_count, count, count))
     }
+    val interaction = remember { MutableInteractionSource() }
+    val scale = remember { Animatable(1f) }
+    LaunchedEffect(pulse, motion) {
+        if (pulse && motion) {
+            scale.animateTo(1.18f, tween(140))
+            scale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+        } else scale.snapTo(1f)
+    }
     Column(
-        modifier.heightIn(min = 52.dp).padding(2.dp).clip(RoundedCornerShape(10.dp))
-            .background(if (isSelected) p.raised else Color.Transparent)
-            .clickable { onSelect(day) }
+        modifier.heightIn(min = 48.dp)
+            .clickable(interactionSource = interaction, indication = null) { onSelect(day) }
             .clearAndSetSemantics { contentDescription = description; selected = isSelected; role = Role.Button }
-            .padding(vertical = 4.dp),
+            .padding(vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
         Box(
-            Modifier.sizeIn(minWidth = 30.dp, minHeight = 30.dp).background(if (isToday) p.accent else Color.Transparent, CircleShape),
+            Modifier.padding(horizontal = 2.dp).widthIn(max = dayCircle()).fillMaxWidth().aspectRatio(1f)
+                .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+                .clip(CircleShape)
+                .background(if (isSelected) p.accent else Color.Transparent)
+                .then(if (isToday && !isSelected) Modifier.border(1.5.dp, p.ink, CircleShape) else Modifier)
+                .indication(interaction, ripple()),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 day.dayOfMonth.toString(),
-                color = when { isToday -> p.onAccent; inMonth -> p.ink; else -> p.faint },
+                color = when { isSelected -> p.onAccent; inMonth -> p.ink; else -> p.faint },
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (isToday || isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                modifier = Modifier.padding(horizontal = 4.dp),
-                maxLines = 1,
+                textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
             )
         }
-        Row(Modifier.height(8.dp).padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(Modifier.padding(top = 3.dp).height(5.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             events.take(3).forEach { e ->
                 Box(Modifier.size(5.dp).background(if (inMonth) eventTint(e.color, p) else p.faint, CircleShape))
             }
@@ -315,34 +569,78 @@ private fun DayCell(
 }
 
 @Composable
-private fun StatusCards(vm: SunlithViewModel) {
-    vm.loadError?.let { InfoCard(it, stringResource(R.string.action_retry)) { vm.reload() } }
-    if (vm.loaded && vm.loadError == null) {
-        when {
-            vm.calendars.isEmpty() -> InfoCard(stringResource(R.string.no_calendars_on_phone), stringResource(R.string.action_create_local)) { vm.createLocalCalendar() }
-            vm.activeIds.isEmpty() -> InfoCard(stringResource(R.string.no_calendars_selected), stringResource(R.string.action_choose_calendars)) { vm.open(Screen.Calendars) }
+private fun StatusCards(vm: SunlithViewModel, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        vm.loadError?.let { InfoCard(it, stringResource(R.string.action_retry)) { vm.reload() } }
+        if (vm.loaded && vm.loadError == null) {
+            when {
+                vm.calendars.isEmpty() -> InfoCard(stringResource(R.string.no_calendars_on_phone), stringResource(R.string.action_create_local)) { vm.createLocalCalendar() }
+                vm.activeIds.isEmpty() -> InfoCard(stringResource(R.string.no_calendars_selected), stringResource(R.string.action_choose_calendars)) { vm.open(Screen.Calendars) }
+            }
         }
     }
 }
 
+/**
+ * The agenda below the grid. It lists the days of the view model's loaded window lazily, jumps to the selected
+ * date whenever it changes, and asks the view model for more days as either end comes close.
+ */
 @Composable
-private fun Agenda(vm: SunlithViewModel, index: Map<LocalDate, List<CalendarEvent>>, f: Formats, from: LocalDate, to: LocalDate, modifier: Modifier, header: (@Composable () -> Unit)? = null) {
+private fun Agenda(
+    vm: SunlithViewModel, index: Map<LocalDate, List<CalendarEvent>>, f: Formats, collapse: HeaderCollapse, motion: Boolean, highlightToday: Boolean,
+) {
+    val p = LocalPalette.current
+    val from = vm.loadedFrom
+    val to = vm.loadedTo
     val today = LocalDate.now()
-    val rows = remember(index, from, to, vm.selectedDate, today) { buildAgenda(from, to, index, setOf(vm.selectedDate, today)) }
+    val selected = vm.selectedDate
+    val display = vm.agendaDisplay
+    val rows = remember(index, from, to, display, selected, today) {
+        if (from == null || to == null) emptyList() else buildAgenda(from, to, index, display, setOf(selected, today))
+    }
     val listState = rememberLazyListState()
-    LaunchedEffect(from, vm.viewMode) { listState.scrollToItem(0) }
-    LazyColumn(modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 104.dp)) {
-        if (header != null) item(key = "calendar") { header() }
-        item(key = "status") { StatusCards(vm) }
-        items(rows, key = { row ->
+    val anchor = remember(rows, selected) { targetIndex(rows, selected) }
+    SideEffect { collapse.canExpand = { listState.firstVisibleItemIndex <= anchor } }
+    val navigation = Triple(selected, display, vm.todayRequest)
+    var handledNavigation by remember { mutableStateOf<Triple<LocalDate, String, Int>?>(null) }
+    LaunchedEffect(navigation, rows, from, to) {
+        if (handledNavigation == navigation) return@LaunchedEffect
+        val target = navigation.first
+        if (from == null || to == null || target.isBefore(from) || target.isAfter(to)) return@LaunchedEffect
+        val row = targetIndex(rows, target)
+        if (row >= 0) {
+            if (motion && abs(row - listState.firstVisibleItemIndex) <= 30) listState.animateScrollToItem(row)
+            else listState.scrollToItem(row)
+        }
+        handledNavigation = navigation
+    }
+    LaunchedEffect(listState, navigation, handledNavigation) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            Triple(info.visibleItemsInfo.firstOrNull()?.index ?: -1, info.visibleItemsInfo.lastOrNull()?.index ?: -1, info.totalItemsCount)
+        }.collect { (first, last, total) ->
+            if (handledNavigation != navigation || first < 0 || total == 0) return@collect
+            val nearStart = first <= EDGE_ROWS
+            val nearEnd = last >= total - 1 - EDGE_ROWS
+            // When both ends are on screen (few rows), only grow the window; sliding would bounce between the ends.
+            if (nearEnd) vm.extendAgenda(forward = true, slide = !nearStart)
+            if (nearStart) vm.extendAgenda(forward = false, slide = !nearEnd)
+        }
+    }
+    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 104.dp)) {
+        items(rows, key = { it.key }, contentType = { it::class }) { row ->
             when (row) {
-                is AgendaRow.Day -> "d-${row.date}"
-                is AgendaRow.Empty -> "e-${row.from}"
-            }
-        }) { row ->
-            when (row) {
-                is AgendaRow.Day -> AgendaDay(row, row.date == vm.selectedDate, row.date == today, f, vm)
+                is AgendaRow.MonthLabel -> Text(
+                    f.monthYear(row.month), color = p.muted, style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 20.dp, bottom = 6.dp).semantics { heading() },
+                )
+                is AgendaRow.Day -> AgendaDay(row, row.date == selected, row.date == today, highlightToday && row.date == today, motion, f, vm)
                 is AgendaRow.Empty -> EmptyRange(row, f) { vm.select(row.from) }
+            }
+        }
+        if (rows.isEmpty() && vm.loaded && from != null) {
+            item(key = "none") {
+                Text(stringResource(R.string.no_events), color = p.muted, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 24.dp, horizontal = 4.dp))
             }
         }
     }
@@ -351,28 +649,40 @@ private fun Agenda(vm: SunlithViewModel, index: Map<LocalDate, List<CalendarEven
 @Composable
 private fun DateBadge(date: LocalDate, isToday: Boolean, isSelected: Boolean, f: Formats) {
     val p = LocalPalette.current
-    Column(Modifier.widthIn(min = 56.dp).padding(end = 8.dp, top = 4.dp)) {
-        Text(
-            date.dayOfMonth.toString(), color = if (isToday || isSelected) p.ink else p.muted,
-            style = MaterialTheme.typography.headlineSmall, fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
-        )
-        Text(f.weekdayShort(date.dayOfWeek), color = if (isToday || isSelected) p.ink else p.muted, style = MaterialTheme.typography.bodyMedium)
-        if (isToday) Text(stringResource(R.string.today), color = p.muted, style = MaterialTheme.typography.labelSmall)
+    val circle = with(LocalDensity.current) { maxOf(34.dp, (MaterialTheme.typography.titleMedium.fontSize * 2f).toDp()) }
+    Column(Modifier.widthIn(min = 56.dp).padding(end = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(circle).background(if (isToday) p.accent else Color.Transparent, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                date.dayOfMonth.toString(), color = when { isToday -> p.onAccent; isSelected -> p.ink; else -> p.muted },
+                style = MaterialTheme.typography.titleMedium, fontWeight = if (isToday || isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
+            )
+        }
+        Text(f.weekdayShort(date.dayOfWeek), color = if (isToday || isSelected) p.ink else p.muted, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }
 
 @Composable
-private fun AgendaDay(row: AgendaRow.Day, isSelected: Boolean, isToday: Boolean, f: Formats, vm: SunlithViewModel) {
+private fun AgendaDay(row: AgendaRow.Day, isSelected: Boolean, isToday: Boolean, highlighted: Boolean, motion: Boolean, f: Formats, vm: SunlithViewModel) {
     val p = LocalPalette.current
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    val background by animateColorAsState(
+        if (highlighted) p.raised else Color.Transparent,
+        animationSpec = if (motion) tween(300) else snap(),
+        label = "today",
+    )
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(12.dp)).background(background).padding(vertical = 3.dp)) {
         DateBadge(row.date, isToday, isSelected, f)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (row.events.isEmpty()) {
+                val add = stringResource(R.string.action_add_event)
                 Box(
-                    Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(10.dp))
-                        .clickable(role = Role.Button) { vm.newEvent(row.date) }.padding(horizontal = 12.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp))
+                        .clickable(onClickLabel = add, role = Role.Button) { vm.newEvent(row.date) }.padding(horizontal = 12.dp),
                     contentAlignment = Alignment.CenterStart,
-                ) { Text(stringResource(R.string.no_events_tap), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
+                ) { Text(stringResource(R.string.no_events), color = p.faint, style = MaterialTheme.typography.bodyMedium) }
             } else {
                 row.events.forEach { e -> EventCard(e, row.date, f, onClick = { vm.open(Screen.Details(e)) }) }
             }
@@ -384,11 +694,7 @@ private fun AgendaDay(row: AgendaRow.Day, isSelected: Boolean, isToday: Boolean,
 private fun EmptyRange(row: AgendaRow.Empty, f: Formats, onClick: () -> Unit) {
     val p = LocalPalette.current
     val short = { d: LocalDate -> "${f.weekdayShort(d.dayOfWeek)} ${d.dayOfMonth}" }
-    val label = when {
-        row.from == row.to -> short(row.from)
-        YearMonth.from(row.from) == YearMonth.from(row.to) -> "${short(row.from)} – ${short(row.to)}"
-        else -> "${f.dayShort(row.from)} – ${f.dayShort(row.to)}"
-    }
+    val label = if (row.from == row.to) short(row.from) else f.range(short(row.from), short(row.to))
     Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 4.dp),

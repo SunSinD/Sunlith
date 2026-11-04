@@ -30,7 +30,11 @@ The tests cover local calendar creation, event CRUD, reminder persistence, all-d
 
 `CalendarUiTest` drives the actual Compose UI through Android accessibility: create an event, find it through search, edit it, and delete it. It also checks the rendered light/dark appearance and the persisted theme setting. On API 33 and newer, a separate case switches the app locale to French and checks translated calendar/editor/settings controls. These UI tests use and clean up a dedicated emulator-only calendar.
 
-It also checks that the agenda remains reachable by scrolling in landscape at 200% font size. Font size and rotation are restored afterward. `AiOnboardingTest` checks the fresh AI-first introduction, the skip route, all eight provider choices, the selected setup guide, the connection-status disclosure, Back, and Continue from both onboarding and Settings. Selecting an assistant is not treated as a completed connection.
+It also checks that the agenda remains reachable by scrolling in landscape at 200% font size. `CalendarExperienceTest` checks month-grid geometry, centered selected dates, launch views, grouped settings and returning from the calendar selector, agenda display modes, continuous paging, Today feedback, and reaching a sixth-row date by dragging the month header in landscape at 200% font size. A separate case swipes the real agenda with Android animations disabled, checks both directions, and checks that turning off swipe navigation prevents date changes. Font size, rotation, and Android animation settings are restored afterward.
+
+`SettingsPreferencesTest` checks defaults, limits, and persisted values in isolated preferences. `WidgetExperienceTest` uses Android's real widget host to check empty days, the date window, optional calendar names, background opacity, native dividers, multi-day events, and opening a draft from an empty date. `CalendarHandoffUiTest` checks Android event-insert intents and calendar-file sharing, editable drafts, import previews, rejection of unsupported input, and deferral through onboarding/recreation/an existing draft. The content provider used for shared-file fixtures exists only in the test APK.
+
+`AiOnboardingTest` checks the introduction, the skip route, all eight provider choices, the selected setup guide, the connection-status disclosure, Back, and the pinned Continue action from both onboarding and Settings. Selecting an assistant is not treated as a completed connection.
 
 `ReminderNotificationsTest` additionally checks actual posted notification content, actions, occurrence deduplication, disabled reminders, and delivery through a scheduled Android alarm. A separate test inserts an isolated due provider alert for a `MINUTES_DEFAULT` reminder, sends an explicit calendar-reminder broadcast, and verifies notification delivery without changing the provider alert state. That test verifies broadcast handling, not how a real account chooses its default reminder time. Tests request notification permission on API 33 and newer. For one specific emulator, use `adb -s <serial> shell am instrument ...` or set `ANDROID_SERIAL` before a Gradle connected-test command.
 
@@ -50,7 +54,7 @@ This case checks that denied notifications stay silent, grants permission throug
 .\tools\capture-demo.ps1
 ```
 
-This creates a dedicated **Sunlith demo** local calendar on the emulator, selects it, and adds clearly identified sample events relative to the emulator's current date. It never seeds events automatically in the production app. Repeated captures replace only that dedicated demo calendar.
+This creates a dedicated **Sunlith demo** local calendar on the emulator, selects it, and adds clearly identified sample events relative to the emulator's current date. Demo events have no reminders, so another installed calendar cannot interrupt captures with fixture alerts. It never seeds events automatically in the production app. Repeated captures replace only that dedicated demo calendar.
 
 Images are saved to `.toolchain/screenshots/month-agenda.png`, `.toolchain/screenshots/widget.png`, `.toolchain/screenshots/ai-intro.png`, and `.toolchain/screenshots/ai-setup.png`. The calendar and onboarding images show the running app. The widget image shows the real Android RemoteViews widget and collection service in an instrumentation-only AppWidgetHost, rather than a launcher screenshot. The widget test also checks that tapping an event opens its details and editor, and that its add button opens a new event editor. The test temporarily grants widget-binding access to the app and revokes it afterward.
 
@@ -62,27 +66,29 @@ On the intended phone, test notification permission, the selected calendars, an 
 
 These are test instructions, not a claim that every check has passed. Record the actual results with the build being tested.
 
-## Verified alpha build
+## Verified beta build
 
-For `0.0.1-alpha.1`, verified on November 4, 2026:
+For `0.1.0-beta.1`, verified on November 4, 2026:
 
 | Check | Result |
 | --- | --- |
-| Android JVM unit tests | 15 passed |
-| Selected API 30 emulator suite | 19 passed |
-| Selected API 36 emulator suite | 20 passed |
-| Separate API 36 notification permission recovery | 1 passed |
-| Desktop MCP tests | 29 passed |
+| Android JVM unit tests | 20 passed |
+| Selected API 30 emulator suite | 39 passed in 166.427 seconds |
+| Selected API 36 emulator suite | 40 passed in 212.561 seconds |
+| Separate API 36 notification permission recovery | 1 passed in 8.204 seconds |
+| Android lint | 0 errors, 73 warnings, 4 hints |
+| Desktop MCP tests | 31 passed |
 | Desktop MCP syntax check | Passed |
 | Desktop MCP dependency audit | 0 vulnerabilities |
-| GitHub MCP checks on Windows, macOS, Linux (Node 22) | All passed |
 
-The selected emulator suite comprises `CalendarRepositoryTest`, `ReminderNotificationsTest`, `CalendarUiTest`, `WidgetSmokeTest`, and `AiOnboardingTest`. The French app-locale case requires API 33 and is excluded on API 30. Notification permission recovery runs separately with its explicit argument, rather than being silently counted as verified in a normal run. All selected tests completed without failures.
+Each selected emulator suite completed as a single run without failures. Android JVM tests comprise 13 ICS codec cases, 5 incoming-intent parser cases, and 2 editor-state cases. Notification permission recovery runs separately after revoking permission before instrumentation starts.
 
 Tested debug APK SHA-256:
 
 ```text
-E7856F31BE65901A6EAA27232E9176B046B67565C44624B0B477A387B7E28292
+F17135E3A44D068043B358DD662F1A79C2D693A56EE17A4B46F77D4B0DF4F6FB
 ```
 
-Local captures used the running API 36 emulator and synthetic events. Widget captures use the actual Android widget in an instrumentation host. Captures are excluded from the repository pending phone testing. Google account sync, migration from existing calendars, physical-device reminder delivery, and manufacturer battery behavior still require testing on the intended phone. These results do not establish universal AI client compatibility or a completed connection to an actual Google account.
+The selected emulator suite comprises `CalendarRepositoryTest`, `ReminderNotificationsTest`, `CalendarUiTest`, `WidgetSmokeTest`, `AiOnboardingTest`, `SettingsPreferencesTest`, `CalendarExperienceTest`, `WidgetExperienceTest`, and `CalendarHandoffUiTest`. The French app-locale case requires API 33 and is excluded on API 30. Notification permission recovery runs separately with its explicit argument.
+
+Local captures use running emulators and synthetic events. Widget captures use the actual Android widget in an instrumentation host. Captures are excluded from the repository pending phone testing. Google account sync, migration from existing calendars, physical-device reminder delivery, and manufacturer battery behavior still require testing on the intended phone. Emulator results do not establish universal AI client compatibility or a completed connection to an actual Google account.
