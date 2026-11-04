@@ -4,15 +4,15 @@
 
     <string name="today">Today</string>
     <string name="all_day">All day</string>
-    <string name="all_day_day_of">All day · day %1$d of %2$d</string>
-    <string name="all_day_days">All day · %1$d days</string>
+    <string name="all_day_day_of">All day, day %1$d of %2$d</string>
+    <string name="all_day_days">All day, %1$d days</string>
     <string name="starts_at">Starts %1$s</string>
     <string name="ends_at">Ends %1$s</string>
     <string name="untitled">Untitled event</string>
     <string name="repeating">Repeating event</string>
     <string name="unknown_calendar">Unknown calendar</string>
     <string name="no_events">No events</string>
-    <string name="no_events_tap">No events · tap to add one</string>
+    <string name="no_events_tap">No events, tap to add one</string>
     <string name="no_calendars_on_phone">There are no calendars on this phone yet. Add an account with calendar sync in Android settings, or create a calendar that stays on this device.</string>
     <string name="no_calendars_selected">No calendars are shown in Sunlith right now.</string>
 
@@ -82,7 +82,7 @@
     <string name="editor_timezone_note">Times are shown in your time zone. The event keeps its own time zone (%1$s).</string>
     <string name="editor_series_note">This is a repeating event. Your changes apply to every event in the series. Sunlith cannot edit a single occurrence yet.</string>
     <string name="editor_choose_calendar">Choose a calendar</string>
-    <string name="editor_calendar_locked">%1$s · existing events stay in their calendar</string>
+    <string name="editor_calendar_locked">%1$s, existing events stay in their calendar</string>
     <string name="editor_no_writable">No calendar on this phone can be edited.</string>
     <string name="editor_custom_kept">Custom rule from another app, kept as is</string>
     <string name="editor_no_reminders">No reminders</string>
@@ -194,10 +194,10 @@
     <string name="about_source">Source code</string>
 
     <string name="help_migration_title">Move from another calendar app</string>
-    <string name="help_migration_sub">DigiCal, Samsung Calendar, Google Calendar and others</string>
-    <string name="help_migration_body">Most calendar apps, including DigiCal, store events in Android\'s calendar storage or in a synced account like Google. Sunlith reads the same storage, so you usually do not need to import anything.\n\n1. Open Calendars in Sunlith and turn on the same calendars you used before.\n2. Check a few past and future events, an all-day event and a repeating event.\n3. If an account is missing, add it in Android settings and turn on calendar sync.\n\nOnly use .ics import for events kept inside another app\'s own storage. Importing into a calendar that already has those events creates duplicates.\n\nIf two apps send reminders for the same event, turn off notifications in the app you stop using.</string>
-    <string name="help_ai_title">Connect an AI assistant</string>
-    <string name="help_ai_sub">Recommended · plan with prompts</string>
+    <string name="help_migration_sub">Use the calendars already on your phone</string>
+    <string name="help_migration_body">Sunlith reads Android\'s shared calendar storage, so existing calendars can appear without an import.\n\n1. Open Calendars in Sunlith and select the calendars you use.\n2. Check a few timed, all-day and repeating events.\n3. If an account is missing, add it in Android settings and turn on calendar sync.\n\nUse .ics import when you need to copy events into another calendar. Back them up first and avoid importing into a calendar that already contains them.\n\nChoose one app to send reminders if several apps notify for the same events.</string>
+    <string name="help_ai_title">Connect an assistant</string>
+    <string name="help_ai_sub">Recommended, plan with prompts</string>
 
     <string name="export_title">Calendars to export</string>
     <string name="import_title">Import events</string>
@@ -268,22 +268,23 @@
     <string name="details_unsupported">This event cannot be safely edited here. Open it in your existing calendar app.</string>
     <string name="msg_export_skipped">Some unsupported events were skipped. Check this backup before relying on it.</string>
     <string name="notification_time_range">%1$s – %2$s</string>
-    <string name="notification_location_separator">%1$s · %2$s</string>
-    <string name="local_calendar_name">Sunlith · On this device</string>
-    <string name="ai_intro_title">Your calendar, connected to AI</string>
+    <string name="notification_location_separator">%1$s, %2$s</string>
+    <string name="local_calendar_name">Sunlith, On this device</string>
+    <string name="ai_intro_title">Your calendar, easier to manage</string>
     <string name="ai_intro_lead">Spend less time entering events. Tell your assistant what you have planned, and let it handle the calendar.</string>
     <string name="ai_intro_prompt">“Dentist tomorrow at 5.” Add, find, and reschedule events with a prompt.</string>
     <string name="ai_intro_phone">Your events, widget, and reminders stay together on your phone.</string>
-    <string name="ai_intro_choice">Use your own assistant. No AI subscription is required by Sunlith.</string>
-    <string name="ai_intro_recommended">Recommended: connect an assistant on your computer through T3 Code or a supported AI client.</string>
-    <string name="action_set_up_ai">Set up AI</string>
-    <string name="action_without_ai">Continue without AI</string>
+    <string name="ai_intro_choice">Use your own assistant. Sunlith has no subscription of its own.</string>
+    <string name="ai_intro_recommended">Recommended: connect an assistant on your computer to manage events with prompts.</string>
+    <string name="action_set_up_ai">Connect an assistant</string>
+    <string name="action_without_ai">Use calendar only</string>
     <string name="ai_setup_title">Connect your assistant</string>
-    <string name="ai_setup_lead">Choose the assistant you use on your computer. T3 Code can let you prompt that assistant from your phone, too.</string>
+    <string name="ai_setup_lead">Choose the assistant you use on your computer, then follow its setup guide.</string>
     <string name="ai_setup_assistant">Your assistant</string>
     <string name="ai_setup_steps">1. Follow the setup guide on your computer.\n2. Authorize a Google calendar you sync to this phone.\n3. Select that same calendar in Sunlith, then ask your assistant to add an event.</string>
-    <string name="ai_setup_support">These are T3 Code’s provider options. Connection support varies; each guide explains available setup and limits. Selecting a name does not connect an account.</string>
+    <string name="ai_setup_support">Each guide explains the supported setup and its limits. Selecting a name does not connect an account.</string>
+    <string name="unknown_account">Other calendars</string>
     <string name="action_open_setup">Open %s setup guide</string>
     <string name="action_continue_calendar">Continue to calendar</string>
-    <string name="ai_setup_resume">You can return here from Settings → Connect an AI assistant. Setup is not verified by the phone app.</string>
+    <string name="ai_setup_resume">Return here from Settings > Connect an assistant. Setup is not verified by the phone app.</string>
 </resources>

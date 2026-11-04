@@ -1,51 +1,44 @@
-# Bring your DigiCal events into Sunlith
+# Use your existing calendars
 
-Keep DigiCal installed until you have checked your events and reminders in Sunlith.
+Sunlith reads calendars available through Android's shared calendar provider. Your existing calendar app and Sunlith can display the same events without making another copy.
 
-## Events already synced to Google, Outlook or another account
+## Select calendars already on your phone
 
-1. In DigiCal, open one of your existing events and check which calendar/account owns it. Calendar names alone may be ambiguous, so check the account too.
-2. Install Sunlith and allow calendar access.
-3. Open Sunlith's calendar selection and enable the same calendar/account.
-4. Check several past and future events, an all-day event, and a repeating event.
+1. Allow calendar access when Sunlith asks.
+2. Open Sunlith's calendar selection and choose the calendars you want to display. Check the account as well as the calendar name.
+3. Compare several events with your existing calendar app, including an all-day event and a repeating event.
 
-No import is needed when both apps use the same Android calendar. Creating an ICS copy in that calendar can create duplicates. DigiCal's [official website](https://digibites.nl/) confirms that it uses calendar servers supported by Android.
+If the same events already appear, no import is needed. Importing a backup into that calendar can create duplicates.
 
-If an account is missing, add it in your phone's account settings and enable calendar sync. Some apps keep their own calendar storage rather than exposing it to Android. For example, an Outlook calendar is available to Sunlith only when an installed account adapter or calendar-sync feature exposes it to Android's provider.
+If an account is missing, check your phone's account settings and enable calendar sync. A calendar stored privately inside another app is available to Sunlith only if that app or an installed account adapter exposes it to Android's provider.
 
-## Events stored only on the phone
+Calendars stored only on the phone do not automatically sync to an account. Keep the existing app and data until you have checked your events and saved a backup.
 
-Local calendars do not automatically sync to Google. Sunlith may already see them in its calendar selection because both apps use Android's provider. Check this before exporting anything.
+## Save an ICS backup
 
-To copy a local calendar into a synced account:
+1. Select the calendars you want to export in Sunlith.
+2. Use the export action and choose where to save the `.ics` file through Android's file picker.
+3. Read the result and any warnings. Confirm that the backup contains the events you expect before deleting or moving the originals.
 
-1. Enable only the local calendar you want to copy in Sunlith.
-2. Use Sunlith's ICS export and save the file somewhere you can find it.
-3. Check the exported calendar before deleting or moving anything.
-4. Import the file into the selected writable synced calendar. Treat this as a copy: the original local events remain.
-5. Read the import report. This alpha skips recurring series with exceptions rather than changing their meaning. Move those through the calendar provider's own export/import tools where available.
-6. Confirm event dates, recurrence, timezone and reminders. Hide the old local calendar to avoid seeing both copies.
+An export includes supported event fields. It is not a guarantee of a complete copy of every provider's proprietary data. Guest lists, attachments, tasks and some complex recurrence formats are outside this alpha's portable fields. Malformed provider records can be skipped with a warning.
 
-Sunlith's on-device calendar is explicitly labeled “On this device.” Events stored there will not appear through a desktop Google Calendar MCP connection.
+## Import an ICS file
 
-## Using an existing ICS file
+1. Use the import action and select a `.ics` file through Android's file picker.
+2. Review the preview and choose a writable destination calendar. For a first test, use a separate empty calendar where possible.
+3. Read the import report, then check dates, timezones, repeating events and reminders in the destination.
 
-Use Import in Sunlith, select the `.ics` file through Android's file picker, review its preview, and choose a writable destination calendar. Files are limited to 5 MB and 2,000 events in this alpha. Repeated source UIDs are skipped; records without UIDs also use matching event details for deduplication. Distinct supplied UIDs are preserved even when the details match. The report distinguishes added events, duplicates and skipped events.
+Import creates copies and does not remove the original events. This alpha accepts files up to 5 MB and 2,000 events. It skips repeated source UIDs in the destination. Events without source UIDs also use matching details to detect duplicates. Distinct supplied UIDs remain separate events even when their details match, so duplicate detection cannot prevent every duplicate across unrelated exports.
 
-Imported guest meetings become personal copies without sending invitations. Advanced alarms, tasks, attachments and complex recurrence exceptions are not fully imported. Read the messages before relying on the result.
+Meetings with guests are imported as personal copies without sending invitations. Unsupported exception-heavy series and timezone formats are reported and skipped. Unsupported or excessive reminders can be trimmed with a message while keeping the event. Check the report before relying on the result.
 
-## Reminders from multiple calendar apps
+## Choose which app sends reminders
 
-DigiCal, Google Calendar and Sunlith may all notify for the same shared event. Choose which app should notify and disable event notifications in the others. Disabling an app's notifications does not delete its calendar data. Confirm a test reminder with the screen locked before trusting time-sensitive alerts.
+Several calendar apps may notify for the same shared event. Choose which app should notify and disable event notifications in the others. Disabling notifications does not delete calendar data. Check a test reminder with the screen locked.
 
-## Control the same calendar from your PC
+## References
 
-Use the recommended MCP connection described in the repository's integration instructions. Connect it to the same synced calendar used by Sunlith. A computer action changes the calendar service; Android's normal account sync brings that change to Sunlith and its widget. Sync can take time and requires the phone's account sync to be enabled.
+- [Android Calendar Provider](https://developer.android.com/identity/providers/calendar-provider)
+- [iCalendar standard](https://datatracker.ietf.org/doc/html/rfc5545)
 
-Android's calendar permission and desktop Google OAuth permission are separate. Local-only calendars are not exposed through a Google Calendar MCP server.
-
-## Source and verification limits
-
-Sources: [DigiCal](https://digibites.nl/), [Android Calendar Provider](https://developer.android.com/identity/providers/calendar-provider), [ICS standard](https://datatracker.ietf.org/doc/html/rfc5545), [Google Calendar MCP](https://github.com/nspady/google-calendar-mcp).
-
-DigiCal's help center was inaccessible during research, so this guide does not invent a DigiCal-specific export menu. Your actual account and calendar list must be checked on your phone.
+Account settings and export controls in other apps vary. This guide does not assume a particular menu exists in another calendar app.

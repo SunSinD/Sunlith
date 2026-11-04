@@ -96,7 +96,7 @@ class Formats(private val context: Context, val locale: Locale) {
                 out += r.getString(R.string.repeat_until, dayShortWithYear(it))
             }
         }
-        return out.joinToString(" · ")
+        return out.joinToString(", ")
     }
 
     companion object {

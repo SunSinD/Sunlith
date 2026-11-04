@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createEvent, operationEventId, listCalendars, listEvents, updateEvent, deleteEvent, getCalendarApi } from '../src/calendar.js';
+import { createEvent, operationEventId, listCalendars, listEvents, updateEvent, deleteEvent, getCalendarApi, currentTime } from '../src/calendar.js';
+
+test('current time includes a usable zoned ISO instant and English weekday', () => {
+  for (const zone of ['Asia/Kathmandu', 'America/Toronto', 'UTC']) {
+    const result = currentTime(zone);
+    assert.equal(result.timeZone, zone);
+    assert.equal(Date.parse(result.localIso), Date.parse(result.utc));
+    assert.match(result.weekday, /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/);
+    if (zone === 'Asia/Kathmandu') assert.match(result.localIso, /\+05:45$/);
+  }
+});
 
 test('expanded instances keep the series identity without claiming an empty recurrence rule', async () => {
   const api = { events: { list: async args => {

@@ -23,5 +23,3 @@ The Node MCP companion uses packages installed separately through npm:
 Transitive packages retain their own licenses in their installed distributions. The lockfile pins the companion's dependency tree. Run `npm ls --all` to inspect it and Gradle's `:app:dependencies` task for the Android tree.
 
 The dependency declarations and cached artifact license metadata were checked on November 4, 2026. The bundled notices include vinnie's complete `LICENSES` text and Jackson Core 2.22.4's license, notice, and bundled number-parser notices. Test-only JUnit, Hamcrest and Android test libraries are not included in the main application APK. Recheck the resolved dependency tree and update the bundled notices when versions change.
-
-Screenshots and any demo recording show the running Sunlith application with synthetic data. No third-party calendar screenshots, logos, personal schedules, or proprietary design assets are redistributed in the repository.

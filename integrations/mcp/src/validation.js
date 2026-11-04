@@ -97,7 +97,7 @@ export const schemas = {
     if (!['title', 'description', 'location', 'start', 'recurrence', 'reminderMinutes'].some(key => value[key] !== undefined)) ctx.addIssue({ code: 'custom', message: 'Provide at least one field to update.' });
   }),
   delete_event: z.object({ calendarId, eventId, etag, confirm: z.literal(true).describe('Only true after the user requests cancellation/deletion of this exact event.') }).strict(),
-  get_current_time: z.object({ timeZone: timeZone.default('America/Toronto') }).strict()
+  get_current_time: z.object({ timeZone: timeZone.default(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC') }).strict()
 };
 
 export function validateTiming(start, end, rules) {

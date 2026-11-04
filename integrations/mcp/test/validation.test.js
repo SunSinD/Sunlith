@@ -4,6 +4,10 @@ import { schemas, validateTiming } from '../src/validation.js';
 
 const start = { dateTime: '2026-11-05T17:00:00-05:00', timeZone: 'America/Toronto' };
 const end = { dateTime: '2026-11-05T18:00:00-05:00', timeZone: 'America/Toronto' };
+
+test('current-time requests default to the computer timezone', () => {
+  assert.equal(schemas.get_current_time.parse({}).timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone);
+});
 test('valid event requires bounded operation and RFC3339 times', () => {
   const parsed = schemas.create_event.safeParse({ calendarId: 'primary', operationId: 'dentist-20261105', title: 'Dentist', start, end });
   assert.equal(parsed.success, true);

@@ -1,6 +1,6 @@
 param(
     [string]$Serial = 'emulator-5554',
-    [string]$OutputDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) 'docs\images'),
+    [string]$OutputDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) '.toolchain\screenshots'),
     [switch]$SkipInstall
 )
 

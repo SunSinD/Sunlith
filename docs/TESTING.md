@@ -52,7 +52,7 @@ This case checks that denied notifications stay silent, grants permission throug
 
 This creates a dedicated **Sunlith demo** local calendar on the emulator, selects it, and adds clearly identified sample events relative to the emulator's current date. It never seeds events automatically in the production app. Repeated captures replace only that dedicated demo calendar.
 
-Images are saved to `docs/images/month-agenda.png`, `docs/images/widget.png`, `docs/images/ai-intro.png`, and `docs/images/ai-setup.png`. The calendar and onboarding images show the running app. The widget image shows the real Android RemoteViews widget and collection service in an instrumentation-only AppWidgetHost, rather than a launcher screenshot. The widget test also checks that tapping an event opens its details and editor, and that its add button opens a new event editor. The test temporarily grants widget-binding access to the app and revokes it afterward.
+Images are saved to `.toolchain/screenshots/month-agenda.png`, `.toolchain/screenshots/widget.png`, `.toolchain/screenshots/ai-intro.png`, and `.toolchain/screenshots/ai-setup.png`. The calendar and onboarding images show the running app. The widget image shows the real Android RemoteViews widget and collection service in an instrumentation-only AppWidgetHost, rather than a launcher screenshot. The widget test also checks that tapping an event opens its details and editor, and that its add button opens a new event editor. The test temporarily grants widget-binding access to the app and revokes it afterward.
 
 Use `-SkipInstall` if both debug APKs are already installed, or `-OutputDirectory <path>` to choose a different image folder.
 
@@ -72,7 +72,7 @@ For `0.0.1-alpha.1`, verified on November 4, 2026:
 | Selected API 30 emulator suite | 19 passed |
 | Selected API 36 emulator suite | 20 passed |
 | Separate API 36 notification permission recovery | 1 passed |
-| Desktop MCP tests | 26 passed |
+| Desktop MCP tests | 28 passed |
 | Desktop MCP syntax check | Passed |
 | Desktop MCP dependency audit | 0 vulnerabilities |
 | GitHub MCP checks on Windows, macOS, Linux (Node 22) | All passed |
@@ -82,7 +82,7 @@ The selected emulator suite comprises `CalendarRepositoryTest`, `ReminderNotific
 Tested debug APK SHA-256:
 
 ```text
-E37322BD0525DCB5673B7FA1DA6BE1D9D48567DA05B84A45F4F8741D42846565
+7033D0E872640A4A0D00F67B4134E77FE61C38C5D9360E116AF1A693DEA2F47F
 ```
 
-The screenshots in `docs/images` were captured from the running API 36 emulator with synthetic events. Widget screenshots use the actual Android widget in an instrumentation host. Google account sync, a real DigiCal migration, physical-device reminder delivery, and manufacturer battery behavior still require testing on the intended phone. These results do not establish universal AI client compatibility or a completed connection to an actual Google account.
+Local captures used the running API 36 emulator and synthetic events. Widget captures use the actual Android widget in an instrumentation host. Captures are excluded from the repository pending phone testing. Google account sync, migration from existing calendars, physical-device reminder delivery, and manufacturer battery behavior still require testing on the intended phone. These results do not establish universal AI client compatibility or a completed connection to an actual Google account.
