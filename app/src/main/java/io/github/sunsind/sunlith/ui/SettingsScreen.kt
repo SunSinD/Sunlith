@@ -347,7 +347,7 @@ private fun Messages(messages: List<String>) {
     if (messages.isEmpty()) return
     val p = LocalPalette.current
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        messages.take(8).forEach { Text("• $it", color = p.muted, style = MaterialTheme.typography.bodySmall) }
+        messages.take(8).forEach { Text(it, color = p.muted, style = MaterialTheme.typography.bodySmall) }
         if (messages.size > 8) Text(pluralStringResource(R.plurals.more_messages, messages.size - 8, messages.size - 8), color = p.muted, style = MaterialTheme.typography.bodySmall)
     }
 }
@@ -356,7 +356,8 @@ private fun Messages(messages: List<String>) {
 fun CalendarsScreen(vm: SunlithViewModel) {
     val p = LocalPalette.current
     BackHandler { vm.back() }
-    val groups = remember(vm.calendars) { vm.calendars.groupBy { it.account.ifBlank { "—" } }.toList() }
+    val otherCalendars = stringResource(R.string.unknown_account)
+    val groups = remember(vm.calendars, otherCalendars) { vm.calendars.groupBy { it.account.ifBlank { otherCalendars } }.toList() }
     Scaffold(containerColor = p.background, topBar = { ScreenTopBar(stringResource(R.string.title_calendars), onNavigate = vm::back) }) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(bottom = 48.dp)) {
             item { Text(stringResource(R.string.calendars_intro), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
@@ -380,7 +381,7 @@ fun CalendarsScreen(vm: SunlithViewModel) {
                                 if (cal.local) add(stringResource(R.string.calendar_on_device))
                                 if (!cal.visible) add(stringResource(R.string.calendar_hidden_system))
                             }
-                            if (notes.isNotEmpty()) Text(notes.joinToString(" · "), color = p.muted, style = MaterialTheme.typography.bodySmall)
+                            if (notes.isNotEmpty()) Text(notes.joinToString(", "), color = p.muted, style = MaterialTheme.typography.bodySmall)
                         }
                         Checkbox(checked = on, onCheckedChange = null, colors = checkColors())
                     }

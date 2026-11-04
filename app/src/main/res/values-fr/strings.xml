@@ -4,15 +4,15 @@
 
     <string name="today">Aujourd\'hui</string>
     <string name="all_day">Toute la journée</string>
-    <string name="all_day_day_of">Toute la journée · jour %1$d sur %2$d</string>
-    <string name="all_day_days">Toute la journée · %1$d jours</string>
+    <string name="all_day_day_of">Toute la journée, jour %1$d sur %2$d</string>
+    <string name="all_day_days">Toute la journée, %1$d jours</string>
     <string name="starts_at">Commence à %1$s</string>
     <string name="ends_at">Finit à %1$s</string>
     <string name="untitled">Événement sans titre</string>
     <string name="repeating">Événement répété</string>
     <string name="unknown_calendar">Agenda inconnu</string>
     <string name="no_events">Aucun événement</string>
-    <string name="no_events_tap">Aucun événement · touchez pour en ajouter</string>
+    <string name="no_events_tap">Aucun événement, touchez pour en ajouter</string>
     <string name="no_calendars_on_phone">Il n\'y a encore aucun agenda sur ce téléphone. Ajoutez un compte avec la synchronisation d\'agenda dans les paramètres Android, ou créez un agenda qui reste sur cet appareil.</string>
     <string name="no_calendars_selected">Aucun agenda n\'est affiché dans Sunlith pour l\'instant.</string>
 
@@ -82,7 +82,7 @@
     <string name="editor_timezone_note">Les heures sont affichées dans votre fuseau horaire. L\'événement garde son propre fuseau (%1$s).</string>
     <string name="editor_series_note">C\'est un événement répété. Vos modifications s\'appliquent à toute la série. Sunlith ne peut pas encore modifier une seule occurrence.</string>
     <string name="editor_choose_calendar">Choisir un agenda</string>
-    <string name="editor_calendar_locked">%1$s · un événement existant reste dans son agenda</string>
+    <string name="editor_calendar_locked">%1$s, un événement existant reste dans son agenda</string>
     <string name="editor_no_writable">Aucun agenda de ce téléphone n\'est modifiable.</string>
     <string name="editor_custom_kept">Règle personnalisée d\'une autre app, gardée telle quelle</string>
     <string name="editor_no_reminders">Aucun rappel</string>
@@ -205,10 +205,10 @@
     <string name="about_source">Code source</string>
 
     <string name="help_migration_title">Passer d\'une autre app d\'agenda</string>
-    <string name="help_migration_sub">DigiCal, Samsung Agenda, Google Agenda et autres</string>
-    <string name="help_migration_body">La plupart des apps d\'agenda, dont DigiCal, gardent les événements dans le stockage d\'agenda d\'Android ou dans un compte synchronisé comme Google. Sunlith lit ce même stockage, donc en général il n\'y a rien à importer.\n\n1. Ouvrez Agendas dans Sunlith et activez les mêmes agendas qu\'avant.\n2. Vérifiez quelques événements passés et futurs, un événement d\'une journée entière et un événement répété.\n3. S\'il manque un compte, ajoutez-le dans les paramètres Android et activez la synchronisation de l\'agenda.\n\nN\'utilisez l\'import .ics que pour les événements gardés dans le stockage propre d\'une autre app. Importer dans un agenda qui contient déjà ces événements crée des doublons.\n\nSi deux apps envoient des rappels pour le même événement, désactivez les notifications dans celle que vous n\'utilisez plus.</string>
-    <string name="help_ai_title">Connecter un assistant IA</string>
-    <string name="help_ai_sub">Recommandé · planifiez avec des demandes</string>
+    <string name="help_migration_sub">Utilisez les agendas déjà sur votre téléphone</string>
+    <string name="help_migration_body">Sunlith lit le stockage d’agenda partagé d’Android. Vos agendas existants peuvent donc apparaître sans import.\n\n1. Ouvrez Agendas dans Sunlith et sélectionnez ceux que vous utilisez.\n2. Vérifiez quelques événements avec une heure, sur une journée entière et répétés.\n3. Si un compte manque, ajoutez-le dans les paramètres Android et activez la synchronisation.\n\nUtilisez l’import .ics pour copier des événements vers un autre agenda. Sauvegardez-les avant et évitez les doublons.\n\nChoisissez une seule app pour les rappels si plusieurs apps vous avertissent pour les mêmes événements.</string>
+    <string name="help_ai_title">Connecter un assistant</string>
+    <string name="help_ai_sub">Recommandé, planifiez avec des demandes</string>
 
     <string name="export_title">Agendas à exporter</string>
     <string name="import_title">Importer des événements</string>
@@ -287,22 +287,23 @@
     <string name="details_unsupported">Cet événement ne peut pas être modifié ici. Ouvrez-le dans votre app d’agenda habituelle.</string>
     <string name="msg_export_skipped">Certains événements non pris en charge ont été ignorés. Vérifiez cette sauvegarde avant de vous y fier.</string>
     <string name="notification_time_range">%1$s – %2$s</string>
-    <string name="notification_location_separator">%1$s · %2$s</string>
-    <string name="local_calendar_name">Sunlith · Sur cet appareil</string>
-    <string name="ai_intro_title">Votre agenda, connecté à l’IA</string>
+    <string name="notification_location_separator">%1$s, %2$s</string>
+    <string name="local_calendar_name">Sunlith, Sur cet appareil</string>
+    <string name="ai_intro_title">Votre agenda, plus simple à gérer</string>
     <string name="ai_intro_lead">Passez moins de temps à saisir des événements. Dites à votre assistant ce qui est prévu et laissez-le gérer l’agenda.</string>
     <string name="ai_intro_prompt">« Dentiste demain à 17 h. » Ajoutez, trouvez et déplacez des événements avec une demande.</string>
     <string name="ai_intro_phone">Vos événements, votre widget et vos rappels restent ensemble sur votre téléphone.</string>
-    <string name="ai_intro_choice">Utilisez votre propre assistant. Sunlith ne demande aucun abonnement à une IA.</string>
-    <string name="ai_intro_recommended">Recommandé : connectez un assistant sur votre ordinateur avec T3 Code ou un client IA compatible.</string>
-    <string name="action_set_up_ai">Configurer l’IA</string>
-    <string name="action_without_ai">Continuer sans IA</string>
+    <string name="ai_intro_choice">Utilisez votre propre assistant. Sunlith ne demande aucun abonnement.</string>
+    <string name="ai_intro_recommended">Recommandé : connectez un assistant sur votre ordinateur pour gérer les événements avec des demandes.</string>
+    <string name="action_set_up_ai">Connecter un assistant</string>
+    <string name="action_without_ai">Utiliser seulement l’agenda</string>
     <string name="ai_setup_title">Connecter votre assistant</string>
-    <string name="ai_setup_lead">Choisissez l’assistant utilisé sur votre ordinateur. T3 Code permet aussi de lui envoyer des demandes depuis votre téléphone.</string>
+    <string name="ai_setup_lead">Choisissez l’assistant utilisé sur votre ordinateur, puis suivez son guide.</string>
     <string name="ai_setup_assistant">Votre assistant</string>
     <string name="ai_setup_steps">1. Suivez le guide sur votre ordinateur.\n2. Autorisez un agenda Google synchronisé avec ce téléphone.\n3. Sélectionnez le même agenda dans Sunlith, puis demandez à votre assistant d’ajouter un événement.</string>
-    <string name="ai_setup_support">Voici les fournisseurs proposés par T3 Code. La connexion varie : chaque guide explique la configuration disponible et ses limites. Choisir un nom ne connecte aucun compte.</string>
+    <string name="ai_setup_support">Chaque guide explique la configuration disponible et ses limites. Choisir un nom ne connecte aucun compte.</string>
+    <string name="unknown_account">Autres agendas</string>
     <string name="action_open_setup">Ouvrir le guide %s</string>
     <string name="action_continue_calendar">Continuer vers l’agenda</string>
-    <string name="ai_setup_resume">Retrouvez cette page dans Paramètres → Connecter un assistant IA. L’app du téléphone ne vérifie pas la configuration.</string>
+    <string name="ai_setup_resume">Retrouvez cette page dans Paramètres > Connecter un assistant. L’app du téléphone ne vérifie pas la configuration.</string>
 </resources>

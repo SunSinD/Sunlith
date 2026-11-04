@@ -110,4 +110,18 @@ export async function deleteEvent(api, input) {
     throw error;
   }
 }
-export function currentTime(timeZone) { const now = new Date(); return { timeZone, local: new Intl.DateTimeFormat('sv-SE', { dateStyle: 'full', timeStyle: 'long', hour12: false, timeZone }).format(now), utc: now.toISOString() }; }
+export function currentTime(timeZone) {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit',
+    minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZoneName: 'longOffset'
+  }).formatToParts(now);
+  const part = name => parts.find(value => value.type === name).value;
+  const offset = part('timeZoneName').replace('GMT', '') || 'Z';
+  const localIso = `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}${now.toISOString().slice(19, 23)}${offset}`;
+  return {
+    timeZone, localIso,
+    local: new Intl.DateTimeFormat('en', { dateStyle: 'full', timeStyle: 'long', hour12: false, timeZone }).format(now),
+    weekday: new Intl.DateTimeFormat('en', { weekday: 'long', timeZone }).format(now), utc: now.toISOString()
+  };
+}

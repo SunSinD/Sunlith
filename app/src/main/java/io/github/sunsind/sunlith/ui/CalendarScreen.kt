@@ -395,7 +395,7 @@ private fun EmptyRange(row: AgendaRow.Empty, f: Formats, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, color = p.faint, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
-        Text("  ·  " + stringResource(R.string.no_events), color = p.faint, style = MaterialTheme.typography.bodyMedium)
+        Text("  " + stringResource(R.string.no_events), color = p.faint, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
