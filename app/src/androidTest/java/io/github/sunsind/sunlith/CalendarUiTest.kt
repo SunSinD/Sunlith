@@ -10,6 +10,7 @@ import android.graphics.Color
 import android.os.Build
 import android.os.LocaleList
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
@@ -154,18 +155,21 @@ class CalendarUiTest {
     fun appearanceSettingChangesRenderedUiAndPersists() {
         node(By.desc(text(R.string.action_more))).click()
         node(By.text(text(R.string.title_settings))).click()
-        node(By.text(text(R.string.theme_light))).click()
+        node(By.text(text(R.string.beta_settings_appearance))).click()
+        node(By.text(text(R.string.beta_dark_theme))).click()
         device.waitForIdle()
         assertEquals("light", settings.themeMode)
-        val light = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
-        try { assertTrue("Light appearance must render a light background.", Color.red(light.getPixel(light.width - 5, light.height / 2)) > 220) }
-        finally { light.recycle() }
-        node(By.text(text(R.string.theme_dark))).click()
+        assertBackground(dark = false)
+        node(By.text(text(R.string.beta_dark_theme))).click()
         device.waitForIdle()
         assertEquals("dark", settings.themeMode)
-        val dark = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
-        try { assertTrue("Dark appearance must render a dark background.", Color.red(dark.getPixel(dark.width - 5, dark.height / 2)) < 60) }
-        finally { dark.recycle() }
+        assertBackground(dark = true)
+        node(By.text(text(R.string.beta_follow_system))).click()
+        device.waitForIdle()
+        assertEquals("system", settings.themeMode)
+        assertTrue("A manual dark-theme toggle must only appear when following the system is off.", device.wait(Until.gone(By.text(text(R.string.beta_dark_theme))), 5_000))
+        val systemDark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        assertBackground(dark = systemDark)
     }
 
     @Test
@@ -179,8 +183,9 @@ class CalendarUiTest {
         node(By.desc(french.getString(R.string.action_close))).click()
         node(By.desc(french.getString(R.string.action_more))).click()
         node(By.text(french.getString(R.string.title_settings))).click()
-        node(By.text(french.getString(R.string.theme_dark)))
-        node(By.text(french.getString(R.string.theme_light)))
+        node(By.text(french.getString(R.string.beta_settings_appearance))).click()
+        node(By.text(french.getString(R.string.beta_follow_system)))
+        node(By.text(french.getString(R.string.beta_dark_theme)))
     }
 
     @Test
@@ -230,4 +235,19 @@ class CalendarUiTest {
     }
 
     private fun firstEditorField(): UiObject2 = node(By.pkg(context.packageName).clazz("android.widget.EditText"))
+
+    private fun assertBackground(dark: Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + 5_000
+        var last = -1
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+            try { last = Color.red(screenshot.getPixel(screenshot.width - 5, screenshot.height / 2)) }
+            finally { screenshot.recycle() }
+            if (if (dark) last < 60 else last > 220) return
+            SystemClock.sleep(100)
+        }
+        device.takeScreenshot(File(context.getExternalFilesDir(null), "theme-failure.png"))
+        device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "theme-failure.xml"))
+        assertTrue("Expected ${if (dark) "dark" else "light"} rendered background; sampled red=$last", if (dark) last < 60 else last > 220)
+    }
 }

@@ -1,13 +1,25 @@
 # Versioning
 
-The first public test build is **v0.0.1-alpha.1**. The Android display version and MCP companion version are `0.0.1-alpha.1`; the initial Android `versionCode` is `1`.
+The current testing version is **v0.1.0-beta.1**. The Android display version and MCP companion version are `0.1.0-beta.1`; Android's `versionCode` is `2`.
 
-[Semantic Versioning](https://semver.org/) uses three numeric components, `MAJOR.MINOR.PATCH`, with a hyphenated prerelease suffix. Major zero denotes initial development. `alpha.1` makes the first testing stage explicit; four numeric components and `~` are unnecessary. The `v` prefix is a Git tag convention, not part of the semantic version itself.
+[Semantic Versioning](https://semver.org/) uses `MAJOR.MINOR.PATCH`, optionally followed by a testing suffix such as `-beta.1`. Major zero means initial development. The `v` prefix belongs to the Git tag, not the application version. This beta still needs physical-device and real-account testing; its label does not promise a bug-free or stable product.
 
-An alpha is earlier than a beta. This build still needs real-phone and account testing, so alpha is appropriate. Later iterations can be `0.0.1-alpha.2`, then a beta when the feature set and device behavior are more settled. Increase Android's integer versionCode for every distributed update, regardless of the visible version label.
+Increase Android's integer `versionCode` for every distributed update. Use a new version and tag when publishing changed binaries. Published artifacts should otherwise remain immutable so testers can identify exactly what they installed. A newer APK signed with the same key can update the previous test build while preserving its app data; an APK signed with a different key cannot update it in place.
 
-Published release assets and tags must not be silently replaced with changed code. Make a new prerelease for fixes so testers can identify exactly what they installed.
+## GitHub release listing
 
-Upload the APK, companion ZIP, and checksums before publishing a release. The Update download links workflow then updates the README's app, companion, and release-note links to the most recently published release, including alphas and betas. It can also be run manually from Actions. Keep the three README download-link labels intact so the workflow can find them. Check that it succeeds after publishing, and update version-specific setup links and alpha-limit wording when needed. GitHub's releases/latest shortcut excludes prereleases, so the README uses the actual published asset URLs.
+GitHub does not allow a prerelease to be marked Latest. To make the current download easy to find, `v0.1.0-beta.1` is published as a normal GitHub release marked Latest, with **beta** prominent in its version, title, and notes. This listing metadata does not make the app stable.
+
+Upload and verify the APK, companion ZIP, and checksums before publishing. Remove the superseded test release and tag only after the beta has been verified and published; do not rewrite Git history. Keep the new version's tag and assets intact after publication.
+
+The Update download links workflow updates the README's three links to the most recently published release by publication time, including releases marked as prereleases. It can also be run manually from Actions. Keep the standalone labels `Download the APK`, `Release notes`, and `Download the computer companion` intact so the workflow can find them. Check the workflow after publishing. Setup guides link to the latest release page.
+
+## Package a tested build
+
+From the repository root, after the Android and companion checks pass, run `python tools/package-release.py` with Python 3. It reads the version from the companion package and checks it matches Android. It copies the built `app-debug.apk` to `dist/Sunlith-v<version>.apk`, builds the companion ZIP, and writes `dist/SHA256SUMS.txt`. The ZIP contains START-HERE.md, companion source and tests, package lockfile, setup documentation, license and notices. Credentials, dependencies and private screenshots are excluded. The script verifies archive source equality and local Markdown links.
+
+Before uploading, verify the APK signing certificate matches the previous published APK, install it as an update, and check the packaged files match the tested build. Publish only after CI passes for the tagged commit. Download each uploaded asset and compare its SHA-256 with the checksum file. On Windows use `Get-FileHash <file> -Algorithm SHA256`; on macOS use `shasum -a 256 <file>`; on Linux use `sha256sum <file>`.
+
+## Name
 
 Sunlith was selected after checking GitHub repository search and Google Play app-name search. No exact app-name match was found in those checked sources. This is a limited naming check, not a guarantee that the word has never been used anywhere.

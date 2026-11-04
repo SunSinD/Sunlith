@@ -1,5 +1,6 @@
 package io.github.sunsind.sunlith.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +31,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -106,6 +111,32 @@ fun InfoCard(text: String, action: String? = null, onAction: () -> Unit = {}) {
         if (action != null) {
             TextButton(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
         }
+    }
+}
+
+private val SunGold = Color(0xFFF2B33D)
+
+// Same geometry as the launcher icon (drawable/ic_sunlith), drawn on a 56-unit square starting at (26, 26).
+private val SunRays = listOf(
+    Offset(54f, 43f) to Offset(54f, 37f),
+    Offset(63.5f, 45.55f) to Offset(66.5f, 40.35f),
+    Offset(44.5f, 45.55f) to Offset(41.5f, 40.35f),
+    Offset(70.45f, 52.5f) to Offset(75.65f, 49.5f),
+    Offset(37.55f, 52.5f) to Offset(32.35f, 49.5f),
+)
+
+/** The Sunlith mark: a sun rising over the horizon. Decorative, so it has no content description. */
+@Composable
+fun SunMark(modifier: Modifier = Modifier) {
+    val ink = LocalPalette.current.ink
+    Canvas(modifier.size(56.dp)) {
+        val unit = size.minDimension / 56f
+        fun at(point: Offset) = Offset((point.x - 26f) * unit, (point.y - 26f) * unit)
+        val stroke = 4f * unit
+        drawArc(SunGold, 180f, 180f, useCenter = true, topLeft = at(Offset(40f, 48f)), size = Size(28f * unit, 28f * unit))
+        SunRays.forEach { (from, to) -> drawLine(SunGold, at(from), at(to), stroke, StrokeCap.Round) }
+        drawLine(ink, at(Offset(28f, 62f)), at(Offset(80f, 62f)), stroke, StrokeCap.Round)
+        drawLine(ink.copy(alpha = 0.45f), at(Offset(40f, 71f)), at(Offset(68f, 71f)), stroke, StrokeCap.Round)
     }
 }
 

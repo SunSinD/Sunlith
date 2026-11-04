@@ -92,8 +92,15 @@ class WidgetSmokeTest {
                 device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "widget-failure.xml"))
             }
             assertTrue("Tapping a widget event must open that event's editable details.", openedDetails)
-            requireNotNull(device.findObject(edit)).click()
-            assertTrue("The widget event must open the correct saved event in the editor.", device.wait(Until.hasObject(By.pkg(context.packageName).clazz("android.widget.EditText").text("Driving class")), 10_000))
+            device.waitForIdle()
+            instrumentation.uiAutomation.serviceInfo = instrumentation.uiAutomation.serviceInfo
+            requireNotNull(device.wait(Until.findObject(edit), 10_000)).click()
+            val openedEditor = device.wait(Until.hasObject(By.pkg(context.packageName).clazz("android.widget.EditText").text("Driving class")), 10_000)
+            if (!openedEditor) {
+                device.takeScreenshot(File(context.getExternalFilesDir(null), "widget-failure.png"))
+                device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "widget-failure.xml"))
+            }
+            assertTrue("The widget event must open the correct saved event in the editor.", openedEditor)
             requireNotNull(device.findObject(By.pkg(context.packageName).desc(context.getString(R.string.action_close)))).click()
             requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).desc(context.getString(R.string.action_back))), 10_000)).click()
             device.waitForIdle()

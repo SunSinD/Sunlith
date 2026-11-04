@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -42,8 +43,12 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -56,6 +61,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -87,7 +93,9 @@ fun Context.openAppSettings() {
 fun SettingsScreen(vm: SunlithViewModel) {
     val p = LocalPalette.current
     val context = LocalContext.current
-    BackHandler { vm.back() }
+    var page by rememberSaveable { mutableStateOf("root") }
+    val back = { if (page == "root") vm.back() else page = "root" }
+    BackHandler(onBack = back)
     var help by rememberSaveable { mutableStateOf<Int?>(null) }
     var exportChooser by rememberSaveable { mutableStateOf(false) }
     var exportIds by rememberSaveable { mutableStateOf<Set<Long>>(emptySet()) }
@@ -104,71 +112,110 @@ fun SettingsScreen(vm: SunlithViewModel) {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
     }
 
-    Scaffold(containerColor = p.background, topBar = { ScreenTopBar(stringResource(R.string.title_settings), onNavigate = vm::back) }) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 32.dp)) {
-            SectionTitle(stringResource(R.string.help_ai_title))
-            ClickRow(stringResource(R.string.ai_setup_title), stringResource(R.string.help_ai_sub)) { vm.open(Screen.AiSetup) }
-            SectionTitle(stringResource(R.string.settings_appearance))
-            listOf("dark" to R.string.theme_dark, "light" to R.string.theme_light, "system" to R.string.theme_system).forEach { (mode, label) ->
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 52.dp).selectable(vm.themeMode == mode, role = Role.RadioButton) { vm.setTheme(mode) }.padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(stringResource(label), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    RadioButton(selected = vm.themeMode == mode, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = p.accent, unselectedColor = p.faint))
+    val title = when (page) {
+        "appearance" -> R.string.beta_settings_appearance
+        "calendar" -> R.string.beta_settings_calendar
+        "widget" -> R.string.beta_settings_widget
+        "reminders" -> R.string.beta_settings_reminders
+        "transfer" -> R.string.beta_settings_transfer
+        "about" -> R.string.beta_settings_about
+        else -> R.string.title_settings
+    }
+    Scaffold(containerColor = p.background, topBar = { ScreenTopBar(stringResource(title), onNavigate = back) }) { pad ->
+        key(page) {
+            Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 32.dp)) {
+                when (page) {
+                    "root" -> {
+                        listOf(
+                            "appearance" to R.string.beta_settings_appearance,
+                            "calendar" to R.string.beta_settings_calendar,
+                            "widget" to R.string.beta_settings_widget,
+                            "reminders" to R.string.beta_settings_reminders,
+                            "transfer" to R.string.beta_settings_transfer,
+                        ).forEach { (target, label) ->
+                            ClickRow(stringResource(label), null) { page = target }
+                        }
+                        HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                        ClickRow(stringResource(R.string.ai_setup_title), null) { vm.open(Screen.AiSetup) }
+                        ClickRow(stringResource(R.string.beta_settings_about), null) { page = "about" }
+                    }
+                    "appearance" -> {
+                        ToggleRow(stringResource(R.string.beta_follow_system), null, vm.themeMode == "system") { follow ->
+                            vm.setTheme(if (follow) "system" else if (p.dark) "dark" else "light")
+                        }
+                        if (vm.themeMode != "system") {
+                            ToggleRow(stringResource(R.string.beta_dark_theme), null, vm.themeMode == "dark") { vm.setTheme(if (it) "dark" else "light") }
+                        }
+                        ToggleRow(stringResource(R.string.beta_navigation_animation), null, vm.navigationAnimation, vm::changeNavigationAnimation)
+                    }
+                    "calendar" -> {
+                        ClickRow(stringResource(R.string.settings_choose_calendars), pluralStringResource(R.plurals.calendars_shown, vm.activeIds.size, vm.activeIds.size)) { vm.open(Screen.Calendars) }
+                        if (!vm.hasSunlithCalendar) ClickRow(stringResource(R.string.action_create_local), null) { vm.createLocalCalendar() }
+                        ToggleRow(stringResource(R.string.settings_monday), null, vm.weekStartsMonday, vm::setMondayFirst)
+                        ToggleRow(stringResource(R.string.beta_swipe_navigation), null, vm.swipeNavigation, vm::changeSwipeNavigation)
+                        SectionTitle(stringResource(R.string.beta_start_view))
+                        listOf("Month" to R.string.view_month, "Week" to R.string.view_week, "Day" to R.string.view_day, "last" to R.string.beta_last_view).forEach { (value, label) ->
+                            ChoiceRow(stringResource(label), vm.startView == value) { vm.changeStartView(value) }
+                        }
+                        SectionTitle(stringResource(R.string.beta_agenda_display))
+                        listOf("all" to R.string.beta_all_days, "compact" to R.string.beta_compact_days, "events" to R.string.beta_event_days).forEach { (value, label) ->
+                            ChoiceRow(stringResource(label), vm.agendaDisplay == value) { vm.changeAgendaDisplay(value) }
+                        }
+                    }
+                    "widget" -> {
+                        SectionTitle(stringResource(R.string.beta_widget_days))
+                        var days by remember(vm.widgetDays) { mutableStateOf(vm.widgetDays.toFloat()) }
+                        val daysValue = pluralStringResource(R.plurals.beta_widget_days_value, Math.round(days), Math.round(days))
+                        Text(daysValue, Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyLarge)
+                        val daysLabel = stringResource(R.string.beta_widget_days)
+                        Slider(
+                            value = days, onValueChange = { days = Math.round(it).toFloat() },
+                            onValueChangeFinished = { vm.changeWidgetDays(Math.round(days)) },
+                            valueRange = 1f..31f, steps = 29,
+                            modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp).semantics { contentDescription = daysLabel; stateDescription = daysValue },
+                            colors = sliderColors(),
+                        )
+                        ToggleRow(stringResource(R.string.beta_widget_empty_days), null, vm.widgetShowEmptyDays, vm::changeWidgetShowEmptyDays)
+                        ToggleRow(stringResource(R.string.beta_widget_calendar_name), null, vm.widgetShowCalendarName, vm::changeWidgetShowCalendarName)
+                        SectionTitle(stringResource(R.string.settings_widget_opacity))
+                        Text("${vm.widgetOpacity}%", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyLarge)
+                        val opacityLabel = stringResource(R.string.settings_widget_opacity)
+                        Slider(
+                            value = vm.widgetOpacity.toFloat(), onValueChange = { vm.previewOpacity(Math.round(it)) },
+                            onValueChangeFinished = vm::commitOpacity, valueRange = 0f..100f, steps = 19,
+                            modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp).semantics { contentDescription = opacityLabel; stateDescription = "${vm.widgetOpacity}%" },
+                            colors = sliderColors(),
+                        )
+                    }
+                    "reminders" -> {
+                        ToggleRow(
+                            stringResource(R.string.settings_reminders_toggle),
+                            if (vm.remindersEnabled && !vm.notificationsGranted) stringResource(R.string.settings_reminders_blocked) else null,
+                            vm.remindersEnabled && vm.notificationsGranted,
+                        ) { on ->
+                            if (!on) vm.setReminders(false)
+                            else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else vm.setReminders(true)
+                        }
+                        ClickRow(stringResource(R.string.beta_notification_settings), null) { context.openAppSettings() }
+                    }
+                    "transfer" -> {
+                        ClickRow(stringResource(R.string.settings_import), null) {
+                            try { importLauncher.launch(IcsTypes) } catch (_: ActivityNotFoundException) { vm.message(context.getString(R.string.msg_no_file_picker)) }
+                        }
+                        ClickRow(stringResource(R.string.settings_export), if (vm.exporting) stringResource(R.string.settings_exporting) else null) {
+                            exportIds = vm.activeIds
+                            exportChooser = true
+                        }
+                        ClickRow(stringResource(R.string.help_migration_title), null) { help = R.string.help_migration_title }
+                    }
+                    "about" -> {
+                        ClickRow(stringResource(R.string.about_version, version), null, onClick = null)
+                        ClickRow(stringResource(R.string.about_source), SOURCE_URL.removePrefix("https://")) { context.openUrl(SOURCE_URL, vm) }
+                    }
                 }
             }
-            ToggleRow(stringResource(R.string.settings_monday), null, vm.weekStartsMonday) { vm.setMondayFirst(it) }
-
-            SectionTitle(stringResource(R.string.title_calendars))
-            ClickRow(stringResource(R.string.settings_choose_calendars), pluralStringResource(R.plurals.calendars_shown, vm.activeIds.size, vm.activeIds.size)) { vm.open(Screen.Calendars) }
-            if (!vm.hasSunlithCalendar) {
-                ClickRow(stringResource(R.string.action_create_local), stringResource(R.string.settings_local_sub)) { vm.createLocalCalendar() }
-            }
-
-            SectionTitle(stringResource(R.string.settings_reminders))
-            ToggleRow(
-                stringResource(R.string.settings_reminders_toggle),
-                stringResource(if (vm.remindersEnabled && !vm.notificationsGranted) R.string.settings_reminders_blocked else R.string.settings_reminders_sub),
-                vm.remindersEnabled && vm.notificationsGranted,
-            ) { on ->
-                if (!on) vm.setReminders(false)
-                else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else vm.setReminders(true)
-            }
-
-            SectionTitle(stringResource(R.string.settings_widget))
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.settings_widget_opacity), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    Text("${vm.widgetOpacity}%", color = p.muted, style = MaterialTheme.typography.bodyMedium)
-                }
-                val opacityLabel = stringResource(R.string.settings_widget_opacity)
-                Slider(
-                    value = vm.widgetOpacity.toFloat(), onValueChange = { vm.previewOpacity(Math.round(it)) },
-                    onValueChangeFinished = vm::commitOpacity, valueRange = 0f..100f,
-                    modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = opacityLabel },
-                    colors = SliderDefaults.colors(thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.raised),
-                )
-                Text(stringResource(R.string.settings_widget_sub), color = p.muted, style = MaterialTheme.typography.bodySmall)
-            }
-
-            SectionTitle(stringResource(R.string.settings_transfer))
-            ClickRow(stringResource(R.string.settings_import), stringResource(R.string.settings_import_sub)) {
-                try { importLauncher.launch(IcsTypes) } catch (_: ActivityNotFoundException) { vm.message(context.getString(R.string.msg_no_file_picker)) }
-            }
-            ClickRow(stringResource(R.string.settings_export), if (vm.exporting) stringResource(R.string.settings_exporting) else stringResource(R.string.settings_export_sub)) {
-                exportIds = vm.activeIds
-                exportChooser = true
-            }
-
-            SectionTitle(stringResource(R.string.settings_help))
-            ClickRow(stringResource(R.string.help_migration_title), stringResource(R.string.help_migration_sub)) { help = R.string.help_migration_title }
-
-            SectionTitle(stringResource(R.string.settings_about))
-            ClickRow(stringResource(R.string.about_version, version), stringResource(R.string.about_sub), onClick = null)
-            ClickRow(stringResource(R.string.about_source), SOURCE_URL.removePrefix("https://")) { context.openUrl(SOURCE_URL, vm) }
         }
     }
 
@@ -195,13 +242,30 @@ fun SettingsScreen(vm: SunlithViewModel) {
 private fun ClickRow(title: String, subtitle: String?, onClick: (() -> Unit)?) {
     val p = LocalPalette.current
     val base = Modifier.fillMaxWidth().heightIn(min = 56.dp)
-    Column(
+    Row(
         (if (onClick != null) base.clickable(role = Role.Button, onClick = onClick) else base).padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, style = MaterialTheme.typography.bodyLarge, color = p.ink)
-        subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = p.muted) }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = p.ink)
+            subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = p.muted) }
+        }
+        if (onClick != null) Icon(Icons.Outlined.ChevronRight, null, Modifier.padding(start = 12.dp).size(20.dp), tint = p.muted)
     }
+}
+
+@Composable
+private fun ChoiceRow(title: String, selected: Boolean, onSelect: () -> Unit) {
+    val p = LocalPalette.current
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).selectable(selected, role = Role.RadioButton, onClick = onSelect).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        RadioButton(selected, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = p.accent, unselectedColor = p.faint))
+    }
+}
+
+@Composable
+private fun sliderColors() = LocalPalette.current.let { p ->
+    SliderDefaults.colors(thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.raised)
 }
 
 @Composable

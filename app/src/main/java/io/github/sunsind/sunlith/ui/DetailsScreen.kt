@@ -118,12 +118,12 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
                         SecondaryText(stringResource(R.string.all_day))
                     }
                     event.allDay -> {
-                        PrimaryText("${f.dayShort(span.first)} – ${f.dayShort(span.last)}")
+                        PrimaryText(f.range(f.dayShort(span.first), f.dayShort(span.last)))
                         SecondaryText(stringResource(R.string.all_day_days, span.length.toInt()))
                     }
                     !span.multiDay -> {
                         PrimaryText(f.dayLong(span.first))
-                        SecondaryText(if (event.endMillis > event.startMillis) "${f.time(event.startMillis)} – ${f.time(event.endMillis)}" else f.time(event.startMillis))
+                        SecondaryText(f.timeRange(event.startMillis, event.endMillis))
                     }
                     else -> {
                         val endDate = Instant.ofEpochMilli(event.endMillis).atZone(zone).toLocalDate()

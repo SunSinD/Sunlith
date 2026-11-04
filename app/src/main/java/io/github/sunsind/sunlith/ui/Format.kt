@@ -51,6 +51,10 @@ class Formats(private val context: Context, val locale: Locale) {
 
     private fun String.cap() = replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
 
+    fun range(start: String, end: String): String = context.getString(R.string.time_range, start, end)
+    fun timeRange(startMillis: Long, endMillis: Long): String =
+        if (endMillis > startMillis) range(time(startMillis), time(endMillis)) else time(startMillis)
+
     fun reminder(minutes: Int): String {
         val r = context.resources
         return when {
@@ -191,9 +195,7 @@ fun Context.timeLabel(event: CalendarEvent, day: LocalDate, zone: ZoneId, f: For
         return if (span.multiDay) getString(R.string.all_day_day_of, (ChronoUnit.DAYS.between(span.first, day) + 1).toInt(), span.length.toInt())
         else getString(R.string.all_day)
     }
-    if (!span.multiDay) {
-        return if (event.endMillis > event.startMillis) "${f.time(event.startMillis)} – ${f.time(event.endMillis)}" else f.time(event.startMillis)
-    }
+    if (!span.multiDay) return f.timeRange(event.startMillis, event.endMillis)
     return when (day) {
         span.first -> getString(R.string.starts_at, f.time(event.startMillis))
         span.last -> getString(R.string.ends_at, f.time(event.endMillis))

@@ -1,0 +1,8 @@
+<resources>
+    <string name="widget_your_week">Votre semaine</string>
+    <string name="widget_relative_date">%1$s, %2$s</string>
+    <string name="widget_empty_day_action">%1$s, aucun événement. Ajouter un événement.</string>
+    <string name="widget_calendar_access">Ouvrez Sunlith pour autoriser l’accès aux agendas.</string>
+    <string name="widget_choose_calendars">Ouvrez Sunlith pour choisir des agendas.</string>
+    <string name="widget_calendar_unavailable">Agenda indisponible. Ouvrez Sunlith pour réessayer.</string>
+</resources>

@@ -6,17 +6,19 @@ Keep your events, reminders, and home screen widget together. Add or change even
 
 ## Download
 
-[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.0.1-alpha.1/Sunlith-v0.0.1-alpha.1.apk)
+[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.1.0-beta.1/Sunlith-v0.1.0-beta.1.apk)
 
 On your phone, you only need the APK. The ZIP is the computer companion, and SHA256SUMS.txt is for verifying downloads.
 
-[Release notes](https://github.com/SunSinD/Sunlith/releases/tag/v0.0.1-alpha.1)
+[Release notes](https://github.com/SunSinD/Sunlith/releases/tag/v0.1.0-beta.1)
 
-Requires Android 8.0 or newer. This is an early alpha, signed with a development key. Local and CI builds can use a different key, so use the published APK for updates. Production signing is planned before a stable release.
+Requires Android 8.0 or newer. **v0.1.0-beta.1 is a beta testing build**, signed with a development key. Local and CI builds can use a different key, so use the published APK for updates. Installing a newer APK with the same signing key preserves app data. Production signing is planned before a stable release.
 
 ## Calendar
 
-Sunlith has month, week, and day agendas, search, calendar filters, dark and light themes, and English and French support. Events support all-day dates, repeat presets, notes, locations, and reminders. The resizable agenda widget shows upcoming events and opens event details or the editor.
+Sunlith has month, week, and day views, search, calendar filters, and English and French support. The month view pairs a fixed six-row grid with a scrollable agenda, including empty days by default. Swipe between dates or use Today to return. You can also group empty days or show only days with events.
+
+Events support all-day dates, repeat presets, notes, locations, and reminders. The app follows your system theme by default, with a manual override. Choose a startup view or reopen the last view. The resizable agenda widget shows 1-31 days, defaults to seven, and includes day dividers and empty days. Its opacity is adjustable in 5% steps; calendar names are hidden by default.
 
 It uses the calendars already stored on your phone. Your installed account adapters handle syncing. You can also create an on-device calendar and import or export .ics files through the system file picker. See [existing calendars and imports](docs/MIGRATION.md).
 
@@ -24,11 +26,13 @@ The APK has no advertising, analytics, Internet permission, or built-in chat. It
 
 ## Connect an assistant
 
-[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.0.1-alpha.1/Sunlith-companion-v0.0.1-alpha.1.zip)
+For phone-only use, ask a mobile assistant that can create files for a downloadable `.ics` event. Open or share it with Sunlith, choose a destination calendar, then confirm Import. Compatible Android assistants can also open an event draft for you to review and Save. These handoffs need no computer or Google account. See [phone assistant setup](docs/AI-INTEGRATION.md#on-your-phone-without-a-computer).
+
+[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.1.0-beta.1/Sunlith-companion-v0.1.0-beta.1.zip)
 
 The companion runs on Windows, macOS, and Linux with Node.js 22 or newer. It connects a supported assistant to a Google calendar that your phone syncs. Extract the archive and read START-HERE.md, then follow the [setup guide](docs/AI-INTEGRATION.md).
 
-Setup is recommended at first launch, and you can continue using the calendar without it. Sunlith has no subscription of its own. Your assistant may require its own account. This alpha includes a command-line companion, with no desktop calendar, browser setup wizard, or native desktop installer.
+First-run setup offers eight assistant guides: Codex, Claude, Cursor, Grok, OpenCode, Antigravity, Muse Code, and Pi. The setup guide also covers Gemini CLI. You can use the calendar without connecting an assistant. Sunlith has no subscription of its own; your assistant may require its own account. This beta includes a command-line companion, with no desktop calendar, browser setup wizard, native desktop installer, or HTTP MCP gateway.
 
 ## Build
 
@@ -48,9 +52,9 @@ npm run check
 npm test
 ```
 
-## Alpha limits
+## Beta limits
 
-Real Google authorization, account sync, and reminder delivery still need testing on your phone. Companion checks pass on Windows, macOS, and Linux, but individual assistants have not all been tested with a real calendar account.
+Real Google authorization, account sync, and reminder delivery still need testing on your phone. Individual assistants have not all been tested with a real calendar account. See [testing](docs/TESTING.md) for the recorded checks and their limits.
 
 The companion currently controls Google Calendar. Other accounts exposed through Android can appear in Sunlith, but this companion cannot control Outlook, CalDAV, or phone-only calendars.
 

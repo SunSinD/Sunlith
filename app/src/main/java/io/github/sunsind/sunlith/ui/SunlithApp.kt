@@ -10,6 +10,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,8 +19,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,18 +31,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
@@ -56,21 +52,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import io.github.sunsind.sunlith.R
 
 @Composable
 fun SunlithApp(vm: SunlithViewModel) {
+    val settingsState = rememberSaveableStateHolder()
+    val settingsOpen = Screen.Settings in vm.stack
+    LaunchedEffect(settingsOpen) {
+        if (!settingsOpen) settingsState.removeState("settings")
+    }
     SunlithTheme(vm.themeMode) {
         val p = LocalPalette.current
         val activity = LocalActivity.current as? ComponentActivity
@@ -98,16 +100,20 @@ fun SunlithApp(vm: SunlithViewModel) {
                 else -> {
                     BackHandler(enabled = vm.stack.isNotEmpty()) { vm.back() }
                     val covered = vm.stack.isNotEmpty()
+                    val motion = rememberMotion(vm.navigationAnimation)
                     CalendarScreen(vm, if (covered) Modifier.clearAndSetSemantics { } else Modifier)
                     AnimatedContent(
                         targetState = vm.stack.lastOrNull(),
-                        transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+                        transitionSpec = {
+                            if (motion) fadeIn(tween(160)) togetherWith fadeOut(tween(120))
+                            else EnterTransition.None togetherWith ExitTransition.None
+                        },
                         label = "screens",
                     ) { screen ->
                         when (screen) {
                             null -> Unit
                             Screen.Search -> SearchScreen(vm)
-                            Screen.Settings -> SettingsScreen(vm)
+                            Screen.Settings -> settingsState.SaveableStateProvider("settings") { SettingsScreen(vm) }
                             Screen.Calendars -> CalendarsScreen(vm)
                             Screen.AiSetup -> AiSetupScreen(vm, onBack = vm::back, onContinue = { vm.stack.clear() })
                             Screen.Editor -> EventEditorScreen(vm)
@@ -132,12 +138,6 @@ private fun AiWelcome(vm: SunlithViewModel) {
         OnboardingPage(
             title = stringResource(R.string.ai_intro_title),
             lead = stringResource(R.string.ai_intro_lead),
-            points = listOf(
-                Icons.Outlined.Sync to stringResource(R.string.ai_intro_prompt),
-                Icons.Outlined.CalendarMonth to stringResource(R.string.ai_intro_phone),
-                Icons.Outlined.Lock to stringResource(R.string.ai_intro_choice),
-            ),
-            note = stringResource(R.string.ai_intro_recommended),
             primary = stringResource(R.string.action_set_up_ai), onPrimary = { showSetup = true },
             secondary = stringResource(R.string.action_without_ai), onSecondary = vm::finishAiIntro,
         )
@@ -146,7 +146,6 @@ private fun AiWelcome(vm: SunlithViewModel) {
 
 @Composable
 private fun Onboarding(vm: SunlithViewModel) {
-    val p = LocalPalette.current
     val activity = LocalActivity.current
     val context = LocalContext.current
     var denied by rememberSaveable { mutableStateOf(false) }
@@ -161,16 +160,10 @@ private fun Onboarding(vm: SunlithViewModel) {
     }
     OnboardingPage(
         title = stringResource(R.string.app_name),
-        lead = stringResource(R.string.onboarding_lead),
-        points = listOf(
-            Icons.Outlined.CalendarMonth to stringResource(R.string.onboarding_point_calendars),
-            Icons.Outlined.Sync to stringResource(R.string.onboarding_point_sync),
-            Icons.Outlined.Lock to stringResource(R.string.onboarding_point_private),
-        ),
-        note = when {
+        lead = when {
             permanentlyDenied -> stringResource(R.string.onboarding_denied_forever)
             denied -> stringResource(R.string.onboarding_denied)
-            else -> null
+            else -> stringResource(R.string.onboarding_lead)
         },
         primary = stringResource(if (permanentlyDenied) R.string.action_open_settings else R.string.action_allow_calendar),
         onPrimary = {
@@ -190,8 +183,6 @@ private fun NotificationStep(vm: SunlithViewModel) {
     OnboardingPage(
         title = stringResource(R.string.notify_title),
         lead = stringResource(R.string.notify_lead),
-        points = listOf(Icons.Outlined.Notifications to stringResource(R.string.notify_point)),
-        note = null,
         primary = stringResource(R.string.action_allow_notifications),
         onPrimary = { launcher.launch(Manifest.permission.POST_NOTIFICATIONS) },
         secondary = stringResource(R.string.action_not_now),
@@ -199,40 +190,42 @@ private fun NotificationStep(vm: SunlithViewModel) {
     )
 }
 
+/** One mark, one title, one short line, and the actions pinned at the bottom so they stay reachable at any text size. */
 @Composable
 private fun OnboardingPage(
-    title: String, lead: String, points: List<Pair<ImageVector, String>>, note: String?,
+    title: String, lead: String,
     primary: String, onPrimary: () -> Unit, secondary: String?, onSecondary: () -> Unit,
 ) {
     val p = LocalPalette.current
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 32.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Spacer(Modifier.height(24.dp))
-        Text(title, color = p.ink, style = MaterialTheme.typography.displaySmall, modifier = Modifier.semantics { heading() })
-        Spacer(Modifier.height(12.dp))
-        Text(lead, color = p.muted, style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(32.dp))
-        points.forEach { (icon, text) ->
-            Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.Top) {
-                Icon(icon, null, tint = p.muted, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(16.dp))
-                Text(text, color = p.ink, style = MaterialTheme.typography.bodyLarge)
+    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 28.dp, vertical = 24.dp)) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                SunMark(Modifier.size(72.dp))
+                Spacer(Modifier.height(28.dp))
+                Text(
+                    title, color = p.ink, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center,
+                    modifier = Modifier.widthIn(max = 480.dp).semantics { heading() },
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(lead, color = p.muted, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 480.dp))
             }
         }
-        if (note != null) {
-            Spacer(Modifier.height(16.dp))
-            Text(note, Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(10.dp)).padding(14.dp), color = p.ink, style = MaterialTheme.typography.bodyMedium)
-        }
-        Spacer(Modifier.height(32.dp))
-        Button(
-            onClick = onPrimary, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = p.accent, contentColor = p.onAccent),
-        ) { Text(primary, style = MaterialTheme.typography.labelLarge) }
-        if (secondary != null) {
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = onSecondary, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(secondary, color = p.muted) }
+        Spacer(Modifier.height(24.dp))
+        Column(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 480.dp).fillMaxWidth()) {
+            Button(
+                onClick = onPrimary, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = p.accent, contentColor = p.onAccent),
+            ) { Text(primary, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center) }
+            if (secondary != null) {
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onSecondary, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(secondary, color = p.muted, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
+                }
+            }
         }
     }
 }

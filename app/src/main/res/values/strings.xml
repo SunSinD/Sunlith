@@ -61,15 +61,11 @@
     <string name="action_allow_notifications">Allow notifications</string>
     <string name="action_not_now">Not now</string>
 
-    <string name="onboarding_lead">A clean calendar and agenda for the calendars already on your phone.</string>
-    <string name="onboarding_point_calendars">Shows your Google, Samsung, Outlook and other synced calendars through Android\'s calendar storage.</string>
-    <string name="onboarding_point_sync">Events you add or change sync through your accounts like any other calendar app.</string>
-    <string name="onboarding_point_private">Sunlith keeps no account of its own and does not upload your events.</string>
+    <string name="onboarding_lead">Use the calendars already on your phone.</string>
     <string name="onboarding_denied">Sunlith needs calendar access to read and save your events. You can allow it whenever you are ready.</string>
     <string name="onboarding_denied_forever">Calendar access is turned off for Sunlith. Open app settings, tap Permissions, then allow Calendar.</string>
     <string name="notify_title">Reminders</string>
-    <string name="notify_lead">Sunlith can show a notification when an event reminder is due.</string>
-    <string name="notify_point">You can change this later in Settings. If you skip it, Sunlith will not show reminder notifications.</string>
+    <string name="notify_lead">Get a notification when an event reminder is due.</string>
 
     <string name="editor_new">New event</string>
     <string name="editor_edit">Edit event</string>
@@ -267,24 +263,17 @@
     <string name="details_exceptions">Use your existing calendar app to edit this series with exceptions.</string>
     <string name="details_unsupported">This event cannot be safely edited here. Open it in your existing calendar app.</string>
     <string name="msg_export_skipped">Some unsupported events were skipped. Check this backup before relying on it.</string>
-    <string name="notification_time_range">%1$s – %2$s</string>
+    <string name="time_range">%1$s - %2$s</string>
+    <string name="notification_time_range">%1$s - %2$s</string>
     <string name="notification_location_separator">%1$s, %2$s</string>
     <string name="local_calendar_name">Sunlith (on this device)</string>
-    <string name="ai_intro_title">Your calendar, easier to manage</string>
-    <string name="ai_intro_lead">Spend less time entering events. Tell your assistant what you have planned, and let it handle the calendar.</string>
-    <string name="ai_intro_prompt">“Dentist tomorrow at 5.” Add, find, and reschedule events with a prompt.</string>
-    <string name="ai_intro_phone">Your events, widget, and reminders stay together on your phone.</string>
-    <string name="ai_intro_choice">Use your own assistant. Sunlith has no subscription of its own.</string>
-    <string name="ai_intro_recommended">Recommended: connect an assistant on your computer to manage events with prompts.</string>
-    <string name="action_set_up_ai">Connect an assistant</string>
+    <string name="ai_intro_title">Plan with your assistant</string>
+    <string name="ai_intro_lead">Add and change events with the assistant you already use.</string>
+    <string name="action_set_up_ai">Set up an assistant</string>
     <string name="action_without_ai">Use calendar only</string>
-    <string name="ai_setup_title">Connect your assistant</string>
-    <string name="ai_setup_lead">Choose the assistant you use on your computer, then follow its setup guide.</string>
-    <string name="ai_setup_assistant">Your assistant</string>
-    <string name="ai_setup_steps">1. Follow the setup guide on your computer.\n2. Authorize a Google calendar you sync to this phone.\n3. Select that same calendar in Sunlith, then ask your assistant to add an event.</string>
-    <string name="ai_setup_support">Each guide explains the supported setup and its limits. Selecting a name does not connect an account.</string>
+    <string name="ai_setup_title">Assistant guides</string>
+    <string name="ai_setup_support">Pick the one you use, then open its guide.</string>
     <string name="unknown_account">Other calendars</string>
     <string name="action_open_setup">Open %s setup guide</string>
     <string name="action_continue_calendar">Continue to calendar</string>
-    <string name="ai_setup_resume">Return here from Settings > Connect an assistant. Setup is not verified by the phone app.</string>
 </resources>

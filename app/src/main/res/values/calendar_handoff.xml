@@ -1,0 +1,9 @@
+<resources>
+    <string name="handoff_phone_guide">Use an assistant on your phone</string>
+    <string name="handoff_waiting">Calendar item waiting</string>
+    <string name="handoff_invalid_file">Open a calendar file shared by another app.</string>
+    <string name="handoff_invalid_event">This calendar item could not be opened.</string>
+    <string name="handoff_invalid_time">Include a valid start and end time.</string>
+    <string name="handoff_personal_events_only">Open repeating events and invitations as a calendar file.</string>
+    <string name="handoff_already_waiting">Finish or cancel the calendar item already waiting.</string>
+</resources>
