@@ -208,7 +208,7 @@
     <string name="help_migration_sub">Utilisez les agendas déjà sur votre téléphone</string>
     <string name="help_migration_body">Sunlith lit le stockage d’agenda partagé d’Android. Vos agendas existants peuvent donc apparaître sans import.\n\n1. Ouvrez Agendas dans Sunlith et sélectionnez ceux que vous utilisez.\n2. Vérifiez quelques événements avec une heure, sur une journée entière et répétés.\n3. Si un compte manque, ajoutez-le dans les paramètres Android et activez la synchronisation.\n\nUtilisez l’import .ics pour copier des événements vers un autre agenda. Sauvegardez-les avant et évitez les doublons.\n\nChoisissez une seule app pour les rappels si plusieurs apps vous avertissent pour les mêmes événements.</string>
     <string name="help_ai_title">Connecter un assistant</string>
-    <string name="help_ai_sub">Recommandé, planifiez avec des demandes</string>
+    <string name="help_ai_sub">Recommandé. Planifiez avec des demandes.</string>
 
     <string name="export_title">Agendas à exporter</string>
     <string name="import_title">Importer des événements</string>
@@ -288,7 +288,7 @@
     <string name="msg_export_skipped">Certains événements non pris en charge ont été ignorés. Vérifiez cette sauvegarde avant de vous y fier.</string>
     <string name="notification_time_range">%1$s – %2$s</string>
     <string name="notification_location_separator">%1$s, %2$s</string>
-    <string name="local_calendar_name">Sunlith, Sur cet appareil</string>
+    <string name="local_calendar_name">Sunlith (sur cet appareil)</string>
     <string name="ai_intro_title">Votre agenda, plus simple à gérer</string>
     <string name="ai_intro_lead">Passez moins de temps à saisir des événements. Dites à votre assistant ce qui est prévu et laissez-le gérer l’agenda.</string>
     <string name="ai_intro_prompt">« Dentiste demain à 17 h. » Ajoutez, trouvez et déplacez des événements avec une demande.</string>

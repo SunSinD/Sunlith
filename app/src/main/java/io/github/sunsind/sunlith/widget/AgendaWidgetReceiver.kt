@@ -16,7 +16,6 @@ import io.github.sunsind.sunlith.system.SettingsStore
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
-import java.util.Locale
 
 class AgendaWidgetReceiver : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
@@ -38,10 +37,12 @@ class AgendaWidgetReceiver : AppWidgetProvider() {
 
         private fun update(context: Context, manager: AppWidgetManager, ids: IntArray) {
             val today = LocalDate.now()
+            val locale = context.resources.configuration.locales[0]
+            val datePattern = android.text.format.DateFormat.getBestDateTimePattern(locale, "MMMMd")
             ids.forEach { id ->
                 val views = RemoteViews(context.packageName, R.layout.widget_agenda)
-                views.setTextViewText(R.id.widget_header, today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault()).uppercase(Locale.getDefault()))
-                views.setTextViewText(R.id.widget_date, today.format(DateTimeFormatter.ofPattern("d MMMM", Locale.getDefault())))
+                views.setTextViewText(R.id.widget_header, today.dayOfWeek.getDisplayName(TextStyle.FULL, locale).uppercase(locale))
+                views.setTextViewText(R.id.widget_date, today.format(DateTimeFormatter.ofPattern(datePattern, locale)))
                 views.setInt(R.id.widget_background, "setImageAlpha", SettingsStore(context).widgetOpacity * 255 / 100)
                 val service = Intent(context, AgendaWidgetService::class.java).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
                 service.data = android.net.Uri.parse(service.toUri(Intent.URI_INTENT_SCHEME))
