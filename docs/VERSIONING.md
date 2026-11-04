@@ -8,4 +8,6 @@ An alpha is earlier than a beta. This build still needs real-phone and account t
 
 Published release assets and tags must not be silently replaced with changed code. Make a new prerelease for fixes so testers can identify exactly what they installed.
 
+Upload the APK, companion ZIP, and checksums before publishing a release. The Update download links workflow then updates the README's app, companion, and release-note links to the most recently published release, including alphas and betas. It can also be run manually from Actions. Keep the three README download-link labels intact so the workflow can find them. Check that it succeeds after publishing, and update version-specific setup links and alpha-limit wording when needed. GitHub's releases/latest shortcut excludes prereleases, so the README uses the actual published asset URLs.
+
 Sunlith was selected after checking GitHub repository search and Google Play app-name search. No exact app-name match was found in those checked sources. This is a limited naming check, not a guarantee that the word has never been used anywhere.

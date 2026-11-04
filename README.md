@@ -6,7 +6,9 @@ Keep your events, reminders, and home screen widget together. Add or change even
 
 ## Download
 
-[Download the Android alpha](https://github.com/SunSinD/Sunlith/releases/download/v0.0.1-alpha.1/Sunlith-v0.0.1-alpha.1.apk)
+[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.0.1-alpha.1/Sunlith-v0.0.1-alpha.1.apk)
+
+On your phone, you only need the APK. The ZIP is the computer companion, and SHA256SUMS.txt is for verifying downloads.
 
 [Release notes](https://github.com/SunSinD/Sunlith/releases/tag/v0.0.1-alpha.1)
 
