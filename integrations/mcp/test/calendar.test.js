@@ -121,3 +121,19 @@ test('non-default or cancelled events cannot be updated, while deletion is idemp
   const deletedDuringRequest = { events: { get: async () => ({ data: { id: 'abc', etag: '"1"' } }), delete: async () => { throw Object.assign(new Error('gone'), { response: { status: 410 } }); } } };
   assert.equal((await deleteEvent(deletedDuringRequest, { calendarId: 'primary', eventId: 'abc', etag: '"1"' })).alreadyDeleted, true);
 });
+
+test('deletion never claims success for missing or inaccessible events', async () => {
+  for (const failingStep of ['get', 'delete']) {
+    const error = Object.assign(new Error('Not found or inaccessible'), { response: { status: 404 } });
+    let deletions = 0;
+    const api = { events: {
+      get: async () => {
+        if (failingStep === 'get') throw error;
+        return { data: { id: 'abc', etag: '"1"' } };
+      },
+      delete: async () => { deletions++; throw error; }
+    } };
+    await assert.rejects(deleteEvent(api, { calendarId: 'primary', eventId: 'abc', etag: '"1"' }), value => value === error);
+    assert.equal(deletions, failingStep === 'get' ? 0 : 1);
+  }
+});

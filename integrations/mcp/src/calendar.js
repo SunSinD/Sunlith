@@ -96,7 +96,7 @@ export async function deleteEvent(api, input) {
   try { current = await getEvent(api, input); }
   catch (error) {
     const status = Number(error?.response?.status ?? error?.code);
-    if (status === 404 || status === 410) return { deleted: true, alreadyDeleted: true, eventId: input.eventId };
+    if (status === 410) return { deleted: true, alreadyDeleted: true, eventId: input.eventId };
     throw error;
   }
   if (current.status === 'cancelled') return { deleted: true, alreadyDeleted: true, eventId: input.eventId };
@@ -106,7 +106,7 @@ export async function deleteEvent(api, input) {
   try { await api.events.delete({ calendarId: input.calendarId, eventId: input.eventId, sendUpdates: 'none', headers: { 'If-Match': input.etag } }); return { deleted: true, eventId: input.eventId }; }
   catch (error) {
     const status = Number(error?.response?.status ?? error?.code);
-    if (status === 404 || status === 410) return { deleted: true, alreadyDeleted: true, eventId: input.eventId };
+    if (status === 410) return { deleted: true, alreadyDeleted: true, eventId: input.eventId };
     throw error;
   }
 }

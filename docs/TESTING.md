@@ -72,7 +72,7 @@ For `0.0.1-alpha.1`, verified on November 4, 2026:
 | Selected API 30 emulator suite | 19 passed |
 | Selected API 36 emulator suite | 20 passed |
 | Separate API 36 notification permission recovery | 1 passed |
-| Desktop MCP tests | 28 passed |
+| Desktop MCP tests | 29 passed |
 | Desktop MCP syntax check | Passed |
 | Desktop MCP dependency audit | 0 vulnerabilities |
 | GitHub MCP checks on Windows, macOS, Linux (Node 22) | All passed |
