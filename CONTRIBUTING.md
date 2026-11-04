@@ -1,6 +1,6 @@
 # Contributing
 
-Keep changes focused on a fast, accessible Android calendar controlled through AI tools and MCP. The native calendar must remain usable before AI pairing is complete. Do not add advertising, analytics, an in-app AI chat, or a proprietary event store.
+Keep changes focused on a fast, accessible calendar with assistant control through MCP. The calendar must remain usable before setup is complete. Do not add advertising, analytics, an in-app chat, or a separate event database.
 
 Use JDK 17, Android SDK 36, and the checked-in Gradle wrapper. Run `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleDebug`. For provider, reminder, permission, or widget changes, also run the Android tests described in [TESTING](docs/TESTING.md).
 

@@ -82,7 +82,7 @@ The selected emulator suite comprises `CalendarRepositoryTest`, `ReminderNotific
 Tested debug APK SHA-256:
 
 ```text
-7033D0E872640A4A0D00F67B4134E77FE61C38C5D9360E116AF1A693DEA2F47F
+E7856F31BE65901A6EAA27232E9176B046B67565C44624B0B477A387B7E28292
 ```
 
 Local captures used the running API 36 emulator and synthetic events. Widget captures use the actual Android widget in an instrumentation host. Captures are excluded from the repository pending phone testing. Google account sync, migration from existing calendars, physical-device reminder delivery, and manufacturer battery behavior still require testing on the intended phone. These results do not establish universal AI client compatibility or a completed connection to an actual Google account.
