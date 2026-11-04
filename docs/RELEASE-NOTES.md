@@ -4,7 +4,11 @@ First public alpha of Sunlith, a clean calendar app.
 
 ## Install
 
+[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.0.1-alpha.1/Sunlith-v0.0.1-alpha.1.apk)
+
 Download Sunlith-v0.0.1-alpha.1.apk and open it on Android 8.0 or newer. Allow installation from that source if Android asks, then grant calendar access and select your calendars. Add the agenda widget through your home screen widget picker.
+
+On your phone, you only need the APK. The ZIP is for computers, and SHA256SUMS.txt is for verifying downloads.
 
 This alpha is debug-signed. Keep using the published APK for updates, since local and CI builds can have different signing keys. Production signing is planned before a stable release. Back up important calendars before testing imports or changes.
 
