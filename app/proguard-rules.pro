@@ -1,0 +1,3 @@
+-keep class biweekly.** { *; }
+-keep class com.github.mangstadt.** { *; }
+-dontwarn org.jsoup.**

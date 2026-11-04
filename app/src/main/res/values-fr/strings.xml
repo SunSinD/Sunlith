@@ -1,0 +1,308 @@
+<resources>
+    <string name="app_name">Sunlith</string>
+    <string name="widget_description">Vos prochains événements dans un agenda simple et redimensionnable.</string>
+
+    <string name="today">Aujourd\'hui</string>
+    <string name="all_day">Toute la journée</string>
+    <string name="all_day_day_of">Toute la journée · jour %1$d sur %2$d</string>
+    <string name="all_day_days">Toute la journée · %1$d jours</string>
+    <string name="starts_at">Commence à %1$s</string>
+    <string name="ends_at">Finit à %1$s</string>
+    <string name="untitled">Événement sans titre</string>
+    <string name="repeating">Événement répété</string>
+    <string name="unknown_calendar">Agenda inconnu</string>
+    <string name="no_events">Aucun événement</string>
+    <string name="no_events_tap">Aucun événement · touchez pour en ajouter</string>
+    <string name="no_calendars_on_phone">Il n\'y a encore aucun agenda sur ce téléphone. Ajoutez un compte avec la synchronisation d\'agenda dans les paramètres Android, ou créez un agenda qui reste sur cet appareil.</string>
+    <string name="no_calendars_selected">Aucun agenda n\'est affiché dans Sunlith pour l\'instant.</string>
+
+    <string name="view_month">Mois</string>
+    <string name="view_week">Semaine</string>
+    <string name="view_day">Jour</string>
+
+    <string name="title_calendars">Agendas</string>
+    <string name="title_settings">Paramètres</string>
+
+    <string name="action_back">Retour</string>
+    <string name="action_close">Fermer</string>
+    <string name="action_cancel">Annuler</string>
+    <string name="action_ok">OK</string>
+    <string name="action_done">Terminé</string>
+    <string name="action_save">Enregistrer</string>
+    <string name="action_edit">Modifier</string>
+    <string name="action_delete">Supprimer</string>
+    <string name="action_delete_event">Supprimer l\'événement</string>
+    <string name="action_delete_series">Supprimer toute la série</string>
+    <string name="action_edit_series">Modifier toute la série</string>
+    <string name="action_discard">Abandonner</string>
+    <string name="action_keep_editing">Continuer</string>
+    <string name="action_search">Rechercher</string>
+    <string name="action_clear">Effacer la recherche</string>
+    <string name="action_today">Aller à aujourd\'hui</string>
+    <string name="action_more">Plus d\'options</string>
+    <string name="action_new_event">Nouvel événement</string>
+    <string name="action_add_event">Ajouter un événement</string>
+    <string name="action_jump_to_date">Choisir une date</string>
+    <string name="action_prev_month">Mois précédent</string>
+    <string name="action_next_month">Mois suivant</string>
+    <string name="action_prev_week">Semaine précédente</string>
+    <string name="action_next_week">Semaine suivante</string>
+    <string name="action_prev_day">Jour précédent</string>
+    <string name="action_next_day">Jour suivant</string>
+    <string name="action_retry">Réessayer</string>
+    <string name="action_try_again">Redemander</string>
+    <string name="action_create_local">Créer un agenda sur l\'appareil</string>
+    <string name="action_choose_calendars">Choisir les agendas</string>
+    <string name="action_choose_file">Choisir le fichier</string>
+    <string name="action_import">Importer</string>
+    <string name="action_open_guide">Ouvrir le guide</string>
+    <string name="action_open_settings">Ouvrir les paramètres de l\'app</string>
+    <string name="action_allow_calendar">Autoriser l\'accès à l\'agenda</string>
+    <string name="action_allow_notifications">Autoriser les notifications</string>
+    <string name="action_not_now">Pas maintenant</string>
+
+    <string name="onboarding_lead">Un agenda simple et clair pour les calendriers déjà sur votre téléphone.</string>
+    <string name="onboarding_point_calendars">Affiche vos agendas Google, Samsung, Outlook et autres grâce au stockage d\'agenda d\'Android.</string>
+    <string name="onboarding_point_sync">Les événements que vous ajoutez ou modifiez se synchronisent avec vos comptes, comme dans n\'importe quelle app d\'agenda.</string>
+    <string name="onboarding_point_private">Sunlith n\'a pas de compte à lui et n\'envoie pas vos événements en ligne.</string>
+    <string name="onboarding_denied">Sunlith a besoin de l\'accès à l\'agenda pour lire et enregistrer vos événements. Vous pouvez l\'autoriser quand vous voulez.</string>
+    <string name="onboarding_denied_forever">L\'accès à l\'agenda est désactivé pour Sunlith. Ouvrez les paramètres de l\'app, touchez Autorisations, puis autorisez Agenda.</string>
+    <string name="notify_title">Rappels</string>
+    <string name="notify_lead">Sunlith peut afficher une notification quand le rappel d\'un événement arrive.</string>
+    <string name="notify_point">Vous pourrez changer ça plus tard dans les paramètres. Si vous passez cette étape, Sunlith n\'affichera pas de notifications de rappel.</string>
+
+    <string name="editor_new">Nouvel événement</string>
+    <string name="editor_edit">Modifier l\'événement</string>
+    <string name="editor_title_hint">Titre</string>
+    <string name="editor_starts">Début</string>
+    <string name="editor_ends">Fin</string>
+    <string name="editor_end_before_start">L\'événement doit finir après son début.</string>
+    <string name="editor_need_title">Ajoutez un titre pour enregistrer.</string>
+    <string name="editor_need_calendar">Choisissez un agenda modifiable pour enregistrer.</string>
+    <string name="editor_timezone_note">Les heures sont affichées dans votre fuseau horaire. L\'événement garde son propre fuseau (%1$s).</string>
+    <string name="editor_series_note">C\'est un événement répété. Vos modifications s\'appliquent à toute la série. Sunlith ne peut pas encore modifier une seule occurrence.</string>
+    <string name="editor_choose_calendar">Choisir un agenda</string>
+    <string name="editor_calendar_locked">%1$s · un événement existant reste dans son agenda</string>
+    <string name="editor_no_writable">Aucun agenda de ce téléphone n\'est modifiable.</string>
+    <string name="editor_custom_kept">Règle personnalisée d\'une autre app, gardée telle quelle</string>
+    <string name="editor_no_reminders">Aucun rappel</string>
+    <string name="editor_add_reminder">Ajouter un rappel</string>
+    <string name="editor_remove_reminder">Retirer le rappel : %1$s</string>
+    <string name="editor_reminders_off">Les notifications de rappel sont désactivées dans Sunlith, donc ces rappels ne vous avertiront pas depuis cette app.</string>
+    <string name="editor_location_hint">Lieu</string>
+    <string name="editor_notes_hint">Notes</string>
+    <string name="editor_discard_title">Abandonner les modifications ?</string>
+    <string name="editor_discard_body">Vos modifications à cet événement seront perdues.</string>
+
+    <string name="delete_event_title">Supprimer cet événement ?</string>
+    <string name="delete_event_body">Il sera retiré de son agenda et des appareils synchronisés.</string>
+    <string name="delete_series_title">Supprimer toute la série ?</string>
+    <string name="delete_series_body">C\'est un événement répété. Toutes les occurrences, passées et futures, seront supprimées. Sunlith ne peut pas encore supprimer une seule occurrence.</string>
+    <string name="edit_series_title">Modifier toute la série ?</string>
+    <string name="edit_series_body">C\'est un événement répété. Les modifications s\'appliquent à toutes les occurrences. L\'éditeur montre les dates du premier événement de la série. Sunlith ne peut pas encore modifier une seule occurrence.</string>
+
+    <string name="details_read_only">Cet agenda est en lecture seule, donc cet événement ne peut pas être modifié ici.</string>
+    <string name="details_timezone">Fuseau de l\'événement : %1$s</string>
+
+    <string name="reminder_at_start">Au début de l\'événement</string>
+    <plurals name="reminder_minutes">
+        <item quantity="one">%d minute avant</item>
+        <item quantity="many">%d minutes avant</item>
+        <item quantity="other">%d minutes avant</item>
+    </plurals>
+    <plurals name="reminder_hours">
+        <item quantity="one">%d heure avant</item>
+        <item quantity="many">%d heures avant</item>
+        <item quantity="other">%d heures avant</item>
+    </plurals>
+    <plurals name="reminder_days">
+        <item quantity="one">%d jour avant</item>
+        <item quantity="many">%d jours avant</item>
+        <item quantity="other">%d jours avant</item>
+    </plurals>
+    <plurals name="reminder_weeks">
+        <item quantity="one">%d semaine avant</item>
+        <item quantity="many">%d semaines avant</item>
+        <item quantity="other">%d semaines avant</item>
+    </plurals>
+
+    <string name="repeat_none">Ne se répète pas</string>
+    <string name="repeat_daily">Tous les jours</string>
+    <string name="repeat_weekdays">Tous les jours de semaine (lun. à ven.)</string>
+    <string name="repeat_weekly">Toutes les semaines</string>
+    <string name="repeat_monthly">Tous les mois</string>
+    <string name="repeat_yearly">Tous les ans</string>
+    <string name="repeat_keep_custom">Garder : %1$s</string>
+    <string name="repeat_custom_raw">Règle personnalisée : %1$s</string>
+    <string name="repeat_on_days">le %1$s</string>
+    <string name="repeat_until">jusqu\'au %1$s</string>
+    <plurals name="repeat_every_days">
+        <item quantity="one">Tous les %d jours</item>
+        <item quantity="many">Tous les %d jours</item>
+        <item quantity="other">Tous les %d jours</item>
+    </plurals>
+    <plurals name="repeat_every_weeks">
+        <item quantity="one">Toutes les %d semaines</item>
+        <item quantity="many">Toutes les %d semaines</item>
+        <item quantity="other">Toutes les %d semaines</item>
+    </plurals>
+    <plurals name="repeat_every_months">
+        <item quantity="one">Tous les %d mois</item>
+        <item quantity="many">Tous les %d mois</item>
+        <item quantity="other">Tous les %d mois</item>
+    </plurals>
+    <plurals name="repeat_every_years">
+        <item quantity="one">Tous les %d ans</item>
+        <item quantity="many">Tous les %d ans</item>
+        <item quantity="other">Tous les %d ans</item>
+    </plurals>
+    <plurals name="repeat_count">
+        <item quantity="one">%d fois</item>
+        <item quantity="many">%d fois</item>
+        <item quantity="other">%d fois</item>
+    </plurals>
+
+    <plurals name="event_count">
+        <item quantity="one">%d événement</item>
+        <item quantity="many">%d événements</item>
+        <item quantity="other">%d événements</item>
+    </plurals>
+
+    <string name="search_hint">Rechercher des événements</string>
+    <string name="search_scope">Cherche dans les titres, lieux, notes et noms d\'agendas, de l\'année passée aux deux prochaines années, dans les agendas affichés.</string>
+    <string name="search_none">Aucun événement trouvé.</string>
+    <string name="search_past">Passés</string>
+
+    <string name="settings_appearance">Apparence</string>
+    <string name="theme_dark">Sombre</string>
+    <string name="theme_light">Clair</string>
+    <string name="theme_system">Comme le système</string>
+    <string name="settings_monday">La semaine commence le lundi</string>
+    <string name="settings_choose_calendars">Agendas affichés dans Sunlith</string>
+    <plurals name="calendars_shown">
+        <item quantity="one">%d agenda affiché</item>
+        <item quantity="many">%d agendas affichés</item>
+        <item quantity="other">%d agendas affichés</item>
+    </plurals>
+    <string name="settings_local_sub">Reste sur ce téléphone et ne se synchronise avec aucun compte.</string>
+    <string name="settings_reminders">Rappels</string>
+    <string name="settings_reminders_toggle">Notifications de rappel</string>
+    <string name="settings_reminders_sub">Sunlith vous avertit quand le rappel d\'un événement arrive.</string>
+    <string name="settings_reminders_blocked">Les notifications sont bloquées pour Sunlith. Activez cette option pour les autoriser.</string>
+    <string name="settings_widget">Widget</string>
+    <string name="settings_widget_opacity">Opacité du fond</string>
+    <string name="settings_widget_sub">Ajoutez le widget agenda depuis la liste des widgets de l\'écran d\'accueil. Faites un appui long dessus pour le redimensionner.</string>
+    <string name="settings_transfer">Importer et exporter</string>
+    <string name="settings_import">Importer un fichier .ics</string>
+    <string name="settings_import_sub">Aperçu du fichier, puis choix de l\'agenda qui reçoit les événements.</string>
+    <string name="settings_export">Exporter un fichier .ics</string>
+    <string name="settings_export_sub">Enregistre les agendas choisis dans un fichier.</string>
+    <string name="settings_exporting">Exportation…</string>
+    <string name="settings_help">Aide</string>
+    <string name="settings_about">À propos</string>
+    <string name="about_version">Sunlith %1$s</string>
+    <string name="about_sub">Agenda Android libre et gratuit.</string>
+    <string name="about_source">Code source</string>
+
+    <string name="help_migration_title">Passer d\'une autre app d\'agenda</string>
+    <string name="help_migration_sub">DigiCal, Samsung Agenda, Google Agenda et autres</string>
+    <string name="help_migration_body">La plupart des apps d\'agenda, dont DigiCal, gardent les événements dans le stockage d\'agenda d\'Android ou dans un compte synchronisé comme Google. Sunlith lit ce même stockage, donc en général il n\'y a rien à importer.\n\n1. Ouvrez Agendas dans Sunlith et activez les mêmes agendas qu\'avant.\n2. Vérifiez quelques événements passés et futurs, un événement d\'une journée entière et un événement répété.\n3. S\'il manque un compte, ajoutez-le dans les paramètres Android et activez la synchronisation de l\'agenda.\n\nN\'utilisez l\'import .ics que pour les événements gardés dans le stockage propre d\'une autre app. Importer dans un agenda qui contient déjà ces événements crée des doublons.\n\nSi deux apps envoient des rappels pour le même événement, désactivez les notifications dans celle que vous n\'utilisez plus.</string>
+    <string name="help_ai_title">Connecter un assistant IA</string>
+    <string name="help_ai_sub">Recommandé · planifiez avec des demandes</string>
+
+    <string name="export_title">Agendas à exporter</string>
+    <string name="import_title">Importer des événements</string>
+    <string name="import_done_title">Importation terminée</string>
+    <string name="import_reading">Lecture du fichier…</string>
+    <string name="import_running">Importation…</string>
+    <string name="import_destination">Ajouter les événements à</string>
+    <plurals name="import_found">
+        <item quantity="one">Le fichier contient %d événement.</item>
+        <item quantity="many">Le fichier contient %d événements.</item>
+        <item quantity="other">Le fichier contient %d événements.</item>
+    </plurals>
+    <plurals name="import_importable">
+        <item quantity="one">%d peut être importé.</item>
+        <item quantity="many">%d peuvent être importés.</item>
+        <item quantity="other">%d peuvent être importés.</item>
+    </plurals>
+    <plurals name="import_will_skip">
+        <item quantity="one">%d sera ignoré.</item>
+        <item quantity="many">%d seront ignorés.</item>
+        <item quantity="other">%d seront ignorés.</item>
+    </plurals>
+    <plurals name="import_imported">
+        <item quantity="one">%d événement ajouté.</item>
+        <item quantity="many">%d événements ajoutés.</item>
+        <item quantity="other">%d événements ajoutés.</item>
+    </plurals>
+    <plurals name="import_duplicates">
+        <item quantity="one">%d était déjà dans l\'agenda.</item>
+        <item quantity="many">%d étaient déjà dans l\'agenda.</item>
+        <item quantity="other">%d étaient déjà dans l\'agenda.</item>
+    </plurals>
+    <plurals name="import_skipped">
+        <item quantity="one">%d a été ignoré.</item>
+        <item quantity="many">%d ont été ignorés.</item>
+        <item quantity="other">%d ont été ignorés.</item>
+    </plurals>
+    <plurals name="more_messages">
+        <item quantity="one">et %d autre remarque</item>
+        <item quantity="many">et %d autres remarques</item>
+        <item quantity="other">et %d autres remarques</item>
+    </plurals>
+
+    <string name="calendars_intro">Choisissez les agendas affichés par Sunlith et son widget. Ça ne change rien dans les autres apps.</string>
+    <string name="calendar_read_only">Lecture seule</string>
+    <string name="calendar_on_device">Sur cet appareil</string>
+    <string name="calendar_hidden_system">Masqué dans l\'agenda du système</string>
+
+    <string name="msg_saved">Événement enregistré</string>
+    <string name="msg_deleted">Événement supprimé</string>
+    <string name="msg_event_missing">Cet événement n\'existe plus.</string>
+    <string name="msg_finish_editing">Enregistrez ou abandonnez d\'abord l\'événement en cours.</string>
+    <string name="msg_local_created">Agenda sur l\'appareil prêt</string>
+    <string name="msg_no_browser">Aucune app ne peut ouvrir ce lien.</string>
+    <string name="msg_no_maps">Aucune app de cartes n\'est installée.</string>
+    <string name="msg_no_file_picker">Aucun sélecteur de fichiers n\'est disponible sur ce téléphone.</string>
+    <string name="msg_notifications_denied">Les notifications sont désactivées, donc Sunlith n\'affichera pas de rappels.</string>
+    <plurals name="msg_exported">
+        <item quantity="one">%d événement exporté</item>
+        <item quantity="many">%d événements exportés</item>
+        <item quantity="other">%d événements exportés</item>
+    </plurals>
+
+    <string name="error_generic">Un problème est survenu. Réessayez.</string>
+    <string name="error_permission">Sunlith n\'a plus accès à l\'agenda.</string>
+    <string name="error_read_file">Ce fichier n\'a pas pu être ouvert.</string>
+    <string name="widget_empty">Rien de prévu pour le moment.</string>
+    <string name="tomorrow">Demain</string>
+    <string name="ongoing">En cours</string>
+    <string name="notification_channel">Rappels des événements</string>
+    <string name="notification_channel_description">Les rappels de vos événements</string>
+    <string name="notification_snooze">Reporter de 10 min</string>
+    <string name="notification_dismiss">Fermer</string>
+    <string name="details_guests">Utilisez votre app d’agenda habituelle pour modifier une réunion avec des invités.</string>
+    <string name="details_exceptions">Utilisez votre app d’agenda habituelle pour modifier cette série avec des exceptions.</string>
+    <string name="details_unsupported">Cet événement ne peut pas être modifié ici. Ouvrez-le dans votre app d’agenda habituelle.</string>
+    <string name="msg_export_skipped">Certains événements non pris en charge ont été ignorés. Vérifiez cette sauvegarde avant de vous y fier.</string>
+    <string name="notification_time_range">%1$s – %2$s</string>
+    <string name="notification_location_separator">%1$s · %2$s</string>
+    <string name="local_calendar_name">Sunlith · Sur cet appareil</string>
+    <string name="ai_intro_title">Votre agenda, connecté à l’IA</string>
+    <string name="ai_intro_lead">Passez moins de temps à saisir des événements. Dites à votre assistant ce qui est prévu et laissez-le gérer l’agenda.</string>
+    <string name="ai_intro_prompt">« Dentiste demain à 17 h. » Ajoutez, trouvez et déplacez des événements avec une demande.</string>
+    <string name="ai_intro_phone">Vos événements, votre widget et vos rappels restent ensemble sur votre téléphone.</string>
+    <string name="ai_intro_choice">Utilisez votre propre assistant. Sunlith ne demande aucun abonnement à une IA.</string>
+    <string name="ai_intro_recommended">Recommandé : connectez un assistant sur votre ordinateur avec T3 Code ou un client IA compatible.</string>
+    <string name="action_set_up_ai">Configurer l’IA</string>
+    <string name="action_without_ai">Continuer sans IA</string>
+    <string name="ai_setup_title">Connecter votre assistant</string>
+    <string name="ai_setup_lead">Choisissez l’assistant utilisé sur votre ordinateur. T3 Code permet aussi de lui envoyer des demandes depuis votre téléphone.</string>
+    <string name="ai_setup_assistant">Votre assistant</string>
+    <string name="ai_setup_steps">1. Suivez le guide sur votre ordinateur.\n2. Autorisez un agenda Google synchronisé avec ce téléphone.\n3. Sélectionnez le même agenda dans Sunlith, puis demandez à votre assistant d’ajouter un événement.</string>
+    <string name="ai_setup_support">Voici les fournisseurs proposés par T3 Code. La connexion varie : chaque guide explique la configuration disponible et ses limites. Choisir un nom ne connecte aucun compte.</string>
+    <string name="action_open_setup">Ouvrir le guide %s</string>
+    <string name="action_continue_calendar">Continuer vers l’agenda</string>
+    <string name="ai_setup_resume">Retrouvez cette page dans Paramètres → Connecter un assistant IA. L’app du téléphone ne vérifie pas la configuration.</string>
+</resources>
