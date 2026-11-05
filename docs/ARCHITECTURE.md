@@ -33,7 +33,7 @@ The tools use explicit calendar/event IDs, validated date ranges, optimistic con
 
 ## Design scope
 
-This beta distributes the companion as one portable source archive for Windows, macOS, and Linux, using the same Node.js runtime required by MCP clients. Separate native installers would introduce signing, notarization, updates, and platform packaging for a setup utility. They are not part of this release.
+This release distributes the companion as one portable source archive for Windows, macOS, and Linux, using the same Node.js runtime required by MCP clients. Separate native installers would introduce signing, notarization, updates, and platform packaging for a setup utility. They are not part of this release.
 
 A small, temporary local browser setup wizard can be considered after real-phone testing. It would reuse the existing Google authorization flow, remain bound to loopback, and provide copyable client configuration. It would not be a hosted service, phone server, or desktop calendar. This is a possible follow-up, not an implemented feature.
 

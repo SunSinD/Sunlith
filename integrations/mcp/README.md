@@ -18,4 +18,4 @@ The seven tools are `list_calendars`, `list_events`, `get_event`, `create_event`
 
 `get_current_time` defaults to the computer's IANA timezone, falling back to UTC. It includes `localIso` with the numeric UTC offset and an English `weekday`; pass `timeZone` explicitly when scheduling for another zone.
 
-This is a beta integration. Tests use mock Calendar API methods plus a real local MCP handshake. Real Google authorization and phone sync require your account and device, and have not been verified by those tests.
+Tests use mock Calendar API methods plus a real local MCP handshake. Real Google authorization and phone sync require your account and device, and have not been verified by those tests.

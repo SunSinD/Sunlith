@@ -10,4 +10,4 @@ For dependency changes, review licenses and update [third-party documentation](d
 
 Preserve shared-provider data. Calendar filters must not alter another app's visibility preferences. Do not flatten recurring instances into separate events, shift UTC all-day dates into the previous local day, overwrite unknown recurrence rules, or silently send invitation emails.
 
-Use small functions, plain names, localized visible text, and clear errors. Keep documentation honest about tested behavior and device-specific limits. Keep emulator captures local during beta testing. Add screenshots only after the APK has been tested and approved, using the isolated demo fixture.
+Use small functions, plain names, localized visible text, and clear errors. Keep documentation honest about tested behavior and device-specific limits. Keep emulator captures local during device testing. Add screenshots only after the APK has been tested and approved, using the isolated demo fixture.

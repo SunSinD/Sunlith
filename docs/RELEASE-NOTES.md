@@ -1,8 +1,10 @@
-# Sunlith v0.1.1-beta.1
+# Sunlith v0.1.1
 
-A clean calendar app. This is a beta update for Android 8.0 or newer.
+A clean calendar app. Requires Android 8.0 or newer.
 
-[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1-beta.1/Sunlith-v0.1.1-beta.1.apk)
+This build uses plain version numbers. Calendar behavior is unchanged from the previous build.
+
+[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1/Sunlith-v0.1.1.apk)
 
 Install over your current Sunlith app without uninstalling. The published APK keeps the same development signing key so app data is preserved. Production signing is planned before a stable release.
 
@@ -19,7 +21,7 @@ Install over your current Sunlith app without uninstalling. The published APK ke
 
 Phone assistants that create downloadable attachments can provide an `.ics` file containing event details. Open or share it with Sunlith, review the dates and destination calendar, then confirm Import. Compatible Android assistants can also open a draft for you to review and Save.
 
-The [computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1-beta.1/Sunlith-companion-v0.1.1-beta.1.zip) runs on Windows, macOS, and Linux with Node.js 22 or newer. It currently controls Google Calendar only. It does not connect a computer conversation to Samsung-account or phone-only calendars. There is no built-in chat or remote phone-calendar bridge in this update. See the [setup guide](https://github.com/SunSinD/Sunlith/blob/main/docs/AI-INTEGRATION.md).
+The [computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1/Sunlith-companion-v0.1.1.zip) runs on Windows, macOS, and Linux with Node.js 22 or newer. It currently controls Google Calendar only. It does not connect a computer conversation to Samsung-account or phone-only calendars. There is no built-in chat or remote phone-calendar bridge in this update. See the [setup guide](https://github.com/SunSinD/Sunlith/blob/main/docs/AI-INTEGRATION.md).
 
 Only the APK is needed on your phone. The ZIP is the computer companion, and SHA256SUMS.txt verifies both downloads.
 

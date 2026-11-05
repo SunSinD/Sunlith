@@ -66,9 +66,9 @@ On the intended phone, test notification permission, the selected calendars, an 
 
 These are test instructions, not a claim that every check has passed. Record the actual results with the build being tested.
 
-## Verified beta build
+## Verified behavior build
 
-For `0.1.1-beta.1`, verified against the APK hash below:
+For source commit `44a57c8`, verified against the APK hash below. The `0.1.1` naming update changes version metadata and documentation only; its package verification is recorded separately below.
 
 | Check | Result |
 | --- | --- |
@@ -92,3 +92,15 @@ Tested debug APK SHA-256:
 The selected emulator suite comprises `CalendarRepositoryTest`, `ReminderNotificationsTest`, `CalendarUiTest`, `WidgetSmokeTest`, `AiOnboardingTest`, `SettingsPreferencesTest`, `CalendarExperienceTest`, `WidgetExperienceTest`, and `CalendarHandoffUiTest`. The French app-locale case requires API 33 and is excluded on API 30. Notification permission recovery runs separately with its explicit argument.
 
 Local captures use running emulators and synthetic events. Widget captures use the actual Android widget in an instrumentation host. Captures are excluded from the repository pending phone testing. Google account sync, migration from existing calendars, physical-device reminder delivery, and manufacturer battery behavior still require testing on the intended phone. Emulator results do not establish universal AI client compatibility or a completed connection to an actual Google account.
+
+## Version 0.1.1 package verification
+
+The plain-version APK uses `versionName` `0.1.1` and `versionCode` `4`. All nine DEX files and the compiled resource table are byte-identical to the full behavior build recorded above. The manifest and signing metadata change with the version.
+
+The Android build, JVM checks and lint passed. After installing over the previous app without uninstalling, the actual create/search/edit/delete UI test passed on API 30 (14.286 seconds) and API 36 (19.010 seconds). The signing certificate matches the previous published APK. Companion syntax checks and all 31 tests passed with server/package version `0.1.1`. The full 88 emulator checks above were not repeated for this metadata-only change.
+
+Version 0.1.1 APK SHA-256:
+
+```text
+f97f4babcab9bf5fe7d8d6c766ecc42d8e3ed1c4c202a34c1ae721a4b023da36
+```
