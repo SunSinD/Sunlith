@@ -230,7 +230,7 @@
         <item quantity="other">and %d more notes</item>
     </plurals>
 
-    <string name="calendars_intro">Choose which calendars Sunlith and its widget show. This only affects Sunlith, not other apps.</string>
+    <string name="calendars_intro">Choose the calendars shown in Sunlith and its widget.</string>
     <string name="calendar_read_only">Read-only</string>
     <string name="calendar_on_device">On this device</string>
     <string name="calendar_hidden_system">Hidden in the system calendar</string>

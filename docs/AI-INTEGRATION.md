@@ -1,8 +1,59 @@
 # Connect your assistant
 
-Sunlith is a clean Android calendar with widgets and reminders. On your phone, an assistant can hand over a calendar file or event draft for you to approve. For automatic computer control, connect the optional [MCP companion](../integrations/mcp): your assistant changes your Google calendar, then Android account sync brings those changes into Sunlith and its widget. You can also use Sunlith without connecting an assistant.
+Sunlith can connect directly to your computer over Wi-Fi or Tailscale. The [MCP companion](../integrations/mcp) reads and changes calendars on your phone. No Google account or second calendar app is required for direct mode. A separate Google connection remains available.
 
-The phone app does not contain an AI model, collect AI API keys, or keep a server running.
+The phone app has no built-in model or chat. Its private calendar server runs only while you enable the computer connection.
+
+## Direct phone connection
+
+1. Put your phone and computer on the same Wi-Fi network, or sign both into the same private Tailscale network.
+2. In Sunlith, open Settings > Computer connection and choose calendar access. You can create an on-device calendar there.
+3. Save the pairing file and send it privately to your computer. It contains an access key. Do not paste its contents into chat or publish it.
+4. Keep the file outside the repository and companion folder, in your private user profile. Example: `C:\Users\you\.config\sunlith\sunlith-pairing.json`. On macOS or Linux, use `chmod 600 /absolute/path/sunlith-pairing.json`.
+5. In Sunlith, tap Start connection. Allow notifications so you can see when the connection is active.
+6. Install Node.js 22 or newer. Download and extract the companion, then run `npm ci` in its `integrations/mcp` folder.
+7. Configure your assistant using the examples below, then start a new assistant session.
+8. Ask it to list your Sunlith calendars and read the phone clock. Then create an event and check it in Sunlith.
+
+For Codex:
+
+```powershell
+codex mcp add sunlith --env "SUNLITH_DEVICE_CONFIG=C:/Users/you/.config/sunlith/sunlith-pairing.json" -- node "D:/Projects/Sunlith/integrations/mcp/src/index.js"
+codex mcp list
+```
+
+For Claude:
+
+```powershell
+claude mcp add --scope user --env "SUNLITH_DEVICE_CONFIG=C:/Users/you/.config/sunlith/sunlith-pairing.json" --transport stdio sunlith -- node "D:/Projects/Sunlith/integrations/mcp/src/index.js"
+claude mcp list
+```
+
+For clients using `mcpServers` JSON, including Cursor and Gemini CLI:
+
+```json
+{
+  "mcpServers": {
+    "sunlith": {
+      "command": "node",
+      "args": ["D:/Projects/Sunlith/integrations/mcp/src/index.js"],
+      "env": { "SUNLITH_DEVICE_CONFIG": "C:/Users/you/.config/sunlith/sunlith-pairing.json" }
+    }
+  }
+}
+```
+
+Replace both paths with your private pairing file and extracted companion location. The other client configuration formats further below also work with `SUNLITH_DEVICE_CONFIG` instead of `SUNLITH_GOOGLE_CREDENTIALS`. Direct mode is selected whenever `SUNLITH_DEVICE_CONFIG` is present. An invalid file does not silently switch to another account.
+
+The companion verifies the phone certificate before sending the pairing key. It can access only calendars chosen during pairing. Display filters are separate from computer access; pairing initially shows those calendars in Sunlith too. Stop connection pauses access. Unpair computer revokes the file. Prefer the phone's Tailscale address for a stable private connection. If its Wi-Fi address changes, pair again or update only `baseUrl` in the private file.
+
+Keep the connection on while using the computer tools. Battery restrictions can pause or stop it with the screen off; allow background battery use for Sunlith if needed. It does not start automatically after reboot or force-stop. No public relay, router port forwarding, browser calendar tab or Google sign-in is needed.
+
+Direct mode uses the same seven calendar tool names, plus `import_calendar_file`. IDs are decimal Android calendar/event IDs. `get_current_time` defaults to the phone clock and timezone. Repeating occurrences share a master ID; changes require `seriesScope: "series"` and affect the whole series. Individual-occurrence changes, guest meetings and series with exceptions are blocked. Read the current `etag` before changing an event.
+
+`import_calendar_file` reads an absolute private `.ics` path on the computer and sends it to an allowed phone calendar after the user requests the import. It requires `confirm: true` and returns actual imported, duplicate and skipped counts. Imports are not one transaction; review skipped records before retrying. The source file stays unchanged.
+
+Ordinary phone requests have a ten-second network deadline. Imports allow up to three minutes; an assistant host can impose a shorter tool timeout. After an interrupted import, check Sunlith before retrying with the same source file. In-flight operations may finish after Stop or Unpair. Creation retries use operation IDs; deleting an event that is already gone returns a missing-event error rather than pretending the phone confirmed the deletion.
 
 ## On your phone without a computer
 
@@ -16,11 +67,11 @@ Opening or sharing a supported calendar attachment starts the import preview. It
 
 Assistant or voice apps that support Android's standard `ACTION_INSERT` calendar intent can open a personal event draft in Sunlith. Review the calendar, time, and reminders, then tap Save. This handoff requires explicit valid start and end times; recurrence and guest extras are rejected. It does not support editing or deleting existing events. Whether an assistant can launch this intent depends on that assistant, and support has not been verified for every mobile app.
 
-Neither handoff gives a computer assistant access to read or edit your phone-only or Samsung-account calendar. Automatic remote control of those calendars would need a separate authenticated bridge, which is not implemented.
+Neither handoff gives an assistant ongoing calendar access. Use the direct phone connection above for automatic computer control of calendars stored on the phone, including Samsung and on-device calendars.
 
-## Automatic control from your computer
+## Google Calendar connection
 
-The following setup uses Google Calendar. Your computer is needed while the local assistant performs a task. It does not need to stay on afterward for Android to show synced events or reminders.
+The remaining account setup and client examples use Google mode. This is separate from direct phone pairing. It requires an Android account adapter to sync the same Google calendar. Browser sign-in alone does not authorize the companion. Your computer is needed while its local assistant performs a task; Android handles account sync afterward.
 
 ## Before connecting
 
@@ -65,7 +116,7 @@ All eight providers below have a documented local MCP interface. These are host-
 | Muse Code | `~/.config/muse/settings.json` | `/mcp` |
 | Pi | `~/.pi/agent/mcp.json` | `pi mcp list` |
 
-These clients launch the same local Sunlith server. There is no AI subscription or provider account inside the APK. A client without local stdio MCP support needs another adapter; this release does not supply an HTTP gateway.
+These clients launch the same local Sunlith MCP server. There is no subscription or provider account inside the APK. For direct mode, use `SUNLITH_DEVICE_CONFIG` in the formats below. For Google mode, use the Google credentials variable shown. A client without local stdio MCP support needs another adapter; this release does not supply an HTTP MCP gateway.
 
 ## Claude Code
 
@@ -191,7 +242,7 @@ If another app runs one of these assistants for you, configure Sunlith on the co
 
 Hosts can use separate account/config directories. For example, `CODEX_HOME`, `CLAUDE_CONFIG_DIR` or `PI_CODING_AGENT_DIR` may point at another profile. Start a fresh session and check its Sunlith tool list after setup. The APK links to these guides; it does not install CLIs or automatically configure the computer. No client has been tested here with a real Google account.
 
-## First prompt and event safety
+## Google-mode first prompt and event safety
 
 ```text
 Use Sunlith's get_current_time and list_calendars tools. Show my writable calendars and ask which one to use. Then add a dentist appointment tomorrow from 5 p.m. to 6 p.m. in America/Toronto, with a reminder 30 minutes before it starts. Return the saved date, time, calendar name, and event link.
@@ -216,12 +267,14 @@ Events already stored in your Google account appear through the same synced cale
 
 Samsung Calendar is an app that can display several kinds of calendar. An event shown there might belong to a Google account, another account, or a phone-only calendar. Check the calendar/account name on the event; using Samsung Calendar does not by itself make the event available through Google's API.
 
-Sunlith can use phone-only calendars without a Google account. The computer companion cannot currently read or edit those calendars, or a Samsung account calendar. Direct automatic updates would require a separate authenticated bridge, which is not implemented. Merely selecting a local calendar in Sunlith does not upload it to Google.
+Sunlith can use phone-only calendars without a Google account. Direct phone pairing gives the computer access to chosen calendars in Android storage, including writable Samsung and on-device calendars. Google mode only sees calendars accessible through that Google account. Selecting a local calendar in Sunlith does not upload it to Google.
 
 If you choose to move phone-only events into a synced calendar for computer control, save an ICS backup first, import into the chosen destination, and verify dates, recurrence and reminders. Keep the original backup. Moving your events is optional.
 
-Sunlith's Android calendar provider can also show accounts supplied by other sync adapters. For an open-source backend, Nextcloud Calendar with DAVx⁵ is an option. This companion's current adapter is Google-only; CalDAV, Outlook/Microsoft Graph and direct phone-local control are not implemented.
+Sunlith's Android calendar provider can also show accounts supplied by other sync adapters. Direct mode accesses those calendars through the phone, subject to their permissions. The companion has no separate CalDAV or Outlook/Microsoft Graph account adapter.
 
 ## Verification status
+
+Direct mode is tested with real AndroidKeyStore TLS, Android CalendarProvider events, the official desktop MCP SDK, calendar access restrictions and full-file import retries. See [recorded checks](https://github.com/SunSinD/Sunlith/blob/main/docs/TESTING.md#version-020-direct-connection-verification). Emulator ADB forwarding does not establish real-phone Wi-Fi or Tailscale reachability during Doze.
 
 Automated checks cover strict argument validation, bounded list queries, Google-safe IDs, repeat creation after network ambiguity, changed-payload conflicts, partial update preservation and explicit field clearing for timed/all-day conversion, timezone/DST checks, event-type filters, cancelled-event deletion, etag guards, guest-event protection, OAuth callback/token validation, a real local MCP initialization/tool call, and startup without credentials. They do not replace a real Google sign-in, account API test, Android sync check, or reminder delivery test on your phone.

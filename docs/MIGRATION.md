@@ -10,7 +10,7 @@ Sunlith reads calendars available through Android's shared calendar provider. Yo
 
 If the same events already appear, no import is needed. Importing a backup into that calendar can create duplicates.
 
-The app name does not tell you where an event is stored. Samsung Calendar, for example, can show Google, Samsung-account, or phone-only calendars. Check the calendar/account listed on the event. Sunlith can use phone-only calendars without a Google account; the optional computer companion currently controls Google calendars only.
+The app name does not tell you where an event is stored. Samsung Calendar, for example, can show Google, Samsung-account, or phone-only calendars. Check the calendar/account listed on the event. Direct computer pairing can access calendars in Android storage without a Google account or another calendar app. Choose the calendars to allow in Settings > Computer connection. Display selection and computer access are separate settings.
 
 If an account is missing, check your phone's account settings and enable calendar sync. A calendar stored privately inside another app is available to Sunlith only if that app or an installed account adapter exposes it to Android's provider.
 
@@ -33,6 +33,8 @@ An export includes supported event fields. It is not a guarantee of a complete c
 You can also open or share a supported `.ics` attachment with Sunlith to reach the same preview. This works with files from a mobile assistant that can generate them, without a computer or Google account. You still choose a destination and confirm Import. See [phone assistant handoff](AI-INTEGRATION.md#on-your-phone-without-a-computer).
 
 Import creates copies and does not remove the original events. This release accepts files up to 5 MB and 2,000 events. It skips repeated source UIDs in the destination. Events without source UIDs also use matching details to detect duplicates. Distinct supplied UIDs remain separate events even when their details match, so duplicate detection cannot prevent every duplicate across unrelated exports.
+
+The direct computer import tool accepts a private ICS file up to 256 KiB. Larger files can use the phone import picker. Both paths return imported, duplicate and skipped counts; review messages for reminder changes and unsupported records.
 
 Meetings with guests are imported as personal copies without sending invitations. Unsupported exception-heavy series and timezone formats are reported and skipped. Unsupported or excessive reminders can be trimmed with a message while keeping the event. Check the report before relying on the result.
 

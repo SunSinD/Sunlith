@@ -13,6 +13,8 @@ local.properties
 credentials*.json
 client_secret*.json
 token*.json
+*pairing*.json
+device-config*.json
 node_modules/
 .DS_Store
 Thumbs.db

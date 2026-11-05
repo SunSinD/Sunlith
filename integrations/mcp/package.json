@@ -1,15 +1,15 @@
 {
   "name": "@sunlith/calendar-mcp",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
-  "description": "Local MCP companion for shared Google calendars displayed in Sunlith.",
+  "description": "Local MCP companion for Sunlith phone calendars.",
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node src/index.js",
     "auth": "node src/auth.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/auth.js && node --check src/calendar.js && node --check src/validation.js"
+    "check": "node --check src/index.js && node --check src/auth.js && node --check src/calendar.js && node --check src/validation.js && node --check src/device.js && node --check src/device-validation.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

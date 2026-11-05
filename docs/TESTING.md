@@ -126,3 +126,52 @@ Current APK SHA-256:
 ```
 
 The broader behavior suite recorded above belongs to the earlier source commit; it was not repeated for this artwork-only update. Screenshots remain private until phone approval.
+
+## Version 0.2.0 direct connection verification
+
+The APK uses version code `6` and the same signing certificate as v0.1.2. Installation over the existing app succeeded on API 30 and API 36.
+
+| Check | Result |
+| --- | --- |
+| Android JVM tests | 20 passed |
+| Android lint | 0 errors, 72 warnings, 5 hints |
+| Desktop tests | 44 passed; opt-in Android fixture skipped in normal runs |
+| Desktop syntax and dependency audit | Passed; 0 vulnerabilities |
+| API 30 direct backend and connection UI | 27 passed across verification runs |
+| API 30 existing calendar and UI cases | 34 passed |
+| API 36 direct backend and connection UI | 27 passed across verification runs |
+| API 36 existing provider, UI, reminder, widget and handoff cases | 29 passed |
+| Actual desktop SDK to Android provider | Passed over pinned HTTPS through ADB forwarding |
+| Full backup import | 215 imported, 0 skipped; retry detected 215 duplicates |
+
+Direct backend cases cover strict HTTP/JSON parsing, real AndroidKeyStore TLS, access scope, CRUD, stale etags, create retries, conflicting payloads, DST/all-day dates, recurring-series safeguards, guest protection and imports. Desktop TLS tests verify that a wrong certificate receives no decrypted HTTP bytes or bearer header. Connection UI cases cover separate display/access choices, document-picker cancellation, actual service notification, activity recreation, rapid stop/start and revocation. The rendered pairing screen was inspected privately.
+
+The final APK passed five independent lifecycle runs on API 30, covering fifteen immediate stop/start cycles, plus a final SAF/TLS run. The final API 36 connection UI and TLS run passed seven cases. One earlier automated document-picker wait was intermittent; focused and full reruns, screenshots and Android activity logs confirmed the actual picker opened. Phone-specific document-provider behavior remains part of physical-device testing.
+
+The API 30 existing cases cover repository operations, calendar views, handoffs, onboarding, settings and the bounded agenda. API 36 also covers real reminder notifications and RemoteViews widgets. Initial repeated test runs reused static operation IDs against the persistent retry journal; test IDs now have a unique namespace so tests preserve within-request retries without conflicting with earlier runs. No production journal was cleared to make those tests pass. A quick stop/start failure on API 30 led to ordered service commands with start-ID-aware shutdown. A separate shutdown case checks that active and queued sockets close.
+
+The opt-in external test connects the official MCP SDK over stdio to Node, then the real Android HTTPS server and CalendarProvider. It exercises all eight tools, excluded-calendar protection, timed/all-day creation, reads, edits, stale revisions, series scope, imports, duplicate detection and deletion. It operates in isolated emulator calendars that are removed afterward. Pairing files and calendar fixtures stay outside the repository.
+
+To run it, first start the isolated Android fixture, then pull its private configuration and metadata to a private folder outside the repository:
+
+```powershell
+adb -s emulator-5556 forward tcp:39393 tcp:39393
+adb -s emulator-5556 shell am instrument -w -e class io.github.sunsind.sunlith.ComputerConnectionFixtureTest -e deviceLinkExternal true io.github.sunsind.sunlith.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+While that command runs, use another terminal to pull `device-link-test.json` and `device-link-test-metadata.json` from `/sdcard/Android/data/io.github.sunsind.sunlith/files/`. Do not print the pairing contents. From `integrations/mcp`, set `SUNLITH_DEVICE_CONFIG` and `SUNLITH_ANDROID_TEST_METADATA` to the absolute private paths, then run:
+
+```powershell
+node --test test/android-device.test.js
+adb -s emulator-5556 shell run-as io.github.sunsind.sunlith touch files/device-link-test-finished
+```
+
+The fixture waits up to three minutes, then removes its calendars and revokes pairing. An optional private import fixture can be supplied with `SUNLITH_ANDROID_IMPORT_FIXTURE` and `SUNLITH_ANDROID_IMPORT_COUNT`; no real event content belongs in source or logs.
+
+Screen-off and forced deep-idle requests succeeded through ADB loopback forwarding on API 36. That verifies service/process behavior, not Wi-Fi or Tailscale delivery during physical-phone Doze. Real Samsung battery restrictions, Tailscale reachability, network changes and long idle periods still require phone testing. A foreground service alone does not guarantee network access through Doze. The app offers a link to its system settings for background battery use.
+
+Version 0.2.0 APK SHA-256:
+
+```text
+b76ae486868cc1a0a624360e0c87c2a7da03a3a5083614cd425041da6870e9c9
+```
