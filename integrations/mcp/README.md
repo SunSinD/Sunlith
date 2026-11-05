@@ -1,10 +1,12 @@
 # Sunlith MCP companion
 
-Connect your assistant to personal Google Calendar events. Sunlith on Android uses the device's shared calendar storage; this companion connects your assistant to the same Google calendar from your computer.
+Manage calendars stored on your Sunlith phone from your computer over Wi-Fi or Tailscale. Direct mode needs no Google account or second calendar app.
 
-There is no AI chat or server inside the APK. The MCP companion uses standard input/output. Only the five-minute Google authorization flow opens a temporary listener, bound to `127.0.0.1`.
+The companion uses standard input/output. Sunlith runs a private HTTPS server only while Computer connection is on. Pairing pins the phone certificate and grants access to calendars you select. Stop pauses access; Unpair revokes it.
 
-Requires Node.js 22 or later. [Download and extract the companion ZIP](https://github.com/SunSinD/Sunlith/releases/latest), or clone the repository and open `integrations/mcp`. Install with `npm ci`, connect an account with `npm run auth`, and configure your assistant to launch `node` with the full path to `src/index.js`. Authentication prints a Google sign-in URL; open it in a browser on the same computer.
+Requires Node.js 22 or later. [Download and extract the companion ZIP](https://github.com/SunSinD/Sunlith/releases/latest), or clone the repository and open `integrations/mcp`. Run `npm ci`. In Sunlith, open Settings > Computer connection, choose calendars, save the pairing file and transfer it privately to your computer. Keep it outside the repository. Start the phone connection, then configure your assistant to launch `node` with the full path to `src/index.js` and `SUNLITH_DEVICE_CONFIG` pointing to that file. No browser login is needed.
+
+Keep both devices on the same Wi-Fi or private Tailscale network. The phone connection must remain on; Android battery restrictions can interrupt background access. It does not restart automatically after reboot.
 
 See [setup and client configurations](../../docs/AI-INTEGRATION.md) and [research and limitations](../../docs/RESEARCH-AI.md).
 
@@ -14,8 +16,10 @@ npm test
 npm run check
 ```
 
-The seven tools are `list_calendars`, `list_events`, `get_event`, `create_event`, `update_event`, `delete_event`, and `get_current_time`. Calendar/event IDs returned here are Google IDs, not Android database row numbers.
+Both modes provide `list_calendars`, `list_events`, `get_event`, `create_event`, `update_event`, `delete_event`, and `get_current_time`. Direct mode also provides `import_calendar_file` for an explicitly requested import from a private ICS file. Direct-mode IDs are Android row IDs. Google-mode IDs belong to Google and cannot be exchanged between modes.
 
-`get_current_time` defaults to the computer's IANA timezone, falling back to UTC. It includes `localIso` with the numeric UTC offset and an English `weekday`; pass `timeZone` explicitly when scheduling for another zone.
+Direct-mode `get_current_time` defaults to the phone clock and timezone. Read an event's current `etag` before updating or deleting it. Repeating events require `seriesScope: "series"`; individual-occurrence changes and series with exceptions are blocked.
 
-Tests use mock Calendar API methods plus a real local MCP handshake. Real Google authorization and phone sync require your account and device, and have not been verified by those tests.
+Google mode remains a separate option: set `SUNLITH_GOOGLE_CREDENTIALS`, run `npm run auth`, and sync that account using an Android account adapter. Direct mode never loads Google authentication, even when its pairing configuration is invalid.
+
+Tests cover the stdio MCP protocol, real local HTTPS, certificate mismatch before sending credentials, input validation, and mocked Google API calls. See the setup guide for device verification and limits.

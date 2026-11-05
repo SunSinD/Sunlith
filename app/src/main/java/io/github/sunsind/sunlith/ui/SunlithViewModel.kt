@@ -49,6 +49,7 @@ sealed interface Screen {
     data object Settings : Screen
     data object Calendars : Screen
     data object AiSetup : Screen
+    data object DeviceLink : Screen
     data object Editor : Screen
     data class Details(val event: CalendarEvent) : Screen
 }
@@ -219,16 +220,16 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             try {
-                val result = withContext(Dispatchers.IO) {
-                    val cals = repo.calendars()
-                    val ids = effectiveIds(cals)
-                    Triple(cals, ids, eventsBetween(from, to, ids))
+                val cals = withContext(Dispatchers.IO) { repo.calendars() }
+                val ids = effectiveIds(cals)
+                Snapshot.withMutableSnapshot {
+                    calendars = cals
+                    activeIds = ids
                 }
+                val result = withContext(Dispatchers.IO) { eventsBetween(from, to, ids) }
                 if (wantedRange() != (from to to)) return@launch
                 Snapshot.withMutableSnapshot {
-                    calendars = result.first
-                    activeIds = result.second
-                    events = result.third
+                    events = result
                     loadedFrom = from
                     loadedTo = to
                     loadError = null
@@ -481,6 +482,15 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         settings.selectedCalendarIds = next
         settings.hasChosenCalendars = true
         activeIds = next
+        searchPool = null
+        refreshApp()
+        reload()
+    }
+
+    fun showLinkedCalendars(ids: Set<Long>) {
+        settings.selectedCalendarIds = activeIds + ids
+        settings.hasChosenCalendars = true
+        activeIds = activeIds + ids
         searchPool = null
         refreshApp()
         reload()

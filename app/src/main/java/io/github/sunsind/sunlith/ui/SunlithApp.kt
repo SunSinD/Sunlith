@@ -116,6 +116,7 @@ fun SunlithApp(vm: SunlithViewModel) {
                             Screen.Settings -> settingsState.SaveableStateProvider("settings") { SettingsScreen(vm) }
                             Screen.Calendars -> CalendarsScreen(vm)
                             Screen.AiSetup -> AiSetupScreen(vm, onBack = vm::back, onContinue = { vm.stack.clear() })
+                            Screen.DeviceLink -> DeviceLinkScreen(vm)
                             Screen.Editor -> EventEditorScreen(vm)
                             is Screen.Details -> DetailsScreen(vm, screen.event)
                         }

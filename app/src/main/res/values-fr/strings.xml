@@ -248,7 +248,7 @@
         <item quantity="other">et %d autres remarques</item>
     </plurals>
 
-    <string name="calendars_intro">Choisissez les agendas affichés par Sunlith et son widget. Ça ne change rien dans les autres apps.</string>
+    <string name="calendars_intro">Choisissez les agendas à afficher dans Sunlith et son widget.</string>
     <string name="calendar_read_only">Lecture seule</string>
     <string name="calendar_on_device">Sur cet appareil</string>
     <string name="calendar_hidden_system">Masqué dans l\'agenda du système</string>

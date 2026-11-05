@@ -67,6 +67,9 @@ fun AiSetupScreen(vm: SunlithViewModel, onBack: () -> Unit, onContinue: () -> Un
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Text(stringResource(R.string.ai_setup_support), color = p.muted, style = MaterialTheme.typography.bodyLarge)
+                    TextButton(onClick = { vm.finishAiIntro(); vm.open(Screen.DeviceLink) }) {
+                        Text(stringResource(R.string.device_link_title))
+                    }
                     Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         assistants.chunked(columns).forEach { row ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

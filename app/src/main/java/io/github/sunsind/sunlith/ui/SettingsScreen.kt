@@ -136,6 +136,7 @@ fun SettingsScreen(vm: SunlithViewModel) {
                             ClickRow(stringResource(label), null) { page = target }
                         }
                         HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                        ClickRow(stringResource(R.string.device_link_title), null) { vm.open(Screen.DeviceLink) }
                         ClickRow(stringResource(R.string.ai_setup_title), null) { vm.open(Screen.AiSetup) }
                         ClickRow(stringResource(R.string.beta_settings_about), null) { page = "about" }
                     }
@@ -316,7 +317,13 @@ private fun CalendarPickDialog(
                         Spacer(Modifier.width(12.dp))
                         ColorDot(cal.color)
                         Spacer(Modifier.width(10.dp))
-                        Text(cal.name, maxLines = 2, overflow = TextOverflow.Ellipsis, color = p.ink)
+                        Column(Modifier.weight(1f)) {
+                            Text(cal.name, maxLines = 2, overflow = TextOverflow.Ellipsis, color = p.ink)
+                            val account = if (cal.local) stringResource(R.string.calendar_on_device) else cal.account
+                            if (account.isNotBlank() && account != cal.name) {
+                                Text(account, color = p.muted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
                     }
                 }
             }

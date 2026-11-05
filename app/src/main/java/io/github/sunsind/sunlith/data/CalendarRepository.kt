@@ -92,7 +92,13 @@ class CalendarRepository(context: Context) {
 
     internal fun saveImported(draft: EventDraft, uid: String): Long = save(draft, uid)
 
-    private fun save(draft: EventDraft, importedUid: String?): Long {
+    /** Updates only if the provider row still matches [expected] (see [revision]); the check and update share one provider batch. */
+    internal fun updateIfUnchanged(draft: EventDraft, expected: Map<String, String?>): Long {
+        requireNotNull(draft.id) { "This event no longer exists." }
+        return save(draft, null, expected)
+    }
+
+    private fun save(draft: EventDraft, importedUid: String?, expected: Map<String, String?>? = null): Long {
         checkWrite()
         CalendarDates.validate(draft)
         writableCalendar(draft.calendarId)
@@ -151,6 +157,7 @@ class CalendarRepository(context: Context) {
             }
         }
         val operations = arrayListOf<ContentProviderOperation>()
+        if (expected != null && draft.id != null) operations += revisionAssert(draft.id, expected)
         if (draft.id == null) {
             operations += ContentProviderOperation.newInsert(Events.CONTENT_URI).withValues(values).build()
         } else {
@@ -171,7 +178,11 @@ class CalendarRepository(context: Context) {
         return draft.id ?: results.first().uri?.let(ContentUris::parseId) ?: error("The calendar did not save the event.")
     }
 
-    fun deleteEvent(id: Long) {
+    fun deleteEvent(id: Long) = delete(id, null)
+
+    internal fun deleteIfUnchanged(id: Long, expected: Map<String, String?>) = delete(id, expected)
+
+    private fun delete(id: Long, expected: Map<String, String?>?) {
         checkWrite()
         val stored = readStored(id) ?: return
         writableCalendar(stored.draft.calendarId)
@@ -182,7 +193,13 @@ class CalendarRepository(context: Context) {
         require(stored.exdate.isNullOrBlank() && stored.rdate.isNullOrBlank() && stored.exrule.isNullOrBlank() && !hasExceptions(id)) {
             "This series has exceptions. Delete it in your existing calendar app to preserve them."
         }
-        val count = resolver.delete(ContentUris.withAppendedId(Events.CONTENT_URI, id), null, null)
+        val uri = ContentUris.withAppendedId(Events.CONTENT_URI, id)
+        if (expected != null) {
+            resolver.applyBatch(CalendarContract.AUTHORITY, arrayListOf(revisionAssert(id, expected),
+                ContentProviderOperation.newDelete(uri).withExpectedCount(1).build()))
+            return
+        }
+        val count = resolver.delete(uri, null, null)
         check(count == 1) { "The calendar could not delete this event." }
     }
 
@@ -245,6 +262,83 @@ class CalendarRepository(context: Context) {
         }
         return records.map { it.copy(draft = it.draft.copy(reminderMinutes = reminderMap[it.draft.id].orEmpty())) }
     }
+
+    internal fun storedEvent(id: Long): StoredEvent? {
+        checkRead()
+        return readStored(id)
+    }
+
+    /** Raw provider columns used for revision tags and compare-and-set writes. */
+    internal fun revision(id: Long): Map<String, String?>? {
+        checkRead()
+        return resolver.query(ContentUris.withAppendedId(Events.CONTENT_URI, id), REVISION_PROJECTION, "${Events.DELETED}=0", null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) null
+            else REVISION_PROJECTION.associateWith { name -> cursor.getColumnIndex(name).let { if (it < 0 || cursor.isNull(it)) null else cursor.getString(it) } }
+        }
+    }
+
+    /** Events in [calendarId] whose UID starts with [prefix], including rows a sync adapter still keeps as deleted. */
+    internal fun eventsWithUidPrefix(calendarId: Long, prefix: String): List<UidMatch> {
+        checkRead()
+        require(prefix.isNotEmpty() && prefix.none { it == '%' || it == '_' || it == '\\' }) { "Invalid UID prefix." }
+        return resolver.query(Events.CONTENT_URI, arrayOf(Events._ID, Events.UID_2445, Events.DELETED),
+            "${Events.CALENDAR_ID}=? AND ${Events.UID_2445} LIKE ?", arrayOf(calendarId.toString(), "$prefix%"), null,
+        )?.use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val uid = cursor.string(Events.UID_2445)
+                    if (uid.startsWith(prefix)) add(UidMatch(cursor.long(Events._ID), uid, cursor.int(Events.DELETED) != 0))
+                }
+            }
+        } ?: emptyList()
+    }
+
+    /** Maps each event ID in [calendarId] to its series master; exceptions resolve through ORIGINAL_ID or ORIGINAL_SYNC_ID. */
+    internal fun seriesLinks(calendarId: Long, ids: Collection<Long>): Map<Long, SeriesLink> {
+        checkRead()
+        data class Row(val id: Long, val rrule: String?, val originalId: Long?, val originalSyncId: String?, val originalTime: Long?, val originalAllDay: Boolean)
+        fun placeholders(count: Int) = List(count) { "?" }.joinToString(",")
+        val rows = ids.distinct().chunked(300).flatMap { chunk ->
+            resolver.query(Events.CONTENT_URI, arrayOf(Events._ID, Events.RRULE, Events.ORIGINAL_ID, Events.ORIGINAL_SYNC_ID,
+                Events.ORIGINAL_INSTANCE_TIME, Events.ORIGINAL_ALL_DAY),
+                "${Events._ID} IN (${placeholders(chunk.size)}) AND ${Events.CALENDAR_ID}=?",
+                (chunk.map(Long::toString) + calendarId.toString()).toTypedArray(), null)?.use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(Row(cursor.long(Events._ID), cursor.optional(Events.RRULE), cursor.optionalLong(Events.ORIGINAL_ID),
+                        cursor.optional(Events.ORIGINAL_SYNC_ID), cursor.optionalLong(Events.ORIGINAL_INSTANCE_TIME), cursor.int(Events.ORIGINAL_ALL_DAY) != 0))
+                }
+            } ?: emptyList()
+        }
+        val byId = mutableMapOf<Long, Pair<Long, String?>>()
+        val bySyncId = mutableMapOf<String, Pair<Long, String?>>()
+        rows.mapNotNull { it.originalId }.distinct().chunked(300).forEach { chunk ->
+            resolver.query(Events.CONTENT_URI, arrayOf(Events._ID, Events.RRULE),
+                "${Events._ID} IN (${placeholders(chunk.size)}) AND ${Events.CALENDAR_ID}=? AND ${Events.DELETED}=0",
+                (chunk.map(Long::toString) + calendarId.toString()).toTypedArray(), null)?.use { cursor ->
+                while (cursor.moveToNext()) byId[cursor.long(Events._ID)] = cursor.long(Events._ID) to cursor.optional(Events.RRULE)
+            }
+        }
+        rows.filter { it.originalId == null }.mapNotNull { it.originalSyncId }.distinct().chunked(300).forEach { chunk ->
+            resolver.query(Events.CONTENT_URI, arrayOf(Events._ID, Events._SYNC_ID, Events.RRULE),
+                "${Events._SYNC_ID} IN (${placeholders(chunk.size)}) AND ${Events.CALENDAR_ID}=? AND ${Events.DELETED}=0",
+                (chunk + calendarId.toString()).toTypedArray(), null)?.use { cursor ->
+                while (cursor.moveToNext()) bySyncId[cursor.string(Events._SYNC_ID)] = cursor.long(Events._ID) to cursor.optional(Events.RRULE)
+            }
+        }
+        return rows.associate { row ->
+            val master = row.originalId?.let(byId::get) ?: row.originalSyncId?.let(bySyncId::get)
+            row.id to when {
+                row.originalId == null && row.originalSyncId == null -> SeriesLink(row.id, row.rrule, null, false)
+                master != null -> SeriesLink(master.first, master.second, row.originalTime, row.originalAllDay)
+                else -> SeriesLink(row.id, null, row.originalTime, row.originalAllDay)
+            }
+        }
+    }
+
+    private fun revisionAssert(id: Long, expected: Map<String, String?>): ContentProviderOperation =
+        ContentProviderOperation.newAssertQuery(ContentUris.withAppendedId(Events.CONTENT_URI, id))
+            .withValues(ContentValues().apply { expected.forEach { (key, value) -> if (value == null) putNull(key) else put(key, value) } })
+            .withExpectedCount(1).build()
 
     private fun readStored(id: Long): StoredEvent? = resolver.query(
         ContentUris.withAppendedId(Events.CONTENT_URI, id), STORED_PROJECTION, "${Events.DELETED}=0", null, null,
@@ -340,8 +434,16 @@ class CalendarRepository(context: Context) {
             Events.EVENT_LOCATION, Events.DTSTART, Events.DTEND, Events.DURATION, Events.ALL_DAY,
             Events.EVENT_TIMEZONE, Events.RRULE, Events.UID_2445, Events.EXDATE, Events.RDATE, Events.EXRULE,
             Events.ORIGINAL_ID, Events.ORIGINAL_INSTANCE_TIME, Events.ORIGINAL_ALL_DAY, Events.STATUS, Events._SYNC_ID, Events.ORIGINAL_SYNC_ID)
+        private val REVISION_PROJECTION = arrayOf(Events.CALENDAR_ID, Events.TITLE, Events.DESCRIPTION, Events.EVENT_LOCATION,
+            Events.DTSTART, Events.DTEND, Events.DURATION, Events.ALL_DAY, Events.EVENT_TIMEZONE, Events.EVENT_END_TIMEZONE,
+            Events.RRULE, Events.RDATE, Events.EXRULE, Events.EXDATE, Events.ORIGINAL_ID, Events.ORIGINAL_SYNC_ID,
+            Events.ORIGINAL_INSTANCE_TIME, Events.STATUS, Events.UID_2445, Events.DELETED)
     }
 }
+
+internal data class UidMatch(val id: Long, val uid: String, val deleted: Boolean)
+
+internal data class SeriesLink(val masterId: Long, val rrule: String?, val originalInstanceTime: Long?, val originalAllDay: Boolean)
 
 private fun Cursor.string(name: String): String = getColumnIndex(name).let { if (it < 0 || isNull(it)) "" else getString(it) }
 private fun Cursor.optional(name: String): String? = string(name).takeIf(String::isNotBlank)

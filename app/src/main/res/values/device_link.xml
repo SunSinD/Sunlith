@@ -1,0 +1,32 @@
+<resources>
+    <string name="device_link_title">Computer connection</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="device_link_lead">Manage Sunlith directly over Wi-Fi or Tailscale.</string>
+    <string name="device_link_access">Calendar access</string>
+    <string name="device_link_consent">Your paired computer can read, create, change and delete events in the calendars you choose.</string>
+    <string name="device_link_address">Phone address</string>
+    <string name="device_link_no_network">Connect to Wi-Fi or Tailscale, then refresh.</string>
+    <string name="device_link_refresh">Refresh connection</string>
+    <string name="device_link_export">Save pairing file</string>
+    <string name="device_link_exported">Pairing saved. Send the file privately to your computer.</string>
+    <string name="device_link_export_error">Could not save pairing. Choose a file and try again.</string>
+    <string name="device_link_export_retry">Choose your calendars and save the pairing file again.</string>
+    <string name="device_link_share">Send pairing file</string>
+    <string name="device_link_no_share">No app can send this file.</string>
+    <string name="device_link_start">Start connection</string>
+    <string name="device_link_stop">Stop connection</string>
+    <string name="device_link_on">Connection on</string>
+    <string name="device_link_off">Connection off</string>
+    <string name="device_link_paired">Computer paired</string>
+    <string name="device_link_running_help">Keep this connection on. If it stops with the screen off, allow background battery use in app settings.</string>
+    <string name="device_link_background">App battery settings</string>
+    <string name="device_link_unpair">Unpair computer</string>
+    <string name="device_link_unpair_body">This stops the connection and removes the computer’s access.</string>
+    <string name="device_link_unpaired">Computer unpaired.</string>
+    <string name="device_link_notification_required">Allow notifications so the active connection stays visible.</string>
+    <string name="device_link_channel_title">Computer connection</string>
+    <string name="device_link_notification_title">Sunlith connection on</string>
+    <string name="device_link_notification_text">Your paired computer can manage your selected calendars.</string>
+    <string name="device_link_guide">Computer setup guide</string>
+    <string name="device_link_failed">Could not update the connection. Try again.</string>
+</resources>

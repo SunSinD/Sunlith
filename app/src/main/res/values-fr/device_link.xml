@@ -1,0 +1,32 @@
+<resources>
+    <string name="device_link_title">Connexion à l’ordinateur</string>
+    <string name="action_refresh">Actualiser</string>
+    <string name="device_link_lead">Gérez Sunlith directement par Wi-Fi ou Tailscale.</string>
+    <string name="device_link_access">Accès aux calendriers</string>
+    <string name="device_link_consent">Votre ordinateur jumelé peut lire, créer, modifier et supprimer les événements des calendriers choisis.</string>
+    <string name="device_link_address">Adresse du téléphone</string>
+    <string name="device_link_no_network">Connectez-vous au Wi-Fi ou à Tailscale, puis actualisez.</string>
+    <string name="device_link_refresh">Actualiser la connexion</string>
+    <string name="device_link_export">Enregistrer le fichier de jumelage</string>
+    <string name="device_link_exported">Jumelage enregistré. Envoyez le fichier à votre ordinateur en privé.</string>
+    <string name="device_link_export_error">Impossible d’enregistrer le jumelage. Choisissez un fichier et réessayez.</string>
+    <string name="device_link_export_retry">Choisissez vos calendriers et enregistrez de nouveau le fichier de jumelage.</string>
+    <string name="device_link_share">Envoyer le fichier de jumelage</string>
+    <string name="device_link_no_share">Aucune application ne peut envoyer ce fichier.</string>
+    <string name="device_link_start">Démarrer la connexion</string>
+    <string name="device_link_stop">Arrêter la connexion</string>
+    <string name="device_link_on">Connexion active</string>
+    <string name="device_link_off">Connexion inactive</string>
+    <string name="device_link_paired">Ordinateur jumelé</string>
+    <string name="device_link_running_help">Gardez cette connexion active. Si elle s’arrête quand l’écran est éteint, autorisez son utilisation de la batterie en arrière-plan dans les paramètres.</string>
+    <string name="device_link_background">Paramètres de batterie</string>
+    <string name="device_link_unpair">Retirer le jumelage</string>
+    <string name="device_link_unpair_body">La connexion sera arrêtée et l’ordinateur perdra son accès.</string>
+    <string name="device_link_unpaired">Jumelage retiré.</string>
+    <string name="device_link_notification_required">Autorisez les notifications pour garder la connexion active visible.</string>
+    <string name="device_link_channel_title">Connexion à l’ordinateur</string>
+    <string name="device_link_notification_title">Connexion Sunlith active</string>
+    <string name="device_link_notification_text">Votre ordinateur jumelé peut gérer les calendriers choisis.</string>
+    <string name="device_link_guide">Guide de configuration</string>
+    <string name="device_link_failed">Impossible de modifier la connexion. Réessayez.</string>
+</resources>
