@@ -6,13 +6,13 @@ Keep your events, reminders, and home screen widget together. Add or change even
 
 ## Download
 
-[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1-beta.1/Sunlith-v0.1.1-beta.1.apk)
+[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1/Sunlith-v0.1.1.apk)
 
 On your phone, you only need the APK. The ZIP is the computer companion, and SHA256SUMS.txt is for verifying downloads.
 
-[Release notes](https://github.com/SunSinD/Sunlith/releases/tag/v0.1.1-beta.1)
+[Release notes](https://github.com/SunSinD/Sunlith/releases/tag/v0.1.1)
 
-Requires Android 8.0 or newer. **v0.1.1-beta.1 is a beta testing build**, signed with a development key. Local and CI builds can use a different key, so use the published APK for updates. Installing a newer APK with the same signing key preserves app data. Production signing is planned before a stable release.
+Requires Android 8.0 or newer. The published APK is signed with a development key. Local and CI builds can use a different key, so use the published APK for updates. Installing a newer APK with the same signing key preserves app data. Production signing is planned before a stable release.
 
 ## Calendar
 
@@ -28,11 +28,11 @@ The APK has no advertising, analytics, Internet permission, or built-in chat. It
 
 For phone-only use, ask a mobile assistant that can create files for a downloadable `.ics` attachment containing your event details. Open or share it with Sunlith, choose a destination calendar, then confirm Import. Compatible Android assistants can also open an event draft for you to review and Save. These handoffs need no computer or Google account. See [phone assistant setup](docs/AI-INTEGRATION.md#on-your-phone-without-a-computer).
 
-[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1-beta.1/Sunlith-companion-v0.1.1-beta.1.zip)
+[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1/Sunlith-companion-v0.1.1.zip)
 
 The companion runs on Windows, macOS, and Linux with Node.js 22 or newer. It connects a supported assistant to a Google calendar that your phone syncs. Extract the archive and read START-HERE.md, then follow the [setup guide](docs/AI-INTEGRATION.md).
 
-First-run setup offers eight assistant guides: Codex, Claude, Cursor, Grok, OpenCode, Antigravity, Muse Code, and Pi. The setup guide also covers Gemini CLI. You can use the calendar without connecting an assistant. Sunlith has no subscription of its own; your assistant may require its own account. This beta includes a command-line companion, with no desktop calendar, browser setup wizard, native desktop installer, or HTTP MCP gateway.
+First-run setup offers eight assistant guides: Codex, Claude, Cursor, Grok, OpenCode, Antigravity, Muse Code, and Pi. The setup guide also covers Gemini CLI. You can use the calendar without connecting an assistant. Sunlith has no subscription of its own; your assistant may require its own account. This release includes a command-line companion, with no desktop calendar, browser setup wizard, native desktop installer, or HTTP MCP gateway.
 
 ## Build
 
@@ -52,7 +52,7 @@ npm run check
 npm test
 ```
 
-## Beta limits
+## Current limits
 
 Real Google authorization, account sync, and reminder delivery still need testing on your phone. Individual assistants have not all been tested with a real calendar account. See [testing](docs/TESTING.md) for the recorded checks and their limits.
 

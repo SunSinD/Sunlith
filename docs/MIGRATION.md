@@ -22,7 +22,7 @@ Calendars stored only on the phone do not automatically sync to an account. Keep
 2. Select the calendars to export, then choose where to save the `.ics` file through Android's file picker.
 3. Read the result and any warnings. Confirm that the backup contains the events you expect before deleting or moving the originals.
 
-An export includes supported event fields. It is not a guarantee of a complete copy of every provider's proprietary data. Guest lists, attachments, tasks and some complex recurrence formats are outside this beta's portable fields. Malformed provider records can be skipped with a warning.
+An export includes supported event fields. It is not a guarantee of a complete copy of every provider's proprietary data. Guest lists, attachments, tasks and some complex recurrence formats are outside this release's portable fields. Malformed provider records can be skipped with a warning.
 
 ## Import an ICS file
 
@@ -32,7 +32,7 @@ An export includes supported event fields. It is not a guarantee of a complete c
 
 You can also open or share a supported `.ics` attachment with Sunlith to reach the same preview. This works with files from a mobile assistant that can generate them, without a computer or Google account. You still choose a destination and confirm Import. See [phone assistant handoff](AI-INTEGRATION.md#on-your-phone-without-a-computer).
 
-Import creates copies and does not remove the original events. This beta accepts files up to 5 MB and 2,000 events. It skips repeated source UIDs in the destination. Events without source UIDs also use matching details to detect duplicates. Distinct supplied UIDs remain separate events even when their details match, so duplicate detection cannot prevent every duplicate across unrelated exports.
+Import creates copies and does not remove the original events. This release accepts files up to 5 MB and 2,000 events. It skips repeated source UIDs in the destination. Events without source UIDs also use matching details to detect duplicates. Distinct supplied UIDs remain separate events even when their details match, so duplicate detection cannot prevent every duplicate across unrelated exports.
 
 Meetings with guests are imported as personal copies without sending invitations. Unsupported exception-heavy series and timezone formats are reported and skipped. Unsupported or excessive reminders can be trimmed with a message while keeping the event. Check the report before relying on the result.
 

@@ -65,7 +65,7 @@ All eight providers below have a documented local MCP interface. These are host-
 | Muse Code | `~/.config/muse/settings.json` | `/mcp` |
 | Pi | `~/.pi/agent/mcp.json` | `pi mcp list` |
 
-These clients launch the same local Sunlith server. There is no AI subscription or provider account inside the APK. A client without local stdio MCP support needs another adapter; this beta does not supply an HTTP gateway.
+These clients launch the same local Sunlith server. There is no AI subscription or provider account inside the APK. A client without local stdio MCP support needs another adapter; this release does not supply an HTTP gateway.
 
 ## Claude Code
 
