@@ -286,9 +286,9 @@
     <string name="notification_time_range">%1$s - %2$s</string>
     <string name="notification_location_separator">%1$s, %2$s</string>
     <string name="local_calendar_name">Sunlith (sur cet appareil)</string>
-    <string name="ai_intro_title">Planifiez avec votre assistant</string>
-    <string name="ai_intro_lead">Ajoutez et modifiez vos événements avec votre assistant habituel.</string>
-    <string name="action_set_up_ai">Configurer un assistant</string>
+    <string name="ai_intro_title">Votre agenda, connecté</string>
+    <string name="ai_intro_lead">Demandez à votre assistant sur ordinateur d’ajouter, de modifier ou de supprimer des événements sur votre téléphone.</string>
+    <string name="action_set_up_ai">Connecter votre ordinateur</string>
     <string name="action_without_ai">Utiliser seulement l’agenda</string>
     <string name="ai_setup_title">Guides pour les assistants</string>
     <string name="ai_setup_support">Choisissez celui que vous utilisez, puis ouvrez son guide.</string>

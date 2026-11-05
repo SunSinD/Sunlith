@@ -124,6 +124,7 @@ internal class DeviceLinkServer(
                 write(DeviceLinkHttp.response(status, body))
                 flush()
             }
+            if (status == 200) peer.pairing?.let(::noteSuccess)
         } catch (_: Exception) {
         } finally {
             guard?.cancel(false)
@@ -132,7 +133,14 @@ internal class DeviceLinkServer(
         }
     }
 
-    private class Peer(val address: String, var authorized: Boolean = false)
+    private class Peer(val address: String, var authorized: Boolean = false, var pairing: DeviceLinkPairing? = null)
+
+    private fun noteSuccess(pairing: DeviceLinkPairing) {
+        try {
+            if (DeviceLinkStore.recordSuccess(app, pairing)) DeviceLink.activityChanged()
+        } catch (_: Exception) {
+        }
+    }
 
     private fun respond(input: BufferedInputStream, peer: Peer, readGuard: ScheduledFuture<*>): Pair<Int, ByteArray> {
         val head = DeviceLinkHttp.readHead(input)
@@ -145,6 +153,7 @@ internal class DeviceLinkServer(
             throw DeviceLinkError.unauthorized()
         }
         peer.authorized = true
+        peer.pairing = pairing
         if (!limiter.request(peer.address)) {
             DeviceLinkHttp.drain(input, length)
             throw DeviceLinkError.rateLimited()

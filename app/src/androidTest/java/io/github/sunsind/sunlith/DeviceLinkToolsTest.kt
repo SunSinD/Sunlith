@@ -14,7 +14,11 @@ import io.github.sunsind.sunlith.data.CalendarDates
 import io.github.sunsind.sunlith.data.CalendarRepository
 import io.github.sunsind.sunlith.data.EventDraft
 import io.github.sunsind.sunlith.device.DeviceLink
+import io.github.sunsind.sunlith.device.DeviceLinkChange
+import io.github.sunsind.sunlith.device.DeviceLinkChangeAction
+import io.github.sunsind.sunlith.device.DeviceLinkChangeField
 import io.github.sunsind.sunlith.device.DeviceLinkError
+import io.github.sunsind.sunlith.device.DeviceLinkHistory
 import io.github.sunsind.sunlith.device.DeviceLinkJson
 import io.github.sunsind.sunlith.device.DeviceLinkStore
 import io.github.sunsind.sunlith.device.DeviceLinkTools
@@ -58,6 +62,7 @@ class DeviceLinkToolsTest {
         allowedId = calendar(Calendars.CAL_ACCESS_OWNER)
         readOnlyId = calendar(Calendars.CAL_ACCESS_READ)
         otherId = calendar(Calendars.CAL_ACCESS_OWNER)
+        DeviceLink.clearHistory(context)
     }
 
     @After
@@ -65,6 +70,7 @@ class DeviceLinkToolsTest {
         if (!::context.isInitialized) return
         owned.reversed().forEach { (id, account) -> context.contentResolver.delete(localCalendarUri(id, account), null, null) }
         DeviceLinkStore.clear(context)
+        DeviceLink.clearHistory(context)
     }
 
     @Test
@@ -273,6 +279,98 @@ class DeviceLinkToolsTest {
         DeviceLink.revoke(context)
         assertFalse(DeviceLink.isPaired(context))
         assertNull(DeviceLinkStore.authorize(context, rotated["token"] as String))
+    }
+
+    @Test
+    fun historyRecordsOnlyRealChangesWithoutPrivateDetails() {
+        val before = DeviceLink.activity.value
+        val createArgs = mapOf("calendarId" to allowedId.toString(), "operationId" to "history-op-01",
+            "title" to "History lab", "description" to "private-description-text", "location" to "Room A-1",
+            "start" to timed("2026-07-01T10:00:00-04:00"), "end" to timed("2026-07-01T11:00:00-04:00"))
+        val created = call("create_event", createArgs)
+        val id = created["id"] as String
+        assertTrue(DeviceLink.activity.value > before)
+        assertEquals(true, call("create_event", createArgs)["reused"])
+        assertEquals(1, DeviceLink.history(context).size)
+
+        val base = mapOf("calendarId" to allowedId.toString(), "eventId" to id)
+        expect("revision_mismatch") { call("update_event", base + mapOf("etag" to "r1-stale", "title" to "Never saved")) }
+        expect("bad_request") { call("update_event", base + mapOf("etag" to created["etag"], "reminderMinutes" to listOf(1, 2, 3, 4, 5, 6))) }
+        call("update_event", base + mapOf("etag" to created["etag"], "title" to "History lab", "location" to "Room A-1"))
+        assertEquals(1, DeviceLink.history(context).size)
+
+        val etag = call("get_event", base)["etag"]
+        val updated = call("update_event", base + mapOf("etag" to etag, "title" to "History lab moved", "location" to "Room B-2",
+            "start" to timed("2026-07-01T12:00:00-04:00"), "end" to timed("2026-07-01T13:00:00-04:00")))
+        expect("revision_mismatch") { call("delete_event", base + mapOf("etag" to etag, "confirm" to true)) }
+        call("delete_event", base + mapOf("etag" to updated["etag"], "confirm" to true))
+        expect("not_found") { call("delete_event", base + mapOf("etag" to updated["etag"], "confirm" to true)) }
+
+        call("import_calendar", mapOf("calendarId" to allowedId.toString(), "ics" to ics("history-uid-1"), "confirm" to true))
+        call("import_calendar", mapOf("calendarId" to allowedId.toString(), "ics" to ics("history-uid-1"), "confirm" to true))
+        expect("bad_request") { call("import_calendar", mapOf("calendarId" to allowedId.toString(), "ics" to "not a calendar", "confirm" to true)) }
+        expect("calendar_not_allowed") { call("import_calendar", mapOf("calendarId" to readOnlyId.toString(), "ics" to ics("history-uid-2"), "confirm" to true)) }
+
+        val history = DeviceLink.history(context)
+        assertEquals(listOf(DeviceLinkChangeAction.IMPORT, DeviceLinkChangeAction.DELETE, DeviceLinkChangeAction.UPDATE, DeviceLinkChangeAction.CREATE),
+            history.map { it.action })
+        assertTrue(history.zipWithNext().all { (newer, older) -> newer.atMillis >= older.atMillis })
+        assertTrue(history.all { it.calendarId == allowedId })
+        val (imported, deleted, edit, create) = history
+        assertEquals(DeviceLinkChange(DeviceLinkChangeAction.IMPORT, imported.atMillis, allowedId, imported = 1, duplicates = 0, skipped = 0), imported)
+        assertEquals(id.toLong(), deleted.eventId)
+        assertEquals("History lab moved", deleted.title)
+        assertEquals(listOf(DeviceLinkChangeField.TITLE, DeviceLinkChangeField.LOCATION, DeviceLinkChangeField.TIME), edit.fields)
+        assertEquals("History lab moved", edit.title)
+        assertEquals(id.toLong(), create.eventId)
+        assertEquals("History lab", create.title)
+        assertTrue(create.fields.isEmpty())
+
+        val saved = File(context.noBackupFilesDir, "device-link/history.json").readText()
+        listOf("private-description-text", "Room A-1", "Room B-2", "operationId", "history-op-01", "BEGIN:VCALENDAR", "etag").forEach {
+            assertFalse(it, saved.contains(it))
+        }
+        DeviceLinkHistory.dropCache()
+        assertEquals(history, DeviceLink.history(context))
+
+        DeviceLinkStore.pair(context, setOf(allowedId))
+        DeviceLink.revoke(context)
+        assertEquals(history, DeviceLink.history(context))
+    }
+
+    @Test
+    fun historyIsBoundedClearableAndSurvivesABadFile() {
+        repeat(DeviceLinkHistory.MAX_ENTRIES + 5) {
+            DeviceLinkHistory.record(context, DeviceLinkChange(DeviceLinkChangeAction.CREATE, it.toLong(), allowedId, it + 1L, "x".repeat(300)))
+        }
+        val history = DeviceLink.history(context)
+        assertEquals(DeviceLinkHistory.MAX_ENTRIES, history.size)
+        assertEquals((DeviceLinkHistory.MAX_ENTRIES + 4).toLong(), history.first().atMillis)
+        assertEquals(5L, history.last().atMillis)
+        assertEquals(DeviceLinkHistory.MAX_TITLE, history.first().title?.length)
+        DeviceLinkHistory.dropCache()
+        assertEquals(history, DeviceLink.history(context))
+
+        val high = Char(0xD83D)
+        val low = Char(0xDE00)
+        val emoji = "$high$low"
+        assertEquals("a".repeat(199), DeviceLinkHistory.cleanTitle("a".repeat(199) + emoji))
+        assertEquals("ab$emoji", DeviceLinkHistory.cleanTitle("a${low}b$emoji$high"))
+        DeviceLinkHistory.record(context, DeviceLinkChange(DeviceLinkChangeAction.DELETE, 1_000, allowedId, 1, "Split $high"))
+        DeviceLinkHistory.dropCache()
+        assertEquals("Split ", DeviceLink.history(context).first().title)
+
+        DeviceLink.clearHistory(context)
+        assertTrue(DeviceLink.history(context).isEmpty())
+        DeviceLinkHistory.dropCache()
+        assertTrue(DeviceLink.history(context).isEmpty())
+
+        File(context.noBackupFilesDir, "device-link/history.json").apply { parentFile?.mkdirs() }.writeText("{not json")
+        DeviceLinkHistory.dropCache()
+        assertTrue(DeviceLink.history(context).isEmpty())
+        DeviceLinkHistory.record(context, DeviceLinkChange(DeviceLinkChangeAction.DELETE, 7, allowedId, 9, "Kept"))
+        DeviceLinkHistory.dropCache()
+        assertEquals(listOf(DeviceLinkChange(DeviceLinkChangeAction.DELETE, 7, allowedId, 9, "Kept")), DeviceLink.history(context))
     }
 
     @Test

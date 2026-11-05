@@ -29,4 +29,27 @@
     <string name="device_link_notification_text">Your paired computer can manage your selected calendars.</string>
     <string name="device_link_guide">Computer setup guide</string>
     <string name="device_link_failed">Could not update the connection. Try again.</string>
+    <string name="device_link_history">Activity history</string>
+    <string name="device_link_details">Connection details</string>
+    <string name="device_link_status">Status</string>
+    <string name="device_link_paired_since">Paired since</string>
+    <string name="device_link_older_pairing">Before this update</string>
+    <string name="device_link_not_paired">Not paired</string>
+    <string name="device_link_last_request">Last successful request</string>
+    <string name="device_link_no_contact">None recorded yet</string>
+    <string name="device_link_details_help">Connection on means Sunlith is listening. The last request shows when your computer last reached it, not whether it is connected now. Access uses HTTPS with a pinned phone certificate and is limited to your chosen calendars.</string>
+    <string name="device_link_history_help">Latest 100 successful computer changes, saved only on this phone. Earlier changes and manual edits are not included. This list is a record, not an undo tool.</string>
+    <string name="device_link_history_empty">No computer changes recorded yet.</string>
+    <string name="device_link_history_clear">Clear history</string>
+    <string name="device_link_history_clear_body">Clear this local activity list? Your events and computer connection will stay as they are.</string>
+    <string name="device_link_history_added">Added: %1$s</string>
+    <string name="device_link_history_edited">Edited: %1$s</string>
+    <string name="device_link_history_deleted">Deleted: %1$s</string>
+    <string name="device_link_history_imported">Import: added %1$d, duplicates %2$d, skipped %3$d</string>
+    <string name="device_link_field_title">Title</string>
+    <string name="device_link_field_description">Description</string>
+    <string name="device_link_field_location">Location</string>
+    <string name="device_link_field_time">Date and time</string>
+    <string name="device_link_field_recurrence">Repeat</string>
+    <string name="device_link_field_reminders">Reminders</string>
 </resources>

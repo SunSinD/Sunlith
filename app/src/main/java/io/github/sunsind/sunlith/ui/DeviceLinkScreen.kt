@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +54,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.device.DeviceLink
+import io.github.sunsind.sunlith.device.DeviceLinkChange
+import io.github.sunsind.sunlith.device.DeviceLinkChangeAction
+import io.github.sunsind.sunlith.device.DeviceLinkChangeField
+import io.github.sunsind.sunlith.device.DeviceLinkDiagnostics
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -63,6 +69,10 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
     val p = LocalPalette.current
     val scope = rememberCoroutineScope()
     val connection by DeviceLink.state.collectAsState()
+    val activity by DeviceLink.activity.collectAsState()
+    var page by rememberSaveable { mutableStateOf("connection") }
+    var history by remember { mutableStateOf(emptyList<DeviceLinkChange>()) }
+    var diagnostics by remember { mutableStateOf(DeviceLinkDiagnostics(null, null)) }
     var paired by remember { mutableStateOf(false) }
     var ids by remember { mutableStateOf(vm.activeIds) }
     var hosts by remember { mutableStateOf(emptyList<String>()) }
@@ -72,7 +82,14 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
     var unpair by remember { mutableStateOf(false) }
     var sharedUri by remember { mutableStateOf<Uri?>(null) }
     var exportRequest by remember { mutableStateOf<Pair<Set<Long>, String>?>(null) }
-    BackHandler { vm.back() }
+    val back = { if (page == "connection") vm.back() else page = "connection" }
+    BackHandler(onBack = back)
+
+    LaunchedEffect(activity, refresh) {
+        val data = withContext(Dispatchers.IO) { DeviceLink.history(context) to DeviceLink.diagnostics(context) }
+        history = data.first
+        diagnostics = data.second
+    }
 
     LaunchedEffect(refresh) {
         val data = withContext(Dispatchers.IO) {
@@ -124,6 +141,30 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
         }
     }
 
+    if (page == "history") {
+        ConnectionHistoryScreen(history, busy, onBack = back, onClear = {
+            scope.launch {
+                busy = true
+                try { withContext(Dispatchers.IO) { DeviceLink.clearHistory(context) } }
+                catch (_: Exception) { vm.message(context.getString(R.string.device_link_failed)) }
+                finally { busy = false }
+            }
+        })
+        return
+    }
+    if (page == "details") {
+        Scaffold(containerColor = p.background, topBar = { ScreenTopBar(stringResource(R.string.device_link_details), onNavigate = back) }) { padding ->
+            LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                item { ConnectionDetail(stringResource(R.string.device_link_status), stringResource(if (connection.running) R.string.device_link_on else R.string.device_link_off)) }
+                item { ConnectionDetail(stringResource(R.string.device_link_paired_since), diagnostics.pairedAtMillis?.let { connectionDate(context, it) }
+                    ?: stringResource(if (paired) R.string.device_link_older_pairing else R.string.device_link_not_paired)) }
+                item { ConnectionDetail(stringResource(R.string.device_link_last_request), diagnostics.lastSuccessMillis?.let { connectionDate(context, it) } ?: stringResource(R.string.device_link_no_contact)) }
+                item { ConnectionDetail(stringResource(R.string.device_link_address), hosts.joinToString("\n").ifBlank { context.getString(R.string.device_link_no_network) }) }
+                item { Text(stringResource(R.string.device_link_details_help), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
+            }
+        }
+        return
+    }
     Scaffold(containerColor = p.background, topBar = {
         ScreenTopBar(stringResource(R.string.device_link_title), onNavigate = vm::back, actions = {
             TextButton(onClick = { refresh++; vm.reload() }, enabled = !busy) { Text(stringResource(R.string.action_refresh)) }
@@ -133,6 +174,10 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
             item {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.device_link_lead), color = p.muted, style = MaterialTheme.typography.bodyMedium)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { page = "history" }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.device_link_history)) }
+                        TextButton(onClick = { page = "details" }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.device_link_details)) }
+                    }
                     if (paired) {
                         Text(stringResource(if (connection.running) R.string.device_link_on else R.string.device_link_off), style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.device_link_running_help), color = p.muted, style = MaterialTheme.typography.bodyMedium)
@@ -246,5 +291,61 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
             }
         }) { Text(stringResource(R.string.device_link_unpair)) } },
         dismissButton = { TextButton(onClick = { unpair = false }) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+private fun connectionDate(context: android.content.Context, millis: Long): String = DateUtils.formatDateTime(
+    context, millis, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_YEAR,
+)
+
+@Composable
+private fun ConnectionDetail(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = LocalPalette.current.muted)
+        Text(value, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun ConnectionHistoryScreen(history: List<DeviceLinkChange>, busy: Boolean, onBack: () -> Unit, onClear: () -> Unit) {
+    val p = LocalPalette.current
+    val context = LocalContext.current
+    var confirmClear by rememberSaveable { mutableStateOf(false) }
+    Scaffold(containerColor = p.background, topBar = {
+        ScreenTopBar(stringResource(R.string.device_link_history), onNavigate = onBack, actions = {
+            if (history.isNotEmpty()) TextButton(onClick = { confirmClear = true }, enabled = !busy) { Text(stringResource(R.string.device_link_history_clear)) }
+        })
+    }) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 32.dp)) {
+            item { Text(stringResource(R.string.device_link_history_help), Modifier.padding(16.dp), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
+            if (history.isEmpty()) item { Text(stringResource(R.string.device_link_history_empty), Modifier.padding(16.dp), color = p.muted) }
+            items(history) { change ->
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val title = change.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.untitled)
+                    Text(when (change.action) {
+                        DeviceLinkChangeAction.CREATE -> stringResource(R.string.device_link_history_added, title)
+                        DeviceLinkChangeAction.UPDATE -> stringResource(R.string.device_link_history_edited, title)
+                        DeviceLinkChangeAction.DELETE -> stringResource(R.string.device_link_history_deleted, title)
+                        DeviceLinkChangeAction.IMPORT -> stringResource(R.string.device_link_history_imported, change.imported, change.duplicates, change.skipped)
+                    }, style = MaterialTheme.typography.bodyLarge)
+                    Text(connectionDate(context, change.atMillis), color = p.muted, style = MaterialTheme.typography.bodySmall)
+                    if (change.fields.isNotEmpty()) Text(change.fields.joinToString(", ") { field -> context.getString(when (field) {
+                        DeviceLinkChangeField.TITLE -> R.string.device_link_field_title
+                        DeviceLinkChangeField.DESCRIPTION -> R.string.device_link_field_description
+                        DeviceLinkChangeField.LOCATION -> R.string.device_link_field_location
+                        DeviceLinkChangeField.TIME -> R.string.device_link_field_time
+                        DeviceLinkChangeField.RECURRENCE -> R.string.device_link_field_recurrence
+                        DeviceLinkChangeField.REMINDERS -> R.string.device_link_field_reminders
+                    }) }, color = p.muted, style = MaterialTheme.typography.bodyMedium)
+                }
+                HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp))
+            }
+        }
+    }
+    if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, containerColor = p.surface,
+        title = { Text(stringResource(R.string.device_link_history_clear)) },
+        text = { Text(stringResource(R.string.device_link_history_clear_body)) },
+        confirmButton = { TextButton(onClick = { confirmClear = false; onClear() }, enabled = !busy) { Text(stringResource(R.string.device_link_history_clear)) } },
+        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.action_cancel)) } },
     )
 }

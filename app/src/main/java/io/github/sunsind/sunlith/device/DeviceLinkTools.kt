@@ -199,6 +199,7 @@ internal class DeviceLinkTools(context: Context, private val repository: Calenda
                 else -> {
                     val created = try { repository.saveImported(draft, uid) } catch (_: IllegalArgumentException) { throw rejected() }
                     runCatching { DeviceLinkStore.recordOperation(app, OperationRecord(key, payload, created)) }
+                    remember(DeviceLinkChange(DeviceLinkChangeAction.CREATE, System.currentTimeMillis(), calendarId, created, title))
                     created to false
                 }
             }
@@ -252,6 +253,10 @@ internal class DeviceLinkTools(context: Context, private val repository: Calenda
                 if (repository.storedEvent(eventId) == null) throw DeviceLinkError.notFound()
                 throw DeviceLinkError.internal()
             }
+            val changed = changedFields(stored, draft)
+            if (changed.isNotEmpty()) {
+                remember(DeviceLinkChange(DeviceLinkChangeAction.UPDATE, System.currentTimeMillis(), calendarId, eventId, draft.title, changed))
+            }
         }
         AppRefresh.refresh(app)
         return snapshot(eventId, calendarId).json()
@@ -274,6 +279,7 @@ internal class DeviceLinkTools(context: Context, private val repository: Calenda
             } catch (_: IllegalArgumentException) {
                 throw rejected()
             }
+            remember(DeviceLinkChange(DeviceLinkChangeAction.DELETE, System.currentTimeMillis(), calendarId, eventId, current.stored.draft.title))
         }
         AppRefresh.refresh(app)
         return linkedMapOf("deleted" to true, "eventId" to eventId.toString())
@@ -288,13 +294,18 @@ internal class DeviceLinkTools(context: Context, private val repository: Calenda
         val calendar = allowedCalendar(calendarId, allowed)
         if (!calendar.writable) throw DeviceLinkError.calendarNotAllowed("This calendar is read-only on the phone.")
         val report = synchronized(WRITES) {
-            try {
+            val result = try {
                 IcsTransfer(app, repository).import(ByteArrayInputStream(bytes), calendarId)
             } catch (_: IllegalArgumentException) {
                 throw DeviceLinkError.badRequest("The calendar file could not be read. Use a complete .ics file with at most 2000 events.")
             } finally {
                 AppRefresh.refresh(app)
             }
+            if (result.imported > 0) {
+                remember(DeviceLinkChange(DeviceLinkChangeAction.IMPORT, System.currentTimeMillis(), calendarId,
+                    imported = result.imported, duplicates = result.duplicates, skipped = result.skipped))
+            }
+            result
         }
         return linkedMapOf("imported" to report.imported, "duplicates" to report.duplicates, "skipped" to report.skipped,
             "messages" to report.messages.map { it.take(500) }, "atomic" to false)
@@ -354,6 +365,20 @@ internal class DeviceLinkTools(context: Context, private val repository: Calenda
             if (before == after) return Snapshot(stored, after, block)
         }
         throw DeviceLinkError.revisionMismatch()
+    }
+
+    /** Called after the provider write succeeded, inside WRITES so the list keeps provider order. A history failure never fails the request. */
+    private fun remember(change: DeviceLinkChange) {
+        try { DeviceLinkHistory.record(app, change) } catch (_: Exception) { }
+    }
+
+    private fun changedFields(before: EventDraft, after: EventDraft): List<DeviceLinkChangeField> = buildList {
+        if (before.title.trim() != after.title.trim()) add(DeviceLinkChangeField.TITLE)
+        if (before.description != after.description) add(DeviceLinkChangeField.DESCRIPTION)
+        if (before.location != after.location) add(DeviceLinkChangeField.LOCATION)
+        if (!CalendarDates.timingUnchanged(before, after)) add(DeviceLinkChangeField.TIME)
+        if (before.rrule?.takeIf(String::isNotBlank) != after.rrule?.takeIf(String::isNotBlank)) add(DeviceLinkChangeField.RECURRENCE)
+        if (before.reminderMinutes.distinct().sorted() != after.reminderMinutes.distinct().sorted()) add(DeviceLinkChangeField.REMINDERS)
     }
 
     private fun allowedCalendar(id: Long, allowed: Set<Long>): DeviceCalendar {

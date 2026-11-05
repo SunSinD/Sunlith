@@ -3,6 +3,8 @@ package io.github.sunsind.sunlith
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.github.sunsind.sunlith.device.DeviceLink
+import io.github.sunsind.sunlith.device.DeviceLinkDiagnostics
 import io.github.sunsind.sunlith.device.DeviceLinkJson
 import io.github.sunsind.sunlith.device.DeviceLinkServer
 import io.github.sunsind.sunlith.device.DeviceLinkStore
@@ -20,6 +22,8 @@ import javax.net.ssl.X509TrustManager
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -75,6 +79,49 @@ class DeviceLinkTlsTest {
         assertEquals(401, revoked.first)
         assertTrue(revoked.second.contains("\"code\":\"unauthorized\""))
         assertFalse(revoked.second.contains(token))
+    }
+
+    @Test
+    fun diagnosticsTrackOnlySuccessfulAnswersForTheCurrentPairing() {
+        val pairedAt = DeviceLink.diagnostics(context).pairedAtMillis
+        assertNotNull(pairedAt)
+        assertNull(DeviceLink.diagnostics(context).lastSuccessMillis)
+        assertEquals(401, post("""{"tool":"get_current_time","arguments":{}}""", token = "A".repeat(43)).first)
+        assertEquals(400, post("""{"tool":"nope","arguments":{}}""").first)
+        assertNull(DeviceLink.diagnostics(context).lastSuccessMillis)
+
+        val before = DeviceLink.activity.value
+        val start = System.currentTimeMillis()
+        assertEquals(200, post("""{"tool":"get_current_time","arguments":{}}""").first)
+        val seen = DeviceLink.diagnostics(context).lastSuccessMillis
+        assertNotNull(seen)
+        assertTrue(seen!! >= start)
+        assertTrue(DeviceLink.activity.value > before)
+        DeviceLinkStore.dropCache()
+        assertEquals(DeviceLinkDiagnostics(pairedAt, seen), DeviceLink.diagnostics(context))
+
+        val old = DeviceLinkStore.pairing(context)!!
+        token = DeviceLinkStore.pair(context, setOf(1L))
+        assertNull(DeviceLink.diagnostics(context).lastSuccessMillis)
+        assertFalse(DeviceLinkStore.recordSuccess(context, old))
+        assertNull(DeviceLink.diagnostics(context).lastSuccessMillis)
+
+        assertEquals(200, post("""{"tool":"get_current_time","arguments":{}}""").first)
+        assertNotNull(DeviceLink.diagnostics(context).lastSuccessMillis)
+        DeviceLinkStore.clear(context)
+        assertEquals(DeviceLinkDiagnostics(null, null), DeviceLink.diagnostics(context))
+        DeviceLinkStore.dropCache()
+        assertNull(DeviceLink.diagnostics(context).lastSuccessMillis)
+    }
+
+    @Test
+    fun pairingFilesWithoutPairedAtStillLoad() {
+        DeviceLinkStore.write(DeviceLinkStore.file(context, "pairing.json"), DeviceLinkJson.write(linkedMapOf(
+            "version" to 1, "tokenSha256" to DeviceLinkStore.sha256(token.toByteArray()).hex(), "calendarIds" to listOf("1"))))
+        DeviceLinkStore.dropCache()
+        assertEquals(setOf(1L), DeviceLinkStore.authorize(context, token)?.calendarIds)
+        assertNull(DeviceLink.diagnostics(context).pairedAtMillis)
+        assertEquals(200, post("""{"tool":"get_current_time","arguments":{}}""").first)
     }
 
     @Test

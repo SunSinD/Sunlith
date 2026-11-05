@@ -143,6 +143,22 @@ class CalendarExperienceTest {
     }
 
     @Test
+    fun dayEventCardsShareTheSameBoundsForDifferentTimeLengths() {
+        val today = LocalDate.now()
+        val zone = java.time.ZoneId.systemDefault()
+        val ids = listOf(9 to 50, 11 to 40).mapIndexed { index, (hour, minute) ->
+            val start = today.atTime(hour, minute).atZone(zone).toInstant().toEpochMilli()
+            repository.saveEvent(EventDraft(calendarId = calendarId, title = "Aligned time $index", location = "Room 1", startMillis = start,
+                endMillis = start + 60 * 60 * 1000, timeZone = zone.id, reminderMinutes = emptyList()))
+        }
+        onMain { vm.changeViewMode(ViewMode.Day); vm.reload() }
+        val cards = ids.map { node(By.pkg(context.packageName).res("day_event_$it")).visibleBounds }
+        assertEquals("Time labels must not move the left edge of event cards.", cards[0].left, cards[1].left)
+        assertEquals(cards[0].right, cards[1].right)
+        assertEquals("Equivalent event content must have equal height.", cards[0].height(), cards[1].height())
+    }
+
+    @Test
     fun selectedDayNumberStaysHorizontallyCentered() {
         val selected = LocalDate.of(2027, 2, 18)
         onMain { vm.select(selected) }

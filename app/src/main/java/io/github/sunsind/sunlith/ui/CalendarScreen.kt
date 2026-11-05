@@ -18,6 +18,7 @@ import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -97,6 +98,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -656,32 +658,41 @@ private fun DayView(vm: SunlithViewModel, events: List<CalendarEvent>, f: Format
     val zone = ZoneId.systemDefault()
     val allDay = events.filter { it.allDay || it.span(zone).multiDay }
     val timed = events - allDay.toSet()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item(key = "status") { StatusCards(vm) }
-        item(key = "head") {
-            Column(Modifier.padding(vertical = 8.dp).semantics(mergeDescendants = true) { heading() }) {
-                Text(f.dayLong(day), color = p.ink, style = MaterialTheme.typography.titleLarge)
-                if (day == today) Text(stringResource(R.string.today), color = p.muted, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-        if (events.isEmpty()) {
-            item(key = "empty") {
-                Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(stringResource(R.string.no_events), color = p.muted, style = MaterialTheme.typography.bodyLarge)
-                    TextButton(onClick = { vm.newEvent(day) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.action_add_event)) }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val timeStyle = MaterialTheme.typography.bodyMedium
+    val labelWidth = with(density) {
+        timed.maxOfOrNull { measurer.measure(f.time(it.startMillis), timeStyle).size.width }?.toDp() ?: 0.dp
+    } + 8.dp
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val timeWidth = maxOf(64.dp, labelWidth).coerceAtMost((maxWidth - 32.dp) * 0.4f)
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item(key = "status") { StatusCards(vm) }
+            item(key = "head") {
+                Column(Modifier.padding(vertical = 8.dp).semantics(mergeDescendants = true) { heading() }) {
+                    Text(f.dayLong(day), color = p.ink, style = MaterialTheme.typography.titleLarge)
+                    if (day == today) Text(stringResource(R.string.today), color = p.muted, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-        }
-        items(allDay, key = { "a-" + it.key() }) { e -> EventCard(e, day, f, onClick = { vm.open(Screen.Details(e)) }) }
-        items(timed, key = { "t-" + it.key() }) { e ->
-            Row(verticalAlignment = Alignment.Top) {
-                Text(
-                    f.time(e.startMillis), Modifier.widthIn(min = 64.dp).padding(top = 12.dp, end = 8.dp),
-                    color = p.muted, style = MaterialTheme.typography.bodyMedium, maxLines = 1,
-                )
-                EventCard(e, day, f, onClick = { vm.open(Screen.Details(e)) }, modifier = Modifier.weight(1f))
+            if (events.isEmpty()) {
+                item(key = "empty") {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(stringResource(R.string.no_events), color = p.muted, style = MaterialTheme.typography.bodyLarge)
+                        TextButton(onClick = { vm.newEvent(day) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.action_add_event)) }
+                    }
+                }
             }
+            items(allDay, key = { "a-" + it.key() }) { e -> EventCard(e, day, f, onClick = { vm.open(Screen.Details(e)) }) }
+            items(timed, key = { "t-" + it.key() }) { e ->
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(
+                        f.time(e.startMillis), Modifier.width(timeWidth).padding(top = 12.dp, end = 8.dp),
+                        color = p.muted, style = timeStyle, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                    EventCard(e, day, f, onClick = { vm.open(Screen.Details(e)) }, modifier = Modifier.weight(1f).testTag("day_event_${e.id}"))
+                }
+            }
+            item(key = "spacer") { Spacer(Modifier.width(1.dp).height(1.dp)) }
         }
-        item(key = "spacer") { Spacer(Modifier.width(1.dp).height(1.dp)) }
     }
 }

@@ -47,6 +47,8 @@ Replace both paths with your private pairing file and extracted companion locati
 
 The companion verifies the phone certificate before sending the pairing key. It can access only calendars chosen during pairing. Display filters are separate from computer access; pairing initially shows those calendars in Sunlith too. Stop connection pauses access. Unpair computer revokes the file. Prefer the phone's Tailscale address for a stable private connection. If its Wi-Fi address changes, pair again or update only `baseUrl` in the private file.
 
+In Settings > Computer connection, Activity history shows the latest 100 successful computer changes, including edits, deletions and import totals. Connection details shows pairing information and the last successful request. A running connection means the phone is listening; it does not prove the computer is currently connected. History starts after installing the update that adds it, and clearing it leaves events and pairing unchanged.
+
 Keep the connection on while using the computer tools. Battery restrictions can pause or stop it with the screen off; allow background battery use for Sunlith if needed. It does not start automatically after reboot or force-stop. No public relay, router port forwarding, browser calendar tab or Google sign-in is needed.
 
 Direct mode uses the same seven calendar tool names, plus `import_calendar_file`. IDs are decimal Android calendar/event IDs. `get_current_time` defaults to the phone clock and timezone. Repeating occurrences share a master ID; changes require `seriesScope: "series"` and affect the whole series. Individual-occurrence changes, guest meetings and series with exceptions are blocked. Read the current `etag` before changing an event.

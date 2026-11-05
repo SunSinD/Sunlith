@@ -94,10 +94,11 @@ fun SunlithApp(vm: SunlithViewModel) {
         }
         Box(Modifier.fillMaxSize().background(p.background)) {
             when {
-                !vm.aiIntroDone -> AiWelcome(vm)
+                !vm.aiIntroDone -> ComputerWelcome(vm)
                 !vm.hasPermission -> Onboarding(vm)
                 vm.needsNotificationStep -> NotificationStep(vm)
                 else -> {
+                    LaunchedEffect(vm.stack.lastOrNull()) { vm.openRequestedComputerSetup() }
                     BackHandler(enabled = vm.stack.isNotEmpty()) { vm.back() }
                     val covered = vm.stack.isNotEmpty()
                     val motion = rememberMotion(vm.navigationAnimation)
@@ -131,18 +132,13 @@ fun SunlithApp(vm: SunlithViewModel) {
 }
 
 @Composable
-private fun AiWelcome(vm: SunlithViewModel) {
-    var showSetup by rememberSaveable { mutableStateOf(false) }
-    if (showSetup) {
-        AiSetupScreen(vm, onBack = { showSetup = false }, onContinue = vm::finishAiIntro)
-    } else {
-        OnboardingPage(
-            title = stringResource(R.string.ai_intro_title),
-            lead = stringResource(R.string.ai_intro_lead),
-            primary = stringResource(R.string.action_set_up_ai), onPrimary = { showSetup = true },
-            secondary = stringResource(R.string.action_without_ai), onSecondary = vm::finishAiIntro,
-        )
-    }
+private fun ComputerWelcome(vm: SunlithViewModel) {
+    OnboardingPage(
+        title = stringResource(R.string.ai_intro_title),
+        lead = stringResource(R.string.ai_intro_lead),
+        primary = stringResource(R.string.action_set_up_ai), onPrimary = vm::startComputerSetup,
+        secondary = stringResource(R.string.action_without_ai), onSecondary = vm::finishAiIntro,
+    )
 }
 
 @Composable

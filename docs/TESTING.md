@@ -34,7 +34,7 @@ It also checks that the agenda remains reachable in landscape at 200% font size.
 
 `SettingsPreferencesTest` checks defaults, limits, and persisted values in isolated preferences. `WidgetExperienceTest` uses Android's real widget host to check empty days, the date window, optional calendar names, background opacity, native dividers, multi-day events, and opening a draft from an empty date. `CalendarHandoffUiTest` checks Android event-insert intents and calendar-file sharing, editable drafts, import previews, rejection of unsupported input, and deferral through onboarding/recreation/an existing draft. The content provider used for shared-file fixtures exists only in the test APK.
 
-`AiOnboardingTest` checks the introduction, the skip route, all eight provider choices, the selected setup guide, the connection-status disclosure, Back, and the pinned Continue action from both onboarding and Settings. Selecting an assistant is not treated as a completed connection.
+`AiOnboardingTest` checks the computer-focused introduction, the skip route, direct navigation to Computer connection, and all eight assistant guides from Settings. Selecting a guide is not treated as a completed connection.
 
 `ReminderNotificationsTest` additionally checks actual posted notification content, actions, occurrence deduplication, disabled reminders, and delivery through a scheduled Android alarm. A separate test inserts an isolated due provider alert for a `MINUTES_DEFAULT` reminder, sends an explicit calendar-reminder broadcast, and verifies notification delivery without changing the provider alert state. That test verifies broadcast handling, not how a real account chooses its default reminder time. Tests request notification permission on API 33 and newer. For one specific emulator, use `adb -s <serial> shell am instrument ...` or set `ANDROID_SERIAL` before a Gradle connected-test command.
 
@@ -174,4 +174,41 @@ Version 0.2.0 APK SHA-256:
 
 ```text
 b76ae486868cc1a0a624360e0c87c2a7da03a3a5083614cd425041da6870e9c9
+```
+
+## Computer activity and time alignment checks
+
+The 0.3.0 regression cases cover a shared Day view time column for short and long clock labels, clock labels fitting on one line in 180dp and 340dp widget rows at normal and 200% font size, and French all-day labels fitting within two lines. Computer connection UI checks cover its details and activity pages and cancelling Clear history.
+
+Backend checks cover successful changes, rejected requests, create retries, unchanged edits, import counts, persistence, the 100-entry bound, clearing, damaged history files and safe title truncation. TLS tests verify that only successful authenticated responses update recent contact, old pairing files remain valid, and a revoked pairing cannot update the new pairing's contact time.
+
+History is a bounded activity record, not undo or a transactional audit trail. A process crash during a partial import can leave imported events without a completed import record. Storage failure can leave recent changes in memory only, and the last-contact timestamp saved to disk can lag by up to one minute. Existing event history cannot be reconstructed.
+
+## Version 0.3.0 verification
+
+Version code `7` uses the same signing certificate as v0.2.0 and was installed over the existing emulator app.
+
+| Check | Result |
+| --- | --- |
+| Android JVM tests | 20 passed |
+| Android lint | 0 errors, 74 warnings, 5 hints |
+| API 36 full emulator suite | 82 passed in 422.609 seconds |
+| API 30 full emulator suite | 80 cases; one test assertion corrected, as explained below |
+| API 30 final widget suite | All 5 passed |
+| Fold-sized API 36 at 200% text | Day card alignment passed at 1768x2208, density 320 |
+| Separate API 36 notification permission recovery | Passed |
+| Desktop tests and syntax | 44 passed; opt-in Android fixture skipped in normal runs |
+| Desktop dependency audit | 0 vulnerabilities |
+| Actual desktop SDK to Android provider | Passed through pinned HTTPS and stdio MCP |
+
+The first API 30 run passed 79 cases. Its only failure was a widget test counting invisible trailing whitespace as clipped text in a French all-day label. The assertion was corrected to measure visible glyphs. The focused case and then all five widget cases passed on API 30; the final test APK passed the complete API 36 suite. The full API 30 suite was not repeated after that test-only correction. Initial emulator runs interrupted by unresponsive System UI were discarded; the recorded suites used cold boots with one emulator at a time.
+
+The desktop integration exercised all eight tools against isolated emulator calendars. Its resulting private history contained create, update, import and delete entries. The fixture removed its calendars and pairing afterward. The actual widget rendering and large-text landscape captures were inspected privately. No personal events or phone pairing were changed, and no screenshots were published.
+
+Physical Samsung widget rendering, Fold posture changes, Wi-Fi/Tailscale delivery and manufacturer battery behavior still need phone testing. A Fold-sized emulator check does not reproduce Samsung's launcher or folding hardware.
+
+Version 0.3.0 APK SHA-256:
+
+```text
+ec76f249745b3b7e66f876d2060c0cb11eb7789eebdade474b8eb9b0e849a1c8
 ```
