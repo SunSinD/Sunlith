@@ -1,6 +1,6 @@
 # Versioning
 
-The current version is **v0.1.1**. The Android display version and MCP companion version are `0.1.1`; Android's `versionCode` is `4`.
+The current version is **v0.1.2**. The Android display version and MCP companion version are `0.1.2`; Android's `versionCode` is `5`.
 
 Use plain `MAJOR.MINOR.PATCH` numbers, without testing suffixes or an extra build counter. The `v` prefix belongs to the Git tag and release title. Major zero means initial development under [Semantic Versioning](https://semver.org/). Physical-device and integration testing are still in progress.
 

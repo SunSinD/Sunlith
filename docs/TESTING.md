@@ -104,3 +104,25 @@ Version 0.1.1 APK SHA-256:
 ```text
 f97f4babcab9bf5fe7d8d6c766ecc42d8e3ed1c4c202a34c1ae721a4b023da36
 ```
+
+## Version 0.1.2 artwork verification
+
+This build replaces the launcher foreground, monochrome layer, background, and decorative setup mark with the supplied sun/calendar artwork. It uses version code `5` and the same signing certificate as the previous published APK.
+
+| Check | Result |
+| --- | --- |
+| Android JVM tests | 20 passed |
+| API 30 UI, setup, and real widget tests | 6 passed in 51.362 seconds |
+| API 36 UI, setup, and real widget tests | 7 passed in 67.130 seconds |
+| Android lint | 0 errors, 70 warnings, 4 hints |
+| Companion syntax and tests | Passed, 31 tests |
+
+The UI checks include real create/search/edit/delete, rendered light/dark themes, French on API 36, and landscape with large font sizes. Both emulators installed the new APK over the previous version without uninstalling. Actual launcher captures were inspected on both API levels. A private circle/rounded-square mask comparison and foreground alpha bounds confirm the artwork remains inside the centered 66dp adaptive safe circle. Its visible radius is below 32dp on the 108dp foreground canvas. The themed layer shares that padded alpha geometry. Physical Samsung launcher appearance remains for phone testing.
+
+Current APK SHA-256:
+
+```text
+807b7c448f625e962be90777f9f4a794be35b90094b91361e945e235d6dc6c4c
+```
+
+The broader behavior suite recorded above belongs to the earlier source commit; it was not repeated for this artwork-only update. Screenshots remain private until phone approval.
