@@ -1,6 +1,6 @@
 package io.github.sunsind.sunlith.ui
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,14 +31,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -116,33 +111,10 @@ fun InfoCard(text: String, action: String? = null, onAction: () -> Unit = {}) {
     }
 }
 
-private val SunGold = Color(0xFFF2B33D)
-
-private val SunRays = listOf(
-    Offset(54f, 49.5f) to Offset(54f, 51.5f),
-    Offset(54f, 72.5f) to Offset(54f, 74.5f),
-    Offset(41.5f, 62f) to Offset(43.5f, 62f),
-    Offset(64.5f, 62f) to Offset(66.5f, 62f),
-    Offset(45.2f, 53.2f) to Offset(46.6f, 54.6f),
-    Offset(61.4f, 69.4f) to Offset(62.8f, 70.8f),
-    Offset(62.8f, 53.2f) to Offset(61.4f, 54.6f),
-    Offset(46.6f, 69.4f) to Offset(45.2f, 70.8f),
-)
-
-/** Matches the calendar and sun used by the launcher icon. */
+/** Uses the same supplied artwork as the launcher, without its adaptive padding. */
 @Composable
 fun SunMark(modifier: Modifier = Modifier) {
-    val ink = LocalPalette.current.ink
-    Canvas(modifier.size(56.dp)) {
-        val unit = size.minDimension / 56f
-        fun at(point: Offset) = Offset((point.x - 26f) * unit, (point.y - 26f) * unit)
-        val stroke = 3.5f * unit
-        drawRoundRect(ink, at(Offset(31f, 33f)), Size(46f * unit, 45f * unit), CornerRadius(6f * unit), style = Stroke(stroke))
-        drawLine(ink, at(Offset(31f, 44f)), at(Offset(77f, 44f)), stroke)
-        listOf(43f, 65f).forEach { x -> drawLine(ink, at(Offset(x, 29f)), at(Offset(x, 38f)), stroke, StrokeCap.Round) }
-        drawCircle(SunGold, 7f * unit, at(Offset(54f, 62f)))
-        SunRays.forEach { (from, to) -> drawLine(SunGold, at(from), at(to), 2.5f * unit, StrokeCap.Round) }
-    }
+    Image(painterResource(R.drawable.sunlith_mark), contentDescription = null, modifier = modifier.size(56.dp))
 }
 
 @Composable

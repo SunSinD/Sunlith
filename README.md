@@ -6,11 +6,11 @@ Keep your events, reminders, and home screen widget together. Add or change even
 
 ## Download
 
-[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1/Sunlith-v0.1.1.apk)
+[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.1.2/Sunlith-v0.1.2.apk)
 
 On your phone, you only need the APK. The ZIP is the computer companion, and SHA256SUMS.txt is for verifying downloads.
 
-[Release notes](https://github.com/SunSinD/Sunlith/releases/tag/v0.1.1)
+[Release notes](https://github.com/SunSinD/Sunlith/releases/tag/v0.1.2)
 
 Requires Android 8.0 or newer. The published APK is signed with a development key. Local and CI builds can use a different key, so use the published APK for updates. Installing a newer APK with the same signing key preserves app data. Production signing is planned before a stable release.
 
@@ -28,7 +28,7 @@ The APK has no advertising, analytics, Internet permission, or built-in chat. It
 
 For phone-only use, ask a mobile assistant that can create files for a downloadable `.ics` attachment containing your event details. Open or share it with Sunlith, choose a destination calendar, then confirm Import. Compatible Android assistants can also open an event draft for you to review and Save. These handoffs need no computer or Google account. See [phone assistant setup](docs/AI-INTEGRATION.md#on-your-phone-without-a-computer).
 
-[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1/Sunlith-companion-v0.1.1.zip)
+[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.1.2/Sunlith-companion-v0.1.2.zip)
 
 The companion runs on Windows, macOS, and Linux with Node.js 22 or newer. It connects a supported assistant to a Google calendar that your phone syncs. Extract the archive and read START-HERE.md, then follow the [setup guide](docs/AI-INTEGRATION.md).
 
