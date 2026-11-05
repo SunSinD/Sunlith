@@ -126,6 +126,8 @@ fun SettingsScreen(vm: SunlithViewModel) {
             Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 32.dp)) {
                 when (page) {
                     "root" -> {
+                        ClickRow(stringResource(R.string.device_link_title), stringResource(R.string.device_link_lead)) { vm.open(Screen.DeviceLink) }
+                        HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                         listOf(
                             "appearance" to R.string.beta_settings_appearance,
                             "calendar" to R.string.beta_settings_calendar,
@@ -136,7 +138,6 @@ fun SettingsScreen(vm: SunlithViewModel) {
                             ClickRow(stringResource(label), null) { page = target }
                         }
                         HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                        ClickRow(stringResource(R.string.device_link_title), null) { vm.open(Screen.DeviceLink) }
                         ClickRow(stringResource(R.string.ai_setup_title), null) { vm.open(Screen.AiSetup) }
                         ClickRow(stringResource(R.string.beta_settings_about), null) { page = "about" }
                     }

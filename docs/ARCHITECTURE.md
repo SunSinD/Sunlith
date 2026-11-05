@@ -28,6 +28,8 @@ Reminder scheduling reads actual reminder offsets from the provider. Sunlith sch
 
 The companion in `integrations/mcp` is a stdio server running on the user's computer. Direct mode uses the official MCP SDK and Node TLS/HTTPS to call the paired phone. The phone certificate is checked before authentication is sent. The pairing file grants access only to the selected calendars and stays outside the repository. Unpairing revokes it. A separate Google mode remains available.
 
+The phone keeps the latest 100 successful computer changes in a private local activity file. Entries contain event titles and changed field names, not full event bodies or credentials. The connection page exposes history, pairing time and recent successful contact. Clearing history does not change calendars or pairing; unpairing keeps history until it is cleared.
+
 Desktop OAuth uses PKCE, a random state, and a temporary loopback callback. Credentials and tokens stay outside the repository and APK. The companion requests event access and read-only calendar-list access. Google authorization exposes no public network endpoint. The direct phone listener accepts private-network connections while explicitly enabled.
 
 The tools use explicit calendar/event IDs, validated date ranges, optimistic concurrency through etags, and stable operation IDs for retried creation. Guest-event mutation is blocked. In direct mode the phone handles reads and writes itself, followed by widget and reminder refresh. Google mode uses account sync instead. Direct recurring edits and deletes apply to the series; individual occurrences are not supported.

@@ -21,7 +21,7 @@ shutil.copy2(root / 'app/build/outputs/apk/debug/app-debug.apk', apk)
 archive = dist / f'Sunlith-companion-{version}.zip'
 prefix = f'Sunlith-companion-{version}/'
 start = (root / 'integrations/mcp/START-HERE.md').read_text(encoding='utf-8')
-files = [Path(p) for p in ['LICENSE','NOTICE','SECURITY.md','docs/AI-INTEGRATION.md','docs/RESEARCH-AI.md','docs/RESEARCH-CALENDAR.md','docs/THIRD-PARTY.md','integrations/mcp/package.json','integrations/mcp/package-lock.json','integrations/mcp/README.md']]
+files = [Path(p) for p in ['LICENSE','NOTICE','SECURITY.md','CHANGELOG.md','docs/AI-INTEGRATION.md','docs/RESEARCH-AI.md','docs/RESEARCH-CALENDAR.md','docs/THIRD-PARTY.md','integrations/mcp/package.json','integrations/mcp/package-lock.json','integrations/mcp/README.md']]
 files += sorted(Path('integrations/mcp/src').glob('*.js'))
 files += sorted(Path('integrations/mcp/test').glob('*.js'))
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:

@@ -58,6 +58,30 @@ class ComputerConnectionUiTest {
     }
 
     @Test
+    fun connectionShowsItsDetailsAndSuccessfulChangeHistory(): Unit = with(fixture) {
+        DeviceLink.createPairing(context, setOf(linkedCalendarId), "127.0.0.1")
+        val tools = io.github.sunsind.sunlith.device.DeviceLinkTools(context)
+        val today = java.time.LocalDate.now()
+        val title = "Connection history ${UUID.randomUUID().toString().take(8)}"
+        tools.call("create_event", mapOf("calendarId" to linkedCalendarId.toString(), "operationId" to "history-${UUID.randomUUID()}",
+            "title" to title, "start" to mapOf("date" to today.toString()), "end" to mapOf("date" to today.plusDays(1).toString())), setOf(linkedCalendarId))
+        launch()
+        instrumentation.runOnMainSync { vm.open(Screen.DeviceLink) }
+        findText(R.string.device_link_details).click()
+        findText(R.string.device_link_paired_since)
+        findText(R.string.device_link_last_request)
+        findText(R.string.device_link_no_contact)
+        device.pressBack()
+        findText(R.string.device_link_history).click()
+        requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).text(context.getString(R.string.device_link_history_added, title))), 10_000))
+        findText(R.string.device_link_history_clear).click()
+        findText(R.string.device_link_history_clear_body)
+        findText(R.string.action_cancel).click()
+        assertTrue("Cancelling must preserve the change record.", DeviceLink.history(context).any { it.title == title })
+        assertTrue("Viewing history must preserve pairing.", DeviceLink.isPaired(context))
+    }
+
+    @Test
     fun settingsExplainsAccessAndCancellingTheFilePickerDoesNotPair(): Unit = with(fixture) {
         launch()
         instrumentation.runOnMainSync { vm.open(Screen.Settings) }

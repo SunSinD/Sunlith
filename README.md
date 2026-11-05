@@ -1,8 +1,8 @@
 # Sunlith
 
-A clean calendar app.
+A clean calendar app with direct computer control.
 
-Keep your events, reminders, and home screen widget together. Add or change events directly, or connect an assistant on your computer to manage them with prompts.
+Ask your computer assistant to add, edit or remove events directly on your phone. Sunlith keeps your calendar, reminders and home screen widget together, with no second calendar app required.
 
 ## Download
 
@@ -14,6 +14,20 @@ On your phone, you only need the APK. The ZIP is the computer companion, and SHA
 
 Requires Android 8.0 or newer. The published APK is signed with a development key. Local and CI builds can use a different key, so use the published APK for updates. Installing a newer APK with the same signing key preserves app data. Production signing is planned before a stable release.
 
+## Computer connection
+
+Pair your computer with Sunlith over Wi-Fi or Tailscale. The companion can read, create, change and delete events directly on your phone, including on-device calendars. No Google account or second calendar app is required.
+
+In Sunlith, open Settings > Computer connection, choose the calendars to share, and save the pairing file. Send it privately to your computer and start the connection. The phone shows a notification while the connection is on. You can stop or unpair it at any time. The connection page also shows recent contact and a local history of the latest 100 successful computer changes. You can clear the list without changing your events or pairing. History starts with this update; it cannot reconstruct older changes.
+
+For phone-only use, ask a mobile assistant that can create files for a downloadable `.ics` attachment containing your event details. Open or share it with Sunlith, choose a destination calendar, then confirm Import. Compatible Android assistants can also open an event draft for you to review and Save. These handoffs need no computer or Google account. See [phone assistant setup](docs/AI-INTEGRATION.md#on-your-phone-without-a-computer).
+
+[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.2.0/Sunlith-companion-v0.2.0.zip)
+
+The companion runs on Windows, macOS, and Linux with Node.js 22 or newer. Extract the archive and read START-HERE.md, then follow the [setup guide](docs/AI-INTEGRATION.md#direct-phone-connection). The private connection uses HTTPS with a pinned phone certificate. Pairing grants access only to the calendars you choose.
+
+First-run setup leads to Computer connection, with a quieter option to use the calendar only. Settings keeps the assistant guides available for your preferred computer tool. The setup guide also covers Gemini CLI. Sunlith has no subscription of its own; your assistant may require its own account. This release includes a command-line companion, with no desktop calendar, browser setup wizard, native desktop installer, or HTTP MCP gateway.
+
 ## Calendar
 
 Sunlith has month, week, and day views, search, calendar filters, and English and French support. The month view pairs a calendar grid with an agenda for that month, including empty days by default. The grid stays visible while its agenda scrolls, with a setting to enable collapse. Week view lists exactly seven days, and pressing Day opens today. Use the date buttons or Today to move around. Month view can also group empty days or show only days with events.
@@ -23,20 +37,6 @@ Events support all-day dates, repeat presets, notes, locations, and reminders. T
 It uses the calendars already stored on your phone. Your installed account adapters handle syncing. You can also create an on-device calendar and import or export .ics files through the system file picker. See [existing calendars and imports](docs/MIGRATION.md).
 
 The APK has no advertising, analytics, or built-in chat. It keeps no separate event database. Network access is used for the computer connection when you turn it on.
-
-## Computer connection
-
-Pair your computer with Sunlith over Wi-Fi or Tailscale. The companion can read, create, change and delete events directly on your phone, including on-device calendars. No Google account or second calendar app is required.
-
-In Sunlith, open Settings > Computer connection, choose the calendars to share, and save the pairing file. Send it privately to your computer and start the connection. The phone shows a notification while the connection is on. You can stop or unpair it at any time.
-
-For phone-only use, ask a mobile assistant that can create files for a downloadable `.ics` attachment containing your event details. Open or share it with Sunlith, choose a destination calendar, then confirm Import. Compatible Android assistants can also open an event draft for you to review and Save. These handoffs need no computer or Google account. See [phone assistant setup](docs/AI-INTEGRATION.md#on-your-phone-without-a-computer).
-
-[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.2.0/Sunlith-companion-v0.2.0.zip)
-
-The companion runs on Windows, macOS, and Linux with Node.js 22 or newer. Extract the archive and read START-HERE.md, then follow the [setup guide](docs/AI-INTEGRATION.md#direct-phone-connection). The private connection uses HTTPS with a pinned phone certificate. Pairing grants access only to the calendars you choose.
-
-First-run setup offers eight assistant guides: Codex, Claude, Cursor, Grok, OpenCode, Antigravity, Muse Code, and Pi. The setup guide also covers Gemini CLI. You can use the calendar without connecting an assistant. Sunlith has no subscription of its own; your assistant may require its own account. This release includes a command-line companion, with no desktop calendar, browser setup wizard, native desktop installer, or HTTP MCP gateway.
 
 ## Build
 
@@ -64,7 +64,7 @@ Direct mode controls calendars through Android on the paired phone. A separate G
 
 The editor blocks meetings with attendee records and complex recurring exceptions. Supported recurring edits and deletes apply to the whole series. Imports report unsupported records and exports can skip malformed provider data. Some detailed diagnostics remain English in the French interface. Back up important calendars before testing changes or imports.
 
-See [testing](docs/TESTING.md), [architecture](docs/ARCHITECTURE.md), [calendar research](docs/RESEARCH-CALENDAR.md), and [versioning](docs/VERSIONING.md).
+See [changes](CHANGELOG.md), [testing](docs/TESTING.md), [architecture](docs/ARCHITECTURE.md), [calendar research](docs/RESEARCH-CALENDAR.md), and [versioning](docs/VERSIONING.md).
 
 ## License
 

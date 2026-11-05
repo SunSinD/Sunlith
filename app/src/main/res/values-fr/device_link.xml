@@ -29,4 +29,27 @@
     <string name="device_link_notification_text">Votre ordinateur jumelé peut gérer les calendriers choisis.</string>
     <string name="device_link_guide">Guide de configuration</string>
     <string name="device_link_failed">Impossible de modifier la connexion. Réessayez.</string>
+    <string name="device_link_history">Historique</string>
+    <string name="device_link_details">Détails de connexion</string>
+    <string name="device_link_status">État</string>
+    <string name="device_link_paired_since">Jumelé depuis</string>
+    <string name="device_link_older_pairing">Avant cette mise à jour</string>
+    <string name="device_link_not_paired">Non jumelé</string>
+    <string name="device_link_last_request">Dernière requête réussie</string>
+    <string name="device_link_no_contact">Aucune requête enregistrée</string>
+    <string name="device_link_details_help">Connexion active signifie que Sunlith est à l’écoute. La dernière requête indique quand votre ordinateur a communiqué avec le téléphone, sans confirmer sa présence actuelle. L’accès utilise HTTPS avec le certificat du téléphone et se limite aux agendas choisis.</string>
+    <string name="device_link_history_help">Les 100 dernières modifications réussies de l’ordinateur, conservées seulement sur ce téléphone. Les modifications antérieures et manuelles sont exclues. Cet historique ne permet pas d’annuler les modifications.</string>
+    <string name="device_link_history_empty">Aucune modification de l’ordinateur enregistrée.</string>
+    <string name="device_link_history_clear">Effacer l’historique</string>
+    <string name="device_link_history_clear_body">Effacer cet historique local ? Vos événements et votre connexion resteront inchangés.</string>
+    <string name="device_link_history_added">Ajout : %1$s</string>
+    <string name="device_link_history_edited">Modification : %1$s</string>
+    <string name="device_link_history_deleted">Suppression : %1$s</string>
+    <string name="device_link_history_imported">Importation : ajouts %1$d, doublons %2$d, ignorés %3$d</string>
+    <string name="device_link_field_title">Titre</string>
+    <string name="device_link_field_description">Description</string>
+    <string name="device_link_field_location">Lieu</string>
+    <string name="device_link_field_time">Date et heure</string>
+    <string name="device_link_field_recurrence">Répétition</string>
+    <string name="device_link_field_reminders">Rappels</string>
 </resources>

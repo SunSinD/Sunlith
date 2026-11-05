@@ -164,6 +164,17 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         aiIntroDone = true
     }
 
+    fun startComputerSetup() {
+        uiPrefs.edit().putBoolean("computer_setup_requested", true).apply()
+        finishAiIntro()
+    }
+
+    fun openRequestedComputerSetup() {
+        if (!hasPermission || needsNotificationStep || stack.isNotEmpty() || !uiPrefs.getBoolean("computer_setup_requested", false)) return
+        uiPrefs.edit().remove("computer_setup_requested").apply()
+        open(Screen.DeviceLink)
+    }
+
     fun onNotificationPermissionResult(granted: Boolean, fromOnboarding: Boolean) {
         notificationsGranted = notificationGranted()
         if (fromOnboarding) finishNotificationStep(enable = granted)

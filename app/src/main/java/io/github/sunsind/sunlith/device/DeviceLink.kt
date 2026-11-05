@@ -11,13 +11,36 @@ import io.github.sunsind.sunlith.data.CalendarRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 data class DeviceLinkState(val running: Boolean = false, val error: String? = null)
+
+/**
+ * [pairedAtMillis] is null when not paired or for pairings made before this was saved. [lastSuccessMillis] is the last time
+ * the current pairing got a successful answer; it is not proof the computer is connected now. Both clear on unpair or re-pair.
+ */
+data class DeviceLinkDiagnostics(val pairedAtMillis: Long?, val lastSuccessMillis: Long?)
 
 object DeviceLink {
     const val PORT = 39393
     private val mutableState = MutableStateFlow(DeviceLinkState())
     val state: StateFlow<DeviceLinkState> = mutableState.asStateFlow()
+    private val mutableActivity = MutableStateFlow(0L)
+
+    /** Increases whenever [history] or [diagnostics] may have changed. Collect it and read both again off the main thread. */
+    val activity: StateFlow<Long> = mutableActivity.asStateFlow()
+
+    /** Latest computer changes, newest first, at most 100. Reads a small file the first time, so call it off the main thread. */
+    fun history(context: Context): List<DeviceLinkChange> = DeviceLinkHistory.entries(context.applicationContext)
+
+    /** Deletes the local change list; call it off the main thread. Unpairing, stopping or restarting never does this. */
+    fun clearHistory(context: Context) = DeviceLinkHistory.clear(context.applicationContext)
+
+    /** Reads small files the first time, so call it off the main thread. */
+    fun diagnostics(context: Context): DeviceLinkDiagnostics {
+        val app = context.applicationContext
+        return DeviceLinkDiagnostics(DeviceLinkStore.pairing(app)?.pairedAtMillis, DeviceLinkStore.lastSuccess(app))
+    }
 
     fun start(context: Context) {
         val app = context.applicationContext
@@ -50,6 +73,7 @@ object DeviceLink {
         require(calendarIds.all { it in existing }) { "One of the selected calendars is no longer available." }
         val fingerprint = DeviceLinkTls.fingerprint()
         val token = DeviceLinkStore.pair(app, calendarIds)
+        activityChanged()
         return String(DeviceLinkJson.write(linkedMapOf(
             "version" to 1,
             "baseUrl" to "https://$host:$PORT",
@@ -58,9 +82,11 @@ object DeviceLink {
         )), Charsets.UTF_8)
     }
 
+    /** Removes the pairing, pairing time and last success time. The change history stays until [clearHistory]. */
     fun revoke(context: Context) {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Revoking must run off the main thread." }
         DeviceLinkStore.clear(context.applicationContext)
+        activityChanged()
         stop(context)
     }
 
@@ -69,6 +95,8 @@ object DeviceLink {
     fun pairedCalendarIds(context: Context): Set<Long> = DeviceLinkStore.pairing(context.applicationContext)?.calendarIds.orEmpty()
 
     internal fun update(value: DeviceLinkState) { mutableState.value = value }
+
+    internal fun activityChanged() = mutableActivity.update { it + 1 }
 
     internal fun missingPermission(context: Context): String? {
         fun granted(permission: String) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED

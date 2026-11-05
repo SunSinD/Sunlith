@@ -141,6 +141,7 @@ private class AgendaFactory(private val context: Context) : RemoteViewsService.R
             if (state.showCalendarName && event.calendarName.isNotBlank()) add(event.calendarName)
         }.joinToString(", ")
         views.setViewVisibility(R.id.widget_time, View.VISIBLE)
+        views.setInt(R.id.widget_time, "setMaxLines", if (event.allDay || eventStart.atZone(state.zone).toLocalDate() < row.day) 2 else 1)
         views.setTextViewText(R.id.widget_time, time)
         views.setTextViewText(R.id.widget_title, title)
         views.setTextColor(R.id.widget_title, Color.rgb(242, 242, 242))

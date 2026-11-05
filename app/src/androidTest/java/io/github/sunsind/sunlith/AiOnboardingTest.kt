@@ -41,6 +41,7 @@ class AiOnboardingTest {
     private lateinit var device: UiDevice
     private var activity: Activity? = null
     private var oldIntro: Boolean? = null
+    private var oldComputerSetup: Boolean? = null
     private var oldLocales: LocaleList? = null
 
     @Before
@@ -51,7 +52,8 @@ class AiOnboardingTest {
         device = UiDevice.getInstance(instrumentation)
         val prefs = context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE)
         oldIntro = if (prefs.contains("ai_intro_done")) prefs.getBoolean("ai_intro_done", false) else null
-        prefs.edit().putBoolean("ai_intro_done", false).commit()
+        oldComputerSetup = if (prefs.contains("computer_setup_requested")) prefs.getBoolean("computer_setup_requested", false) else null
+        prefs.edit().putBoolean("ai_intro_done", false).remove("computer_setup_requested").commit()
         if (Build.VERSION.SDK_INT >= 33) {
             val locales = context.getSystemService(LocaleManager::class.java)
             oldLocales = locales.applicationLocales
@@ -67,12 +69,13 @@ class AiOnboardingTest {
         activity?.let { current -> instrumentation.runOnMainSync { current.finish() } }
         context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE).edit().apply {
             if (oldIntro == null) remove("ai_intro_done") else putBoolean("ai_intro_done", oldIntro!!)
+            if (oldComputerSetup == null) remove("computer_setup_requested") else putBoolean("computer_setup_requested", oldComputerSetup!!)
         }.commit()
         if (Build.VERSION.SDK_INT >= 33) oldLocales?.let { context.getSystemService(LocaleManager::class.java).applicationLocales = it }
     }
 
     @Test
-    fun firstLaunchOffersAiSetupAndAnAccessibleSkip() {
+    fun firstLaunchOffersComputerConnectionAndAnAccessibleSkip() {
         assertTrue(node(R.string.action_set_up_ai).isEnabled)
         val skip = node(R.string.action_without_ai)
         assertTrue(skip.isEnabled)
@@ -93,15 +96,27 @@ class AiOnboardingTest {
     }
 
     @Test
-    fun setupCanGoBackAndContinueWithoutClaimingAConnection() {
+    fun firstLaunchOpensComputerSetupWithoutClaimingAConnection() {
         node(R.string.action_set_up_ai).click()
+        node(R.string.device_link_title)
+        node(R.string.device_link_consent)
+        assertFalse(io.github.sunsind.sunlith.device.DeviceLink.isPaired(context))
+        assertFalse(device.hasObject(By.pkg(context.packageName).text("Codex")))
+        assertTrue(context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE).getBoolean("ai_intro_done", false))
+        device.pressBack()
+        awaitCalendar()
+    }
+
+    @Test
+    fun assistantGuidesRemainAvailableFromSettings() {
+        node(R.string.action_without_ai).click()
+        awaitCalendar()
+        requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).desc(english.getString(R.string.action_more))), 10_000)).click()
+        node(R.string.title_settings).click()
+        scrollToText(english.getString(R.string.ai_setup_title)).click()
         node(R.string.ai_setup_title)
         requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).text(english.getString(R.string.action_open_setup, "Codex"))), 10_000))
         node(R.string.action_continue_calendar)
-        requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).desc(english.getString(R.string.action_back))), 10_000)).click()
-        node(R.string.ai_intro_title)
-        node(R.string.action_set_up_ai).click()
-        node(R.string.ai_setup_title)
         val providers = listOf("Codex", "Claude", "Cursor", "Grok", "OpenCode", "Antigravity", "Muse Code", "Pi")
         providers.forEach { provider ->
             val label = scrollToText(provider)
@@ -110,7 +125,7 @@ class AiOnboardingTest {
         }
         scrollToText(english.getString(R.string.ai_setup_support))
         assertTrue(scrollToText(english.getString(R.string.action_open_setup, "Pi")).isEnabled)
-        assertFalse(context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE).getBoolean("ai_intro_done", false))
+        assertTrue(context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE).getBoolean("ai_intro_done", false))
         scrollToText(english.getString(R.string.action_continue_calendar)).click()
         awaitCalendar()
         assertTrue(context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE).getBoolean("ai_intro_done", false))

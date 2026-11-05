@@ -21,6 +21,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ListView
 import android.widget.TextView
+import android.widget.RemoteViews
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -143,6 +144,39 @@ class WidgetExperienceTest {
         if (calendarId != 0L) context.contentResolver.delete(localCalendarUri(calendarId, account), null, null)
         snapshots.forEach { (name, values) -> restoreTestPreferences(context.getSharedPreferences(name, Context.MODE_PRIVATE), values) }
         if (Build.VERSION.SDK_INT >= 33) oldLocales?.let { context.getSystemService(LocaleManager::class.java).applicationLocales = it }
+    }
+
+    @Test
+    fun noonAndLongTimeLabelsFitOneLineAtNarrowWidthsAndLargeText() {
+        listOf(1f, 2f).forEach { scale ->
+            val config = android.content.res.Configuration(context.resources.configuration).apply { fontScale = scale }
+            val scaled = context.createConfigurationContext(config)
+            listOf(180, 340).forEach { width ->
+                listOf("12:00 p.m." to 1, "11:40 a.m." to 1, "All day" to 2, "Toute la journée" to 2, "En cours" to 2).forEach { (label, maxLines) ->
+                    instrumentation.runOnMainSync {
+                        val views = RemoteViews(context.packageName, R.layout.widget_event).apply {
+                            setTextViewText(R.id.widget_time, label)
+                            setInt(R.id.widget_time, "setMaxLines", maxLines)
+                            setTextViewText(R.id.widget_title, "Sample event")
+                        }
+                        val root = views.apply(scaled, FrameLayout(scaled))
+                        root.measure(View.MeasureSpec.makeMeasureSpec((width * scaled.resources.displayMetrics.density).toInt(), View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                        root.layout(0, 0, root.measuredWidth, root.measuredHeight)
+                        val time = root.findViewById<TextView>(R.id.widget_time)
+                        assertTrue("Time label must fit at ${width}dp and ${scale}x text.", time.lineCount in 1..maxLines)
+                        assertEquals(label.length, time.layout.getLineEnd(time.lineCount - 1))
+                        repeat(time.lineCount) { line ->
+                            assertEquals(0, time.layout.getEllipsisCount(line))
+                            val visible = time.text.subSequence(time.layout.getLineStart(line), time.layout.getLineVisibleEnd(line)).toString()
+                            val textWidth = time.paint.measureText(visible)
+                            val available = time.width - time.totalPaddingLeft - time.totalPaddingRight
+                            assertTrue("The complete label must fit: $label, ${width}dp, ${scale}x, line $line '$visible', $textWidth / $available pixels", textWidth <= available + 1)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @Test
