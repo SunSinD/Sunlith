@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -31,7 +32,6 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
 import java.util.TimeZone
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -92,12 +92,12 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var widgetShowCalendarName by mutableStateOf(settings.widgetShowCalendarName); private set
     var widgetShowEmptyDays by mutableStateOf(settings.widgetShowEmptyDays); private set
     var agendaDisplay by mutableStateOf(settings.agendaDisplay); private set
+    var collapseCalendarOnScroll by mutableStateOf(settings.collapseCalendarOnScroll); private set
     var startView by mutableStateOf(settings.startView); private set
-    var swipeNavigation by mutableStateOf(settings.swipeNavigation); private set
     var navigationAnimation by mutableStateOf(settings.navigationAnimation); private set
 
     var selectedDate by mutableStateOf(LocalDate.now()); private set
-    var month by mutableStateOf(YearMonth.now()); private set
+    val month: YearMonth get() = YearMonth.from(selectedDate)
     var viewMode by mutableStateOf(launchViewMode()); private set
 
     /** Bumped by [goToday] so the calendar can re-center and confirm the action even when today is already selected. */
@@ -120,7 +120,6 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     val messages = messageChannel.receiveAsFlow()
 
     private var loadJob: Job? = null
-    private var extendJob: Job? = null
     private var changeJob: Job? = null
     private var searchJob: Job? = null
     private var pendingLink: (() -> Unit)? = null
@@ -147,7 +146,6 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         hasPermission = granted
         if (!granted) {
             loadJob?.cancel()
-            extendJob?.cancel()
             calendars = emptyList(); events = emptyList(); loaded = false
             loadedFrom = null; loadedTo = null
             stack.clear(); editor = null
@@ -195,32 +193,17 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
 
     // region loading
 
-    // The agenda scrolls through a bounded window of days, [loadedFrom, loadedTo]. The window always covers the
-    // month grid and the days around the selected date, grows by AGENDA_CHUNK days while the list scrolls, and
-    // slides (drops its far end) once it spans AGENDA_MAX_SPAN days, so every provider query stays bounded.
-
     private fun wantedRange(): Pair<LocalDate, LocalDate> {
         val start = gridStart(month, weekStartsMonday)
-        val from = minOf(start, selectedDate.minusDays(AGENDA_BEFORE))
-        val to = maxOf(start.plusDays(41), selectedDate.plusDays(AGENDA_AFTER))
-        return from to to
+        return start to start.plusDays(41)
     }
+
+    fun coversRange(from: LocalDate, to: LocalDate): Boolean =
+        loadedFrom?.let { !it.isAfter(from) } == true && loadedTo?.let { !it.isBefore(to) } == true
 
     private fun ensureLoaded() {
         val (from, to) = wantedRange()
-        val lf = loadedFrom
-        val lt = loadedTo
-        if (lf == null || lt == null || from.isBefore(lf) || to.isAfter(lt)) reload()
-    }
-
-    /** Keeps the days the agenda already scrolled through when they still fit next to the wanted range. */
-    private fun targetWindow(): Pair<LocalDate, LocalDate> {
-        val (wantFrom, wantTo) = wantedRange()
-        val lf = loadedFrom ?: return wantFrom to wantTo
-        val lt = loadedTo ?: return wantFrom to wantTo
-        val from = minOf(lf, wantFrom)
-        val to = maxOf(lt, wantTo)
-        return if (ChronoUnit.DAYS.between(from, to) < AGENDA_MAX_SPAN) from to to else wantFrom to wantTo
+        if (!coversRange(from, to) || loadJob?.isActive == true) reload()
     }
 
     private fun eventsBetween(from: LocalDate, to: LocalDate, ids: Set<Long>): List<CalendarEvent> {
@@ -232,8 +215,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
 
     fun reload() {
         if (!hasPermission) return
-        val (from, to) = targetWindow()
-        extendJob?.cancel()
+        val (from, to) = wantedRange()
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             try {
@@ -242,64 +224,22 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
                     val ids = effectiveIds(cals)
                     Triple(cals, ids, eventsBetween(from, to, ids))
                 }
-                calendars = result.first
-                activeIds = result.second
-                events = result.third
-                loadedFrom = from
-                loadedTo = to
-                loadError = null
-                loaded = true
+                if (wantedRange() != (from to to)) return@launch
+                Snapshot.withMutableSnapshot {
+                    calendars = result.first
+                    activeIds = result.second
+                    events = result.third
+                    loadedFrom = from
+                    loadedTo = to
+                    loadError = null
+                    loaded = true
+                }
                 fillMissingCalendar()
             } catch (c: CancellationException) {
                 throw c
             } catch (e: Exception) {
                 loadError = e.userMessage()
                 loaded = true
-            }
-        }
-    }
-
-    /**
-     * Loads up to [AGENDA_CHUNK] more days before or after the agenda window. Only the new days are queried. With
-     * [slide], the far end is then dropped so the window never spans more than [AGENDA_MAX_SPAN] days while still
-     * covering the wanted range; without it the window only grows up to that size.
-     * Calls made while another load runs are ignored; the agenda asks again after the list changes.
-     */
-    fun extendAgenda(forward: Boolean, slide: Boolean = true) {
-        if (!hasPermission || loadJob?.isActive == true || extendJob?.isActive == true) return
-        val lf = loadedFrom ?: return
-        val lt = loadedTo ?: return
-        val (wantFrom, wantTo) = wantedRange()
-        val from: LocalDate
-        val to: LocalDate
-        val chunk: Pair<LocalDate, LocalDate>
-        if (forward) {
-            to = minOf(lt.plusDays(AGENDA_CHUNK), (if (slide) maxOf(lf, wantFrom) else lf).plusDays(AGENDA_MAX_SPAN - 1))
-            if (!to.isAfter(lt)) return
-            from = maxOf(lf, to.minusDays(AGENDA_MAX_SPAN - 1))
-            chunk = lt.plusDays(1) to to
-        } else {
-            from = maxOf(lf.minusDays(AGENDA_CHUNK), (if (slide) minOf(lt, wantTo) else lt).minusDays(AGENDA_MAX_SPAN - 1))
-            if (!from.isBefore(lf)) return
-            to = minOf(lt, from.plusDays(AGENDA_MAX_SPAN - 1))
-            chunk = from to lf.minusDays(1)
-        }
-        val ids = activeIds
-        extendJob = viewModelScope.launch {
-            try {
-                val fresh = withContext(Dispatchers.IO) { eventsBetween(chunk.first, chunk.second, ids) }
-                if (loadedFrom != lf || loadedTo != lt || wantedRange() != (wantFrom to wantTo)) return@launch
-                val zone = ZoneId.systemDefault()
-                events = (events + fresh).distinctBy { it.key() }.filter { e ->
-                    val span = e.span(zone)
-                    !span.last.isBefore(from) && !span.first.isAfter(to)
-                }
-                loadedFrom = from
-                loadedTo = to
-            } catch (c: CancellationException) {
-                throw c
-            } catch (e: Exception) {
-                loadError = e.userMessage()
             }
         }
     }
@@ -332,8 +272,6 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
 
     fun select(date: LocalDate) {
         selectedDate = date
-        val m = YearMonth.from(date)
-        if (m != month) month = m
         ensureLoaded()
     }
 
@@ -346,9 +284,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         when (viewMode) {
             ViewMode.Month -> {
                 val next = month.plusMonths(delta.toLong())
-                month = next
-                selectedDate = if (next == YearMonth.now()) LocalDate.now() else next.atDay(1)
-                ensureLoaded()
+                select(if (next == YearMonth.now()) LocalDate.now() else next.atDay(1))
             }
             ViewMode.Week -> select(selectedDate.plusWeeks(delta.toLong()))
             ViewMode.Day -> select(selectedDate.plusDays(delta.toLong()))
@@ -356,7 +292,11 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun changeViewMode(mode: ViewMode) {
-        viewMode = mode
+        Snapshot.withMutableSnapshot {
+            if (mode == ViewMode.Day) selectedDate = LocalDate.now()
+            viewMode = mode
+        }
+        ensureLoaded()
         if (settings.startView == START_LAST) uiPrefs.edit().putString(KEY_VIEW, mode.name).apply()
     }
 
@@ -620,15 +560,15 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         agendaDisplay = settings.agendaDisplay
     }
 
+    fun changeCollapseCalendarOnScroll(enabled: Boolean) {
+        settings.collapseCalendarOnScroll = enabled
+        collapseCalendarOnScroll = settings.collapseCalendarOnScroll
+    }
+
     fun changeStartView(value: String) {
         settings.startView = value
         startView = settings.startView
         if (startView == START_LAST) uiPrefs.edit().putString(KEY_VIEW, viewMode.name).apply()
-    }
-
-    fun changeSwipeNavigation(enabled: Boolean) {
-        settings.swipeNavigation = enabled
-        swipeNavigation = enabled
     }
 
     fun changeNavigationAnimation(enabled: Boolean) {
@@ -777,10 +717,6 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
-        const val AGENDA_BEFORE = 31L
-        const val AGENDA_AFTER = 120L
-        const val AGENDA_CHUNK = 90L
-        const val AGENDA_MAX_SPAN = 730L
         private const val START_LAST = "last"
         private const val KEY_VIEW = "view_mode"
         private const val KEY_LAST_CALENDAR = "last_calendar"

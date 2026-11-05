@@ -6,17 +6,17 @@ Keep your events, reminders, and home screen widget together. Add or change even
 
 ## Download
 
-[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.1.0-beta.1/Sunlith-v0.1.0-beta.1.apk)
+[Download the APK](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1-beta.1/Sunlith-v0.1.1-beta.1.apk)
 
 On your phone, you only need the APK. The ZIP is the computer companion, and SHA256SUMS.txt is for verifying downloads.
 
-[Release notes](https://github.com/SunSinD/Sunlith/releases/tag/v0.1.0-beta.1)
+[Release notes](https://github.com/SunSinD/Sunlith/releases/tag/v0.1.1-beta.1)
 
-Requires Android 8.0 or newer. **v0.1.0-beta.1 is a beta testing build**, signed with a development key. Local and CI builds can use a different key, so use the published APK for updates. Installing a newer APK with the same signing key preserves app data. Production signing is planned before a stable release.
+Requires Android 8.0 or newer. **v0.1.1-beta.1 is a beta testing build**, signed with a development key. Local and CI builds can use a different key, so use the published APK for updates. Installing a newer APK with the same signing key preserves app data. Production signing is planned before a stable release.
 
 ## Calendar
 
-Sunlith has month, week, and day views, search, calendar filters, and English and French support. The month view pairs a fixed six-row grid with a scrollable agenda, including empty days by default. Swipe between dates or use Today to return. You can also group empty days or show only days with events.
+Sunlith has month, week, and day views, search, calendar filters, and English and French support. The month view pairs a calendar grid with an agenda for that month, including empty days by default. The grid stays visible while its agenda scrolls, with a setting to enable collapse. Week view lists exactly seven days, and pressing Day opens today. Use the date buttons or Today to move around. Month view can also group empty days or show only days with events.
 
 Events support all-day dates, repeat presets, notes, locations, and reminders. The app follows your system theme by default, with a manual override. Choose a startup view or reopen the last view. The resizable agenda widget shows 1-31 days, defaults to seven, and includes day dividers and empty days. Its opacity is adjustable in 5% steps; calendar names are hidden by default.
 
@@ -26,9 +26,9 @@ The APK has no advertising, analytics, Internet permission, or built-in chat. It
 
 ## Connect an assistant
 
-For phone-only use, ask a mobile assistant that can create files for a downloadable `.ics` event. Open or share it with Sunlith, choose a destination calendar, then confirm Import. Compatible Android assistants can also open an event draft for you to review and Save. These handoffs need no computer or Google account. See [phone assistant setup](docs/AI-INTEGRATION.md#on-your-phone-without-a-computer).
+For phone-only use, ask a mobile assistant that can create files for a downloadable `.ics` attachment containing your event details. Open or share it with Sunlith, choose a destination calendar, then confirm Import. Compatible Android assistants can also open an event draft for you to review and Save. These handoffs need no computer or Google account. See [phone assistant setup](docs/AI-INTEGRATION.md#on-your-phone-without-a-computer).
 
-[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.1.0-beta.1/Sunlith-companion-v0.1.0-beta.1.zip)
+[Download the computer companion](https://github.com/SunSinD/Sunlith/releases/download/v0.1.1-beta.1/Sunlith-companion-v0.1.1-beta.1.zip)
 
 The companion runs on Windows, macOS, and Linux with Node.js 22 or newer. It connects a supported assistant to a Google calendar that your phone syncs. Extract the archive and read START-HERE.md, then follow the [setup guide](docs/AI-INTEGRATION.md).
 

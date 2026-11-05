@@ -8,7 +8,7 @@
     <string name="beta_follow_system">Follow system theme</string>
     <string name="beta_dark_theme">Dark theme</string>
     <string name="beta_navigation_animation">Navigation animations</string>
-    <string name="beta_swipe_navigation">Swipe to change dates</string>
+    <string name="beta_collapse_calendar">Collapse calendar while scrolling</string>
     <string name="beta_start_view">Open app in</string>
     <string name="beta_last_view">Last used view</string>
     <string name="beta_agenda_display">Agenda days</string>

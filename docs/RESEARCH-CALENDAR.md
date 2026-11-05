@@ -25,7 +25,7 @@ Public Play review snapshots praise aCalendar's navigation, colors, all-day visi
 
 ## Beta interface decisions
 
-The beta uses a fixed six-row month grid with centered dates to keep its size predictable. A clear Today action and animated swipe navigation help move between dates. The default agenda includes empty days so the sequence remains visible, with compact and event-days-only modes available. Settings are grouped; the system theme is the default, with a manual dark override and a startup-view choice.
+The beta uses a fixed six-row month grid with centered dates to keep its size predictable. A clear Today action and date buttons move between dates. The default agenda includes empty days so the sequence remains visible, with compact and event-days-only modes available. Settings are grouped; the system theme is the default, with a manual dark override and a startup-view choice.
 
 The widget defaults to seven days, includes empty days and day dividers, and hides calendar names to reduce clutter. Its range is configurable from 1 to 31 days. Opacity defaults to 100%, adjustable in 5% steps. These are product decisions, not findings that one layout suits every user.
 

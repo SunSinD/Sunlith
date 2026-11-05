@@ -30,7 +30,7 @@ The tests cover local calendar creation, event CRUD, reminder persistence, all-d
 
 `CalendarUiTest` drives the actual Compose UI through Android accessibility: create an event, find it through search, edit it, and delete it. It also checks the rendered light/dark appearance and the persisted theme setting. On API 33 and newer, a separate case switches the app locale to French and checks translated calendar/editor/settings controls. These UI tests use and clean up a dedicated emulator-only calendar.
 
-It also checks that the agenda remains reachable by scrolling in landscape at 200% font size. `CalendarExperienceTest` checks month-grid geometry, centered selected dates, launch views, grouped settings and returning from the calendar selector, agenda display modes, continuous paging, Today feedback, and reaching a sixth-row date by dragging the month header in landscape at 200% font size. A separate case swipes the real agenda with Android animations disabled, checks both directions, and checks that turning off swipe navigation prevents date changes. Font size, rotation, and Android animation settings are restored afterward.
+It also checks that the agenda remains reachable in landscape at 200% font size. `CalendarExperienceTest` checks month-grid geometry, centered selected dates, launch views, grouped settings and returning from the calendar selector, first/last and immediately outside month/week boundaries, Month agenda display modes, and all seven Week rows regardless of the Month preference. It also checks that the Day tab returns to today, a fixed calendar stays visible by default, the collapse switch restores it, Today gives visible feedback, and a sixth-row date can be selected in landscape at 200% font size before Today brings its selected cell back into view. A separate case confirms that horizontal drags do not change dates. Stable accessibility resource IDs identify the calendar viewport and agenda separately. Font size, rotation, and Android animation settings are restored afterward.
 
 `SettingsPreferencesTest` checks defaults, limits, and persisted values in isolated preferences. `WidgetExperienceTest` uses Android's real widget host to check empty days, the date window, optional calendar names, background opacity, native dividers, multi-day events, and opening a draft from an empty date. `CalendarHandoffUiTest` checks Android event-insert intents and calendar-file sharing, editable drafts, import previews, rejection of unsupported input, and deferral through onboarding/recreation/an existing draft. The content provider used for shared-file fixtures exists only in the test APK.
 
@@ -68,25 +68,25 @@ These are test instructions, not a claim that every check has passed. Record the
 
 ## Verified beta build
 
-For `0.1.0-beta.1`, verified on November 4, 2026:
+For `0.1.1-beta.1`, verified against the APK hash below:
 
 | Check | Result |
 | --- | --- |
 | Android JVM unit tests | 20 passed |
-| Selected API 30 emulator suite | 39 passed in 166.427 seconds |
-| Selected API 36 emulator suite | 40 passed in 212.561 seconds |
-| Separate API 36 notification permission recovery | 1 passed in 8.204 seconds |
-| Android lint | 0 errors, 73 warnings, 4 hints |
+| Selected API 30 emulator suite | 43 passed in 303.634 seconds |
+| Selected API 36 emulator suite | 44 passed in 333.709 seconds |
+| Separate API 36 notification permission recovery | 1 passed in 7.027 seconds |
+| Android lint | 0 errors, 70 warnings, 4 hints |
 | Desktop MCP tests | 31 passed |
 | Desktop MCP syntax check | Passed |
 | Desktop MCP dependency audit | 0 vulnerabilities |
 
-Each selected emulator suite completed as a single run without failures. Android JVM tests comprise 13 ICS codec cases, 5 incoming-intent parser cases, and 2 editor-state cases. Notification permission recovery runs separately after revoking permission before instrumentation starts.
+Each selected emulator suite completed as a single run without failures. Android JVM tests comprise 13 ICS codec cases, 5 incoming-intent parser cases, and 2 editor-state cases. Notification permission recovery ran separately after revoking permission before instrumentation started.
 
 Tested debug APK SHA-256:
 
 ```text
-F17135E3A44D068043B358DD662F1A79C2D693A56EE17A4B46F77D4B0DF4F6FB
+6510163DC36109421906F92DF6254D46D5EF395494EAB74B4574D023EF9B508B
 ```
 
 The selected emulator suite comprises `CalendarRepositoryTest`, `ReminderNotificationsTest`, `CalendarUiTest`, `WidgetSmokeTest`, `AiOnboardingTest`, `SettingsPreferencesTest`, `CalendarExperienceTest`, `WidgetExperienceTest`, and `CalendarHandoffUiTest`. The French app-locale case requires API 33 and is excluded on API 30. Notification permission recovery runs separately with its explicit argument.

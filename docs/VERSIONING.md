@@ -1,6 +1,8 @@
 # Versioning
 
-The current testing version is **v0.1.0-beta.1**. The Android display version and MCP companion version are `0.1.0-beta.1`; Android's `versionCode` is `2`.
+The current testing version is **v0.1.1-beta.1**. The Android display version and MCP companion version are `0.1.1-beta.1`; Android's `versionCode` is `3`.
+
+Version `0.1.1-beta.1` is a patch-level beta update to `0.1.0-beta.1`. The first `1` is the patch number; the suffix identifies the first beta build of that patch. It remains below `1.0.0` because physical-device and integration testing is still in progress.
 
 [Semantic Versioning](https://semver.org/) uses `MAJOR.MINOR.PATCH`, optionally followed by a testing suffix such as `-beta.1`. Major zero means initial development. The `v` prefix belongs to the Git tag, not the application version. This beta still needs physical-device and real-account testing; its label does not promise a bug-free or stable product.
 
@@ -8,9 +10,9 @@ Increase Android's integer `versionCode` for every distributed update. Use a new
 
 ## GitHub release listing
 
-GitHub does not allow a prerelease to be marked Latest. To make the current download easy to find, `v0.1.0-beta.1` is published as a normal GitHub release marked Latest, with **beta** prominent in its version, title, and notes. This listing metadata does not make the app stable.
+GitHub does not allow a prerelease to be marked Latest. To make the current download easy to find, `v0.1.1-beta.1` is published as a normal GitHub release marked Latest, with **beta** prominent in its version, title, and notes. This listing metadata does not make the app stable.
 
-Upload and verify the APK, companion ZIP, and checksums before publishing. Remove the superseded test release and tag only after the beta has been verified and published; do not rewrite Git history. Keep the new version's tag and assets intact after publication.
+Upload and verify the APK, companion ZIP, and checksums before publishing. Keep published beta versions and their assets intact so testers can identify their installed build. Do not rewrite Git history.
 
 The Update download links workflow updates the README's three links to the most recently published release by publication time, including releases marked as prereleases. It can also be run manually from Actions. Keep the standalone labels `Download the APK`, `Release notes`, and `Download the computer companion` intact so the workflow can find them. Check the workflow after publishing. Setup guides link to the latest release page.
 

@@ -152,7 +152,7 @@ fun SettingsScreen(vm: SunlithViewModel) {
                         ClickRow(stringResource(R.string.settings_choose_calendars), pluralStringResource(R.plurals.calendars_shown, vm.activeIds.size, vm.activeIds.size)) { vm.open(Screen.Calendars) }
                         if (!vm.hasSunlithCalendar) ClickRow(stringResource(R.string.action_create_local), null) { vm.createLocalCalendar() }
                         ToggleRow(stringResource(R.string.settings_monday), null, vm.weekStartsMonday, vm::setMondayFirst)
-                        ToggleRow(stringResource(R.string.beta_swipe_navigation), null, vm.swipeNavigation, vm::changeSwipeNavigation)
+                        ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
                         SectionTitle(stringResource(R.string.beta_start_view))
                         listOf("Month" to R.string.view_month, "Week" to R.string.view_week, "Day" to R.string.view_day, "last" to R.string.beta_last_view).forEach { (value, label) ->
                             ChoiceRow(stringResource(label), vm.startView == value) { vm.changeStartView(value) }
