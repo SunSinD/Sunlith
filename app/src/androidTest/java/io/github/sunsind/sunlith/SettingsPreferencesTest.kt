@@ -51,7 +51,7 @@ class SettingsPreferencesTest {
         assertTrue(settings.widgetShowEmptyDays)
         assertEquals("all", settings.agendaDisplay)
         assertEquals("Month", settings.startView)
-        assertTrue(settings.swipeNavigation)
+        assertFalse(settings.collapseCalendarOnScroll)
         assertTrue(settings.navigationAnimation)
     }
 
@@ -78,7 +78,7 @@ class SettingsPreferencesTest {
             widgetShowEmptyDays = false
             agendaDisplay = "compact"
             startView = "last"
-            swipeNavigation = false
+            collapseCalendarOnScroll = true
             navigationAnimation = false
         }
         val restored = SettingsStore(isolated)
@@ -89,7 +89,7 @@ class SettingsPreferencesTest {
         assertFalse(restored.widgetShowEmptyDays)
         assertEquals("compact", restored.agendaDisplay)
         assertEquals("last", restored.startView)
-        assertFalse(restored.swipeNavigation)
+        assertTrue(restored.collapseCalendarOnScroll)
         assertFalse(restored.navigationAnimation)
     }
 }

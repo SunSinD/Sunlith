@@ -8,7 +8,7 @@
     <string name="beta_follow_system">Suivre le thème du système</string>
     <string name="beta_dark_theme">Thème sombre</string>
     <string name="beta_navigation_animation">Animations de navigation</string>
-    <string name="beta_swipe_navigation">Balayer pour changer de date</string>
+    <string name="beta_collapse_calendar">Réduire le calendrier pendant le défilement</string>
     <string name="beta_start_view">Vue au démarrage</string>
     <string name="beta_last_view">Dernière vue utilisée</string>
     <string name="beta_agenda_display">Jours de la liste</string>

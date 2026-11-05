@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.LocaleManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
@@ -16,6 +17,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Direction
@@ -59,13 +62,8 @@ class CalendarUiTest {
     private var activity: Activity? = null
     private var calendarId = 0L
     private val account = "Sunlith UI test ${UUID.randomUUID()}"
-    private var oldCalendars = emptySet<Long>()
-    private var oldChosen = false
-    private var oldTheme = "dark"
     private var oldLocales: LocaleList? = null
-    private var oldView: String? = null
-    private var oldLastCalendar: Long? = null
-    private var oldAiIntro: Boolean? = null
+    private val snapshots = mutableMapOf<String, Map<String, *>>()
     private val marker = "UI fixture marker"
 
     @Before
@@ -74,11 +72,9 @@ class CalendarUiTest {
         context = instrumentation.targetContext
         english = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.ENGLISH) })
         device = UiDevice.getInstance(instrumentation)
+        listOf("sunlith", "sunlith_ui").forEach { name -> snapshots[name] = context.getSharedPreferences(name, Context.MODE_PRIVATE).all.toMap() }
         repository = CalendarRepository(context)
         settings = SettingsStore(context)
-        oldCalendars = settings.selectedCalendarIds
-        oldChosen = settings.hasChosenCalendars
-        oldTheme = settings.themeMode
         if (Build.VERSION.SDK_INT >= 33) {
             val locales = context.getSystemService(LocaleManager::class.java)
             oldLocales = locales.applicationLocales
@@ -88,10 +84,11 @@ class CalendarUiTest {
         settings.selectedCalendarIds = setOf(calendarId)
         settings.hasChosenCalendars = true
         settings.themeMode = "dark"
+        settings.startView = "Month"
+        settings.agendaDisplay = "all"
+        settings.collapseCalendarOnScroll = false
+        settings.navigationAnimation = false
         val prefs = context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE)
-        oldView = prefs.getString("view_mode", null)
-        oldLastCalendar = if (prefs.contains("last_calendar")) prefs.getLong("last_calendar", -1) else null
-        oldAiIntro = if (prefs.contains("ai_intro_done")) prefs.getBoolean("ai_intro_done", false) else null
         prefs.edit().putString("view_mode", "Month").putLong("last_calendar", calendarId).putBoolean("ai_intro_done", true).commit()
         val today = LocalDate.now()
         repository.saveEvent(EventDraft(calendarId = calendarId, title = marker, startMillis = CalendarDates.allDayMillis(today), endMillis = CalendarDates.allDayMillis(today.plusDays(1)), allDay = true, timeZone = "UTC", reminderMinutes = emptyList()))
@@ -104,14 +101,7 @@ class CalendarUiTest {
         if (!::context.isInitialized) return
         activity?.let { current -> instrumentation.runOnMainSync { current.finish() } }
         context.contentResolver.delete(localCalendarUri(calendarId, account), null, null)
-        settings.selectedCalendarIds = oldCalendars
-        settings.hasChosenCalendars = oldChosen
-        settings.themeMode = oldTheme
-        context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE).edit().apply {
-            if (oldView == null) remove("view_mode") else putString("view_mode", oldView)
-            if (oldLastCalendar == null) remove("last_calendar") else putLong("last_calendar", oldLastCalendar!!)
-            if (oldAiIntro == null) remove("ai_intro_done") else putBoolean("ai_intro_done", oldAiIntro!!)
-        }.commit()
+        snapshots.forEach { (name, values) -> restoreTestPreferences(context.getSharedPreferences(name, Context.MODE_PRIVATE), values) }
         if (Build.VERSION.SDK_INT >= 33) oldLocales?.let { context.getSystemService(LocaleManager::class.java).applicationLocales = it }
     }
 
@@ -142,6 +132,7 @@ class CalendarUiTest {
         node(By.text(text(R.string.action_save))).click()
         assertTrue(device.wait(Until.gone(By.text(text(R.string.editor_edit))), 15_000))
         node(By.text(changed)).click()
+        node(By.pkg(context.packageName).desc(text(R.string.action_edit)))
         assertEquals(changed, repository.getEvent(saved.id)!!.title)
         device.waitForIdle()
         node(By.pkg(context.packageName).desc(text(R.string.action_delete))).click()
@@ -198,13 +189,20 @@ class CalendarUiTest {
         try {
             setScale(2f)
             device.setOrientationLeft()
+            instrumentation.runOnMainSync {
+                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().firstOrNull()?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
+            val deadline = SystemClock.elapsedRealtime() + 10_000
+            while ((device.displayWidth <= device.displayHeight || context.resources.configuration.fontScale < 1.99f) && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100)
+            assertTrue("The fixture must actually use landscape and 200% font size.", device.displayWidth > device.displayHeight && context.resources.configuration.fontScale >= 1.99f)
             device.waitForIdle()
             var visible = device.hasObject(By.pkg(context.packageName).text(marker))
             repeat(8) {
                 if (!visible) {
-                    val agenda = requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).scrollable(true)), 5_000)) {
-                        "The month and agenda must remain scrollable in landscape with large text."
+                    val agenda = requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).res("calendar_agenda")), 5_000)) {
+                        "The agenda must keep its own scrollable area in landscape with large text."
                     }
+                    assertTrue("The agenda must have visible height.", agenda.visibleBounds.height() > 30 * context.resources.displayMetrics.density)
                     agenda.scroll(Direction.DOWN, 0.8f)
                     visible = device.wait(Until.hasObject(By.pkg(context.packageName).text(marker)), 1_000)
                 }
@@ -212,6 +210,9 @@ class CalendarUiTest {
             assertTrue("The selected day's event must remain reachable at 200% font size in landscape.", visible)
         } finally {
             setScale(oldScale)
+            instrumentation.runOnMainSync {
+                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().firstOrNull()?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
             device.setOrientationNatural()
             device.unfreezeRotation()
             device.waitForIdle()

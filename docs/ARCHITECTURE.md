@@ -13,7 +13,7 @@ CalendarContract is the event source of truth. There is no secondary event datab
 
 Per-app calendar selection, appearance, and notification choices are stored locally. Visibility choices do not change other calendar apps' settings. Provider reads and writes run off the UI thread. Instances queries expand recurrence in bounded date ranges; editing uses the master event record.
 
-The month view uses a fixed six-row grid and a scrollable agenda that includes empty days by default. Compact and event-days-only modes are optional. Navigation supports Today and animated swipes. Grouped settings offer the system theme by default, an optional dark override, and a startup view of Month, Week, Day, or last used. These choices change presentation, not provider data.
+The month view uses a fixed six-row grid and an agenda limited to that month. Week view shows exactly seven days. Empty days are included by default, with compact and event-days-only modes available for month view. The calendar header stays visible while the agenda scrolls unless the collapse setting is enabled. Navigation uses the date buttons and Today. Grouped settings offer the system theme by default, an optional dark override, and a startup view of Month, Week, Day, or last used. These choices change presentation, not provider data.
 
 All-day dates use UTC-midnight boundaries with an exclusive end. Timed events preserve their timezone. Device-specific calendar selections and notification state are excluded from application backup. Recurring provider writes use duration instead of an ordinary end field. Android expands rules and exceptions for display; unsafe edits are rejected with an explanation.
 

@@ -45,13 +45,13 @@ class SettingsStore(context: Context) {
         get() = prefs.getString("agenda_display", "all")?.takeIf { it in setOf("all", "compact", "events") } ?: "all"
         set(value) { require(value in setOf("all", "compact", "events")); prefs.edit().putString("agenda_display", value).apply() }
 
+    var collapseCalendarOnScroll: Boolean
+        get() = prefs.getBoolean("collapse_calendar_on_scroll", false)
+        set(value) { prefs.edit().putBoolean("collapse_calendar_on_scroll", value).apply() }
+
     var startView: String
         get() = prefs.getString("start_view", "Month")?.takeIf { it in setOf("Month", "Week", "Day", "last") } ?: "Month"
         set(value) { require(value in setOf("Month", "Week", "Day", "last")); prefs.edit().putString("start_view", value).apply() }
-
-    var swipeNavigation: Boolean
-        get() = prefs.getBoolean("swipe_navigation", true)
-        set(value) { prefs.edit().putBoolean("swipe_navigation", value).apply() }
 
     var navigationAnimation: Boolean
         get() = prefs.getBoolean("navigation_animation", true)

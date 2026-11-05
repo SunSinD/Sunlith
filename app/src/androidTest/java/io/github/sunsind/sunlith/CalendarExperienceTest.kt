@@ -41,6 +41,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.util.Locale
 import java.util.UUID
+import java.util.regex.Pattern
 import java.io.File
 import kotlin.math.abs
 import org.junit.After
@@ -98,7 +99,7 @@ class CalendarExperienceTest {
         settings.agendaDisplay = "all"
         settings.weekStartsMonday = true
         settings.navigationAnimation = false
-        settings.swipeNavigation = true
+        settings.collapseCalendarOnScroll = false
         settings.widgetDays = 7
         settings.widgetOpacity = 100
         settings.widgetShowEmptyDays = true
@@ -214,9 +215,17 @@ class CalendarExperienceTest {
         node(By.pkg(context.packageName).text(english.getString(R.string.settings_choose_calendars)))
         assertFalse("Returning from Calendars must preserve the Calendar settings subpage.", device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.beta_settings_widget))))
         scrollToText(english.getString(R.string.view_week)).click()
+        awaitUi { settings.startView == "Week" }
         assertEquals("Week", settings.startView)
         scrollToText(english.getString(R.string.beta_event_days)).click()
+        awaitUi { settings.agendaDisplay == "events" }
         assertEquals("events", settings.agendaDisplay)
+        scrollToText(english.getString(R.string.beta_collapse_calendar)).click()
+        awaitUi { settings.collapseCalendarOnScroll }
+        assertTrue("The Calendar settings switch must enable collapsing.", settings.collapseCalendarOnScroll)
+        scrollToText(english.getString(R.string.beta_collapse_calendar)).click()
+        awaitUi { !settings.collapseCalendarOnScroll }
+        assertFalse("The Calendar settings switch must restore a fixed header.", settings.collapseCalendarOnScroll)
         back()
         node(By.pkg(context.packageName).text(english.getString(R.string.beta_settings_widget))).click()
         setProgress(english.getString(R.string.beta_widget_days), 14f)
@@ -240,10 +249,12 @@ class CalendarExperienceTest {
     }
 
     @Test
-    fun everyDayIsVisibleByDefaultAndCompactAndEventOnlyModesRemainDistinct() {
+    fun monthAgendaModesKeepSeparateEmptyDaysGroupedRangesAndEventsDistinct() {
+        val selected = LocalDate.of(2027, 2, 10)
         val later = "Experience later marker"
-        addEvent(LocalDate.now().plusDays(5), later)
-        onMain { vm.changeViewMode(ViewMode.Week); vm.reload() }
+        addEvent(selected, "Experience selected marker")
+        addEvent(selected.plusDays(6), later)
+        onMain { vm.select(selected); vm.reload() }
         awaitUi { device.findObjects(By.pkg(context.packageName).text(english.getString(R.string.no_events))).size >= 2 }
         assertEquals("all", vm.agendaDisplay)
         assertTrue("The default agenda must show separate empty days.", device.findObjects(By.pkg(context.packageName).text(english.getString(R.string.no_events))).size >= 2)
@@ -257,29 +268,105 @@ class CalendarExperienceTest {
     }
 
     @Test
-    fun scrollingTheAgendaLoadsFutureMonthsWithoutChangingTheSelectedDate() {
-        val selected = LocalDate.now()
-        val target = selected.plusDays(180)
-        val title = "Experience paged marker 180"
-        (30L..210L step 30).forEach { offset -> addEvent(selected.plusDays(offset), "Experience paged marker $offset") }
-        val originalEnd = requireNotNull(vm.loadedTo)
-        onMain { vm.changeAgendaDisplay("compact"); vm.changeViewMode(ViewMode.Week); vm.reload() }
-        var found = device.wait(Until.hasObject(By.pkg(context.packageName).text(title)), 1_000)
-        repeat(30) {
-            if (!found) {
-                node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.DOWN, 0.8f)
-                found = device.wait(Until.hasObject(By.pkg(context.packageName).text(title)), 300)
-            }
+    fun weekAlwaysShowsAllSevenDaysForEveryMonthAgendaPreference() {
+        val monday = LocalDate.of(2027, 2, 8)
+        addEvent(monday, "Experience Monday marker")
+        addEvent(monday.plusDays(6), "Experience Sunday marker")
+        onMain { vm.select(monday); vm.changeViewMode(ViewMode.Week); vm.reload() }
+        awaitUi { vm.coversRange(monday, monday.plusDays(6)) && vm.events.any { it.title == "Experience Sunday marker" } }
+        listOf("all", "compact", "events").forEach { display ->
+            onMain { vm.changeAgendaDisplay(display) }
+            val texts = allAgendaTexts()
+            assertTrue("Week must retain all seven day rows with the $display Month preference: $texts", (8..14).all { it.toString() in texts })
+            assertTrue("Week must retain empty days with the $display Month preference.", english.getString(R.string.no_events) in texts)
+            assertTrue("Week must include its first day's event: $texts", texts.any { it.contains("Experience Monday marker") })
+            assertTrue("Week must include its last day's event: $texts", texts.any { it.contains("Experience Sunday marker") })
         }
-        assertTrue("Scrolling must load an event beyond the initial agenda window.", found)
-        assertTrue(requireNotNull(vm.loadedTo).isAfter(originalEnd))
-        assertTrue(!requireNotNull(vm.loadedTo).isBefore(target))
-        assertEquals("Scrolling through future months must not reset the selected day.", selected, vm.selectedDate)
-        assertTrue(java.time.temporal.ChronoUnit.DAYS.between(vm.loadedFrom, vm.loadedTo) < SunlithViewModel.AGENDA_MAX_SPAN)
     }
 
     @Test
-    fun horizontalSwipesRespectThePreferenceWithAndroidAnimationsDisabled() {
+    fun agendasIncludeBothBoundariesAndNeverReachOutsideTheirDisplayedPeriod() {
+        val month = YearMonth.of(2027, 2)
+        val monday = LocalDate.of(2027, 2, 8)
+        val fixtures = mapOf(
+            month.atDay(1).minusDays(1) to "Before month",
+            month.atDay(1) to "First month day",
+            month.atEndOfMonth() to "Last month day",
+            month.atEndOfMonth().plusDays(1) to "After month",
+            monday.minusDays(1) to "Before week",
+            monday to "First week day",
+            monday.plusDays(6) to "Last week day",
+            monday.plusDays(7) to "After week",
+        )
+        fixtures.forEach { (date, title) -> addEvent(date, title) }
+        onMain { vm.select(month.atDay(1)); vm.reload() }
+        awaitUi { vm.coversRange(month.atDay(1), month.atEndOfMonth()) && vm.events.any { it.title == "Last month day" } }
+        val monthTexts = allAgendaTexts()
+        assertTrue("Month agenda must include its first and last days: $monthTexts", setOf("First month day", "Last month day").all { title -> monthTexts.any { it.contains(title) } })
+        assertFalse("Month agenda must exclude events immediately outside the month.", setOf("Before month", "After month").any { title -> monthTexts.any { it.contains(title) } })
+        onMain { vm.select(monday); vm.changeViewMode(ViewMode.Week); vm.reload() }
+        awaitUi { vm.coversRange(monday, monday.plusDays(6)) && vm.events.any { it.title == "Last week day" } }
+        val weekTexts = allAgendaTexts()
+        assertTrue("Week agenda must include Monday and Sunday: $weekTexts", setOf("First week day", "Last week day").all { title -> weekTexts.any { it.contains(title) } })
+        assertFalse("Week agenda must exclude events immediately outside the week.", setOf("Before week", "After week").any { title -> weekTexts.any { it.contains(title) } })
+        assertEquals("Week view must preserve the selected date.", monday, vm.selectedDate)
+    }
+
+    @Test
+    fun dayTabReturnsToTodayFromAnotherDateAndWhenAlreadyInDayView() {
+        onMain { vm.select(LocalDate.of(2027, 2, 10)) }
+        node(By.pkg(context.packageName).text(english.getString(R.string.view_day))).click()
+        awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == LocalDate.now() }
+        node(By.pkg(context.packageName).text(marker))
+        onMain { vm.step(1) }
+        assertEquals(LocalDate.now().plusDays(1), vm.selectedDate)
+        node(By.pkg(context.packageName).text(english.getString(R.string.view_day))).click()
+        awaitUi { vm.selectedDate == LocalDate.now() }
+        node(By.pkg(context.packageName).text(marker))
+    }
+
+    @Test
+    fun calendarStaysVisibleByDefaultAndCollapseToggleRestoresIt() {
+        val first = gridStart(vm.month, true)
+        val original = node(day(first)).visibleBounds
+        agenda().scroll(Direction.DOWN, 0.9f)
+        assertEquals("The calendar must remain still while scrolling by default.", original, node(day(first)).visibleBounds)
+        onMain { vm.changeCollapseCalendarOnScroll(true) }
+        assertTrue(settings.collapseCalendarOnScroll)
+        agenda().scroll(Direction.DOWN, 0.9f)
+        awaitUi { device.findObject(day(first))?.visibleBounds?.let { it.height() == 0 || it.top < original.top } != false }
+        onMain { vm.changeCollapseCalendarOnScroll(false) }
+        awaitUi { device.findObject(day(first))?.visibleBounds == original }
+        assertFalse(settings.collapseCalendarOnScroll)
+    }
+
+    @Test
+    fun toolbarArrowsMoveEachViewByItsPeriodAndReturn() {
+        val today = LocalDate.now()
+        listOf(
+            Triple(ViewMode.Month, R.string.action_next_month, R.string.action_prev_month),
+            Triple(ViewMode.Week, R.string.action_next_week, R.string.action_prev_week),
+            Triple(ViewMode.Day, R.string.action_next_day, R.string.action_prev_day),
+        ).forEach { (mode, next, previous) ->
+            onMain { vm.select(today); vm.changeViewMode(mode) }
+            node(By.pkg(context.packageName).desc(english.getString(next))).click()
+            val expected = when (mode) {
+                ViewMode.Month -> YearMonth.from(today).plusMonths(1).atDay(1)
+                ViewMode.Week -> today.plusWeeks(1)
+                ViewMode.Day -> today.plusDays(1)
+            }
+            awaitUi { vm.selectedDate == expected }
+            assertEquals("The next arrow must keep the active view.", mode, vm.viewMode)
+            if (mode != ViewMode.Day) node(day(expected))
+            node(By.pkg(context.packageName).desc(english.getString(previous))).click()
+            awaitUi { vm.selectedDate == today }
+            assertEquals("The previous arrow must return to the original period.", YearMonth.from(today), vm.month)
+            assertTrue("Period arrows must not open an editor.", vm.editor == null)
+        }
+    }
+
+    @Test
+    fun horizontalSwipesDoNotChangeDates() {
         val oldScale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
         fun setScale(scale: Float) {
             instrumentation.uiAutomation.executeShellCommand("settings put global animator_duration_scale $scale").let { ParcelFileDescriptor.AutoCloseInputStream(it).use { input -> input.readBytes() } }
@@ -288,24 +375,22 @@ class CalendarExperienceTest {
             setScale(0f)
             settings.navigationAnimation = true
             relaunch()
+            node(By.pkg(context.packageName).text(marker))
             val original = vm.selectedDate
             fun swipe(forward: Boolean) {
-                val y = node(By.pkg(context.packageName).scrollable(true)).visibleBounds.centerY()
+                val y = agenda().visibleBounds.centerY()
                 val left = device.displayWidth / 6
                 val right = device.displayWidth * 5 / 6
                 device.swipe(if (forward) right else left, y, if (forward) left else right, y, 20)
+                device.waitForIdle()
+                assertTrue("A horizontal drag must not open an event editor.", vm.editor == null)
+                assertEquals("A horizontal drag must preserve the selected date.", original, vm.selectedDate)
             }
             swipe(true)
-            awaitUi { vm.selectedDate == YearMonth.from(original).plusMonths(1).atDay(1) }
-            node(day(vm.selectedDate))
             swipe(false)
-            awaitUi { vm.selectedDate == original }
-            onMain { vm.changeSwipeNavigation(false) }
-            swipe(true)
             device.waitForIdle()
-            assertEquals("A disabled swipe preference must prevent horizontal date navigation.", original, vm.selectedDate)
-            node(By.pkg(context.packageName).desc(english.getString(R.string.action_today))).click()
-            awaitUi { vm.selectedDate == LocalDate.now() }
+            assertEquals("Horizontal swipes must not change the date.", original, vm.selectedDate)
+            assertEquals(ViewMode.Month, vm.viewMode)
         } finally { setScale(oldScale) }
     }
 
@@ -325,20 +410,18 @@ class CalendarExperienceTest {
             }
             awaitUi { device.displayWidth > device.displayHeight && context.resources.configuration.fontScale >= 1.99f }
             device.waitForIdle()
-            val first = node(day(start))
-            val top = first.visibleBounds.top
-            val density = context.resources.displayMetrics.density
-            val from = (top + 55 * density).toInt()
-            val to = (top + 5 * density).toInt()
-            val headerBottom = node(By.pkg(context.packageName).scrollable(true)).visibleBounds.top
+            val headerBounds = node(By.pkg(context.packageName).res("calendar_grid")).visibleBounds
+            val agendaBounds = agenda().visibleBounds
+            assertTrue("Calendar and agenda must occupy separate areas.", headerBounds.bottom <= agendaBounds.top)
+            assertTrue("The agenda must keep visible space below the calendar.", agendaBounds.height() > 30 * context.resources.displayMetrics.density)
             fun visibleLower(): UiObject2? {
                 refreshAccessibility()
-                return device.findObject(day(target))?.takeIf { it.visibleBounds.centerY() in (top + 10)..(headerBottom - 10) }
+                return device.findObject(day(target))?.takeIf { it.visibleBounds.height() >= 20 && it.visibleBounds.centerY() in (headerBounds.top + 10)..(headerBounds.bottom - 10) }
             }
             var lower = visibleLower()
             repeat(20) {
                 if (lower == null || lower!!.visibleBounds.height() < 20) {
-                    device.swipe(device.displayWidth / 2, from, device.displayWidth / 2, to, 18)
+                    device.swipe(headerBounds.centerX(), headerBounds.bottom - 10, headerBounds.centerX(), headerBounds.top + 10, 18)
                     device.waitForIdle()
                     lower = visibleLower()
                 }
@@ -350,6 +433,13 @@ class CalendarExperienceTest {
             awaitUi { vm.selectedDate == target }
             node(By.pkg(context.packageName).desc(english.getString(R.string.action_new_event))).click()
             awaitUi { vm.editor?.startDate == target }
+            node(By.pkg(context.packageName).desc(english.getString(R.string.action_close))).click()
+            node(By.pkg(context.packageName).desc(english.getString(R.string.action_today))).click()
+            awaitUi {
+                vm.selectedDate == LocalDate.now() && device.findObject(day(LocalDate.now()))?.let {
+                    (it.isChecked || it.isSelected) && it.visibleBounds.height() >= 20 && it.visibleBounds.centerY() in (headerBounds.top + 10)..(headerBounds.bottom - 10)
+                } == true
+            }
         } finally {
             setScale(oldScale)
             instrumentation.runOnMainSync {
@@ -408,6 +498,29 @@ class CalendarExperienceTest {
     }
 
     private fun day(date: LocalDate): BySelector = By.pkg(context.packageName).descStartsWith(Formats(english, Locale.ENGLISH).dayLong(date) + ",")
+
+    private fun agenda(): UiObject2 = node(By.pkg(context.packageName).res("calendar_agenda"))
+
+    private fun allAgendaTexts(): Set<String> {
+        repeat(8) { agenda().scroll(Direction.UP, 1f) }
+        val texts = mutableSetOf<String>()
+        fun collect(): String {
+            val textNodes = agenda().findObjects(By.text(Pattern.compile("(?s).+")))
+            val describedNodes = agenda().findObjects(By.desc(Pattern.compile("(?s).+")))
+            texts += textNodes.mapNotNull { it.text }.flatMap { it.lines() }
+            texts += describedNodes.mapNotNull { it.contentDescription }
+            return (textNodes + describedNodes).joinToString("|") { "${it.text}/${it.contentDescription}/${it.visibleBounds}" }
+        }
+        var previous = collect()
+        repeat(40) {
+            agenda().scroll(Direction.DOWN, 0.8f)
+            device.waitForIdle()
+            val current = collect()
+            if (current == previous) return texts
+            previous = current
+        }
+        error("The bounded agenda must reach its end within forty scrolls.")
+    }
 
     private fun onMain(action: () -> Unit) {
         instrumentation.runOnMainSync(action)
