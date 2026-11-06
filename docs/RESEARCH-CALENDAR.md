@@ -56,7 +56,7 @@ Android's provider interprets duration days as fixed 24-hour periods, as shown b
 
 ## AI control
 
-AI control is a core Sunlith workflow: ask an assistant on your computer, let the MCP companion update the shared calendar service, and receive the result in the Android app and widget through normal account sync. The interface remains a calendar rather than an embedded chatbot. First-run guidance recommends pairing an assistant while keeping the calendar usable before account authorization is complete.
+Computer control is a core Sunlith workflow: ask an assistant on your computer and let the MCP companion update the paired phone directly. The Android app and widget read those changes from the same on-device calendar provider. No separate calendar app or account sync is required for this connection. The interface stays focused on the calendar, and first-run setup offers computer pairing without requiring it.
 
 Sunlith includes its own desktop stdio MCP companion in [`integrations/mcp`](../integrations/mcp), built with the official MCP SDK. Direct mode uses pinned HTTPS to manage chosen calendars through the phone's Android calendar provider, including phone-only calendars. The private listener runs only while the user enables Computer connection. A separate Google adapter uses Google's authentication library and Calendar REST API. The companion has no standalone Outlook or CalDAV account adapter.
 
@@ -97,3 +97,28 @@ Reviewed the README plus these source/documentation files, without copying code 
 - https://github.com/duxlabs-dev/dux-calendar/blob/master/docs/calendar-file-import.md
 
 Dux Calendar's README screenshot/demo section was still a placeholder when checked. Visual observations above come from its source layout, not a running desktop app or a screenshot review.
+
+
+## Customizable views, November 5, 2026
+
+This review used official help pages, source repositories and issue reports. It is a feature comparison, not evidence that one layout suits everyone. Public issue reports describe individual experiences.
+
+- [Google Calendar Android views](https://support.google.com/calendar/answer/6110849?hl=en&co=GENIE.Platform%3DAndroid) documents Schedule, Day, 3-day, Week and Month. Sunlith takes the continuous schedule and hourly-grid patterns, with its own implementation and appearance.
+- [Business Calendar views](https://appgenix.uservoice.com/knowledgebase/articles/428420-introducing-the-different-views) and [week settings](https://appgenix.uservoice.com/knowledgebase/articles/430132-using-the-week-view) demonstrate why month, agenda and multi-day choices belong in separate settings.
+- [Etar swipe feedback](https://github.com/Etar-Group/Etar-Calendar/issues/1535) illustrates accidental month changes when a curved vertical scroll is mistaken for a horizontal gesture. Swipes need direction lock, a clear threshold and an off switch.
+- [Fossify month/agenda feedback](https://github.com/FossifyOrg/Calendar/issues/1111) and [day-grid request](https://github.com/FossifyOrg/Calendar/issues/374) show the tradeoff between readable lists and visible free-time gaps. Neither replaces the other.
+- [Compose pager guidance](https://developer.android.com/develop/ui/compose/layouts/pager) distinguishes motion from a settled page. Sunlith commits the new date after a deliberate horizontal gesture, with visible movement and an animation-off option.
+- [Material 3 in Compose](https://developer.android.com/develop/ui/compose/designsystems/material3) documents dynamic wallpaper colors on Android 12 and newer and fallback schemes for older phones. Dynamic colors must also feed Sunlith's custom palette, rather than only Material controls.
+- [Scalable content](https://developer.android.com/develop/ui/compose/accessibility/scalable-content) and [accessibility defaults](https://developer.android.com/develop/ui/compose/accessibility/api-defaults) guide 200% text support and minimum interaction sizes.
+
+Three starting presets expose a small choice first. Separate month, week and day settings allow mixing layouts afterward. Displayed calendars and the computer's access scope remain distinct choices. A floating Today action appears when the user has moved away; it is a product choice to keep the toolbar quiet, not a claim that research proves one universal placement.
+
+The continuous agenda loads date chunks and keeps a bounded sliding cache. Its fixed month grid retains separate data, so scrolling far ahead does not empty the grid. A failed page load keeps the current rows and offers retry. A month, week or day range can replace the continuous agenda.
+
+Official Maven metadata and POMs were checked. The existing BOM `2025.11.01` already includes stable Material3 `1.4.0` and Compose UI `1.9.5`. A trial of BOM `2026.09.00` failed Android metadata checks because its UI `1.12.1` requires compile SDK 37 and Android Gradle Plugin 9.1. The existing compatible BOM was retained; dynamic color needs no prerelease or toolchain migration. This corrects an initial secondary research claim that the existing BOM used Material3 `1.3.2`. The actual dependency POM is the source of truth.
+
+## README and companion language
+
+The [ncr README](https://github.com/greyxp1/ncr), [Fossify Calendar](https://github.com/FossifyOrg/Calendar) and [Etar](https://github.com/Etar-Group/Etar-Calendar) informed the short introduction, useful feature list and links to setup/testing. The repository keeps downloads in Releases and licensing in LICENSE.
+
+The roughly 625-line companion remains JavaScript. [TypeScript](https://www.typescriptlang.org/docs/handbook/typescript-in-5-minutes.html) adds static checking; it does not by itself speed up the runtime. [Node's TypeScript support](https://nodejs.org/api/typescript.html) strips supported types without checking them. The companion already validates inputs with Zod, and conversion would add compiler/runtime-version and packaging work without an established performance benefit. Runtime validation and the integration tests remain necessary in either language.

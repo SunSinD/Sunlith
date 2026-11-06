@@ -69,7 +69,6 @@ import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.DeviceCalendar
 import java.time.LocalDate
 
-const val AI_GUIDE_URL = "https://github.com/SunSinD/Sunlith/blob/main/docs/AI-INTEGRATION.md"
 const val SOURCE_URL = "https://github.com/SunSinD/Sunlith"
 const val MIGRATION_URL = "https://github.com/SunSinD/Sunlith/blob/main/docs/MIGRATION.md"
 
@@ -114,7 +113,13 @@ fun SettingsScreen(vm: SunlithViewModel) {
 
     val title = when (page) {
         "appearance" -> R.string.beta_settings_appearance
-        "calendar" -> R.string.beta_settings_calendar
+        "calendars" -> R.string.title_calendars
+        "navigation" -> R.string.custom_navigation
+        "agenda" -> R.string.custom_agenda
+        "month" -> R.string.custom_month_layout
+        "week" -> R.string.custom_week_layout
+        "day" -> R.string.custom_day_layout
+        "startup" -> R.string.beta_start_view
         "widget" -> R.string.beta_settings_widget
         "reminders" -> R.string.beta_settings_reminders
         "transfer" -> R.string.beta_settings_transfer
@@ -126,11 +131,22 @@ fun SettingsScreen(vm: SunlithViewModel) {
             Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 32.dp)) {
                 when (page) {
                     "root" -> {
-                        ClickRow(stringResource(R.string.device_link_title), stringResource(R.string.device_link_lead)) { vm.open(Screen.DeviceLink) }
+                        ClickRow(stringResource(R.string.device_link_title), stringResource(R.string.custom_computer_access_desc)) { vm.open(Screen.DeviceLink) }
                         HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                        ClickRow(stringResource(R.string.title_calendars), stringResource(R.string.custom_calendars_summary)) { page = "calendars" }
                         listOf(
                             "appearance" to R.string.beta_settings_appearance,
-                            "calendar" to R.string.beta_settings_calendar,
+                            "navigation" to R.string.custom_navigation,
+                            "agenda" to R.string.custom_agenda,
+                            "month" to R.string.custom_month_layout,
+                            "week" to R.string.custom_week_layout,
+                            "day" to R.string.custom_day_layout,
+                            "startup" to R.string.beta_start_view,
+                        ).forEach { (target, label) ->
+                            ClickRow(stringResource(label), null) { page = target }
+                        }
+                        HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                        listOf(
                             "widget" to R.string.beta_settings_widget,
                             "reminders" to R.string.beta_settings_reminders,
                             "transfer" to R.string.beta_settings_transfer,
@@ -138,7 +154,6 @@ fun SettingsScreen(vm: SunlithViewModel) {
                             ClickRow(stringResource(label), null) { page = target }
                         }
                         HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                        ClickRow(stringResource(R.string.ai_setup_title), null) { vm.open(Screen.AiSetup) }
                         ClickRow(stringResource(R.string.beta_settings_about), null) { page = "about" }
                     }
                     "appearance" -> {
@@ -148,17 +163,69 @@ fun SettingsScreen(vm: SunlithViewModel) {
                         if (vm.themeMode != "system") {
                             ToggleRow(stringResource(R.string.beta_dark_theme), null, vm.themeMode == "dark") { vm.setTheme(if (it) "dark" else "light") }
                         }
-                        ToggleRow(stringResource(R.string.beta_navigation_animation), null, vm.navigationAnimation, vm::changeNavigationAnimation)
+                        SectionTitle(stringResource(R.string.custom_colors))
+                        ChoiceRow(stringResource(R.string.custom_material_you), vm.materialYou) { vm.changeMaterialYou(true) }
+                        ChoiceRow(stringResource(R.string.custom_neutral), !vm.materialYou) { vm.changeMaterialYou(false) }
+                        SettingsNote(stringResource(if (Build.VERSION.SDK_INT >= 31) R.string.custom_material_you_desc else R.string.custom_material_you_fallback))
+                        SectionTitle(stringResource(R.string.custom_presets))
+                        SettingsNote(stringResource(R.string.custom_presets_desc))
+                        if (vm.layoutPreset == "custom") SettingsNote(stringResource(R.string.custom_preset_active))
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            LayoutPresetChoices(vm.layoutPreset, vm::applyLayoutPreset)
+                        }
                     }
-                    "calendar" -> {
+                    "calendars" -> {
+                        SectionTitle(stringResource(R.string.custom_displayed_calendars))
+                        SettingsNote(stringResource(R.string.custom_displayed_calendars_desc))
                         ClickRow(stringResource(R.string.settings_choose_calendars), pluralStringResource(R.plurals.calendars_shown, vm.activeIds.size, vm.activeIds.size)) { vm.open(Screen.Calendars) }
                         if (!vm.hasSunlithCalendar) ClickRow(stringResource(R.string.action_create_local), null) { vm.createLocalCalendar() }
+                    }
+                    "navigation" -> {
+                        ToggleRow(stringResource(R.string.custom_navigation_arrows), stringResource(R.string.custom_navigation_arrows_desc), vm.showNavigationArrows, vm::changeShowNavigationArrows)
+                        ToggleRow(stringResource(R.string.custom_swipe_navigation), stringResource(R.string.custom_swipe_navigation_desc), vm.swipeNavigation, vm::changeSwipeNavigation)
+                        ToggleRow(stringResource(R.string.beta_navigation_animation), null, vm.navigationAnimation, vm::changeNavigationAnimation)
+                    }
+                    "month" -> {
+                        SectionTitle(stringResource(R.string.custom_month_layout))
+                        listOf("split" to R.string.custom_month_split, "full" to R.string.custom_month_full).forEach { (value, label) ->
+                            ChoiceRow(stringResource(label), vm.monthLayout == value) { vm.changeMonthLayout(value) }
+                        }
+                        SettingsNote(stringResource(R.string.custom_month_layout_desc))
+                        if (vm.monthLayout == "split") ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
+                    }
+                    "week" -> {
+                        SectionTitle(stringResource(R.string.custom_week_layout))
+                        listOf("list" to R.string.custom_list, "timeline" to R.string.custom_timeline).forEach { (value, label) ->
+                            ChoiceRow(stringResource(label), vm.weekLayout == value) { vm.changeWeekLayout(value) }
+                        }
+                        SettingsNote(stringResource(R.string.custom_week_layout_desc))
+                        if (vm.weekLayout == "timeline") {
+                            SectionTitle(stringResource(R.string.custom_visible_week_days))
+                            listOf(3 to R.string.custom_three_days, 7 to R.string.custom_seven_days).forEach { (value, label) ->
+                                ChoiceRow(stringResource(label), vm.visibleWeekDays == value) { vm.changeVisibleWeekDays(value) }
+                            }
+                        }
                         ToggleRow(stringResource(R.string.settings_monday), null, vm.weekStartsMonday, vm::setMondayFirst)
-                        ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
+                    }
+                    "day" -> {
+                        SectionTitle(stringResource(R.string.custom_day_layout))
+                        listOf("cards" to R.string.custom_cards, "timeline" to R.string.custom_timeline, "schedule" to R.string.custom_schedule).forEach { (value, label) ->
+                            ChoiceRow(stringResource(label), vm.dayLayout == value) { vm.changeDayLayout(value) }
+                        }
+                        SettingsNote(stringResource(R.string.custom_day_layout_desc))
+                    }
+                    "startup" -> {
                         SectionTitle(stringResource(R.string.beta_start_view))
                         listOf("Month" to R.string.view_month, "Week" to R.string.view_week, "Day" to R.string.view_day, "last" to R.string.beta_last_view).forEach { (value, label) ->
                             ChoiceRow(stringResource(label), vm.startView == value) { vm.changeStartView(value) }
                         }
+                    }
+                    "agenda" -> {
+                        SectionTitle(stringResource(R.string.custom_agenda_range))
+                        listOf("continuous" to R.string.custom_continuous, "month" to R.string.view_month, "week" to R.string.view_week, "day" to R.string.view_day).forEach { (value, label) ->
+                            ChoiceRow(stringResource(label), vm.agendaRange == value) { vm.changeAgendaRange(value) }
+                        }
+                        SettingsNote(stringResource(R.string.custom_agenda_range_desc))
                         SectionTitle(stringResource(R.string.beta_agenda_display))
                         listOf("all" to R.string.beta_all_days, "compact" to R.string.beta_compact_days, "events" to R.string.beta_event_days).forEach { (value, label) ->
                             ChoiceRow(stringResource(label), vm.agendaDisplay == value) { vm.changeAgendaDisplay(value) }
@@ -238,6 +305,11 @@ fun SettingsScreen(vm: SunlithViewModel) {
     }
 
     ImportDialog(vm)
+}
+
+@Composable
+private fun SettingsNote(text: String) {
+    Text(text, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = LocalPalette.current.muted, style = MaterialTheme.typography.bodyMedium)
 }
 
 @Composable

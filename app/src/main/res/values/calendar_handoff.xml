@@ -1,5 +1,4 @@
 <resources>
-    <string name="handoff_phone_guide">Use an assistant on your phone</string>
     <string name="handoff_waiting">Calendar item waiting</string>
     <string name="handoff_invalid_file">Open a calendar file shared by another app.</string>
     <string name="handoff_invalid_event">This calendar item could not be opened.</string>

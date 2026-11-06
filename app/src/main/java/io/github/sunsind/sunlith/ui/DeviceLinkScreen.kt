@@ -74,9 +74,9 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
     var history by remember { mutableStateOf(emptyList<DeviceLinkChange>()) }
     var diagnostics by remember { mutableStateOf(DeviceLinkDiagnostics(null, null)) }
     var paired by remember { mutableStateOf(false) }
-    var ids by remember { mutableStateOf(vm.activeIds) }
+    var ids by rememberSaveable { mutableStateOf(emptySet<Long>()) }
     var hosts by remember { mutableStateOf(emptyList<String>()) }
-    var host by remember { mutableStateOf("") }
+    var host by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var refresh by remember { mutableStateOf(0) }
     var unpair by remember { mutableStateOf(false) }
@@ -125,7 +125,6 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                     paired = true
                     ids = request.first
                     sharedUri = uri
-                    vm.showLinkedCalendars(ids)
                     vm.message(context.getString(R.string.device_link_exported))
                 } catch (c: CancellationException) {
                     if (created) withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { DeviceLink.revoke(context) }
@@ -235,7 +234,7 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
             }
             if (!paired) {
                 if (!vm.hasSunlithCalendar) item {
-                    TextButton(onClick = { vm.createLocalCalendar { ids = setOf(it) } }, enabled = !busy, modifier = Modifier.padding(horizontal = 8.dp)) {
+                    TextButton(onClick = { vm.createLocalCalendar(showInApp = false) { ids = ids + it } }, enabled = !busy, modifier = Modifier.padding(horizontal = 8.dp)) {
                         Text(stringResource(R.string.action_create_local))
                     }
                 }
@@ -266,7 +265,7 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
             }
             item {
                 HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                TextButton(onClick = { context.openUrl("$AI_GUIDE_URL#direct-phone-connection", vm) }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                TextButton(onClick = { context.openUrl("https://github.com/SunSinD/Sunlith/blob/main/docs/AI-INTEGRATION.md#direct-phone-connection", vm) }, modifier = Modifier.padding(horizontal = 8.dp)) {
                     Text(stringResource(R.string.device_link_guide))
                 }
             }

@@ -30,11 +30,11 @@ The tests cover local calendar creation, event CRUD, reminder persistence, all-d
 
 `CalendarUiTest` drives the actual Compose UI through Android accessibility: create an event, find it through search, edit it, and delete it. It also checks the rendered light/dark appearance and the persisted theme setting. On API 33 and newer, a separate case switches the app locale to French and checks translated calendar/editor/settings controls. These UI tests use and clean up a dedicated emulator-only calendar.
 
-It also checks that the agenda remains reachable in landscape at 200% font size. `CalendarExperienceTest` checks month-grid geometry, centered selected dates, launch views, grouped settings and returning from the calendar selector, first/last and immediately outside month/week boundaries, Month agenda display modes, and all seven Week rows regardless of the Month preference. It also checks that the Day tab returns to today, a fixed calendar stays visible by default, the collapse switch restores it, Today gives visible feedback, and a sixth-row date can be selected in landscape at 200% font size before Today brings its selected cell back into view. A separate case confirms that horizontal drags do not change dates. Stable accessibility resource IDs identify the calendar viewport and agenda separately. Font size, rotation, and Android animation settings are restored afterward.
+It also checks that the agenda remains reachable in landscape at 200% font size. `CalendarExperienceTest` checks month-grid geometry, centered selected dates, launch views, grouped settings and returning from the calendar selector, first/last and immediately outside month/week boundaries, Month agenda display modes, and all seven Week rows regardless of the Month preference. It also checks that the Day tab returns to today, a fixed calendar stays visible by default, the collapse switch restores it, Today gives visible feedback, and a sixth-row date can be selected in landscape at 200% font size before Today brings its selected cell back into view. Separate cases confirm deliberate horizontal swipes change periods, the off switch prevents navigation, optional arrows move each period, and continuous agenda paging keeps the fixed grid populated. Stable accessibility resource IDs identify the calendar viewport and agenda separately. Font size, rotation, and Android animation settings are restored afterward.
 
 `SettingsPreferencesTest` checks defaults, limits, and persisted values in isolated preferences. `WidgetExperienceTest` uses Android's real widget host to check empty days, the date window, optional calendar names, background opacity, native dividers, multi-day events, and opening a draft from an empty date. `CalendarHandoffUiTest` checks Android event-insert intents and calendar-file sharing, editable drafts, import previews, rejection of unsupported input, and deferral through onboarding/recreation/an existing draft. The content provider used for shared-file fixtures exists only in the test APK.
 
-`AiOnboardingTest` checks the computer-focused introduction, the skip route, direct navigation to Computer connection, and all eight assistant guides from Settings. Selecting a guide is not treated as a completed connection.
+`AiOnboardingTest` checks the computer-focused introduction, the layout chooser, recreation, the skip route, deferred Computer connection and existing-user migration. The app no longer has an assistant-guide picker. `CalendarCustomizationTest` checks preset views, date selection, timelines and dynamic/neutral colors.
 
 `ReminderNotificationsTest` additionally checks actual posted notification content, actions, occurrence deduplication, disabled reminders, and delivery through a scheduled Android alarm. A separate test inserts an isolated due provider alert for a `MINUTES_DEFAULT` reminder, sends an explicit calendar-reminder broadcast, and verifies notification delivery without changing the provider alert state. That test verifies broadcast handling, not how a real account chooses its default reminder time. Tests request notification permission on API 33 and newer. For one specific emulator, use `adb -s <serial> shell am instrument ...` or set `ANDROID_SERIAL` before a Gradle connected-test command.
 
@@ -56,7 +56,7 @@ This case checks that denied notifications stay silent, grants permission throug
 
 This creates a dedicated **Sunlith demo** local calendar on the emulator, selects it, and adds clearly identified sample events relative to the emulator's current date. Demo events have no reminders, so another installed calendar cannot interrupt captures with fixture alerts. It never seeds events automatically in the production app. Repeated captures replace only that dedicated demo calendar.
 
-Images are saved to `.toolchain/screenshots/month-agenda.png`, `.toolchain/screenshots/widget.png`, `.toolchain/screenshots/ai-intro.png`, and `.toolchain/screenshots/ai-setup.png`. The calendar and onboarding images show the running app. The widget image shows the real Android RemoteViews widget and collection service in an instrumentation-only AppWidgetHost, rather than a launcher screenshot. The widget test also checks that tapping an event opens its details and editor, and that its add button opens a new event editor. The test temporarily grants widget-binding access to the app and revokes it afterward.
+Images are saved to `.toolchain/screenshots/month-agenda.png` and `.toolchain/screenshots/widget.png`. The calendar image shows the running app. The widget image shows the real Android RemoteViews widget and collection service in an instrumentation-only AppWidgetHost, rather than a launcher screenshot. The widget test also checks that tapping an event opens its details and editor, and that its add button opens a new event editor. The test temporarily grants widget-binding access to the app and revokes it afterward.
 
 Use `-SkipInstall` if both debug APKs are already installed, or `-OutputDirectory <path>` to choose a different image folder.
 
@@ -211,4 +211,37 @@ Version 0.3.0 APK SHA-256:
 
 ```text
 ec76f249745b3b7e66f876d2060c0cb11eb7789eebdade474b8eb9b0e849a1c8
+```
+
+## Version 0.4.0 verification
+
+Version code `8` uses the same signing certificate as v0.3.0. The APK was installed as an update on Android 11 (API 30) and Android 16 (API 36).
+
+| Check | Result |
+| --- | --- |
+| Android JVM tests | 26 passed, including six timeline packing cases |
+| Android lint | 0 errors, 81 warnings, 6 hints |
+| API 30 broad emulator run | 98 cases; two timeline automation failures, corrected and rerun below |
+| API 36 broad emulator run | 100 cases; two timeline automation failures, corrected and rerun below |
+| API 30 focused customization suite | All 9 passed in 127.818 seconds |
+| API 36 final customization suite | All 9 passed in 160.718 seconds |
+| Fold-sized API 36 at 200% text | All 5 passed in 37.470 seconds at 1768x2208, density 320 |
+| Separate API 36 notification permission recovery | Passed in 8.478 seconds |
+| Desktop syntax and tests after fresh dependency install | 44 passed; external Android fixture skipped in normal runs |
+| Desktop dependency audit | 0 vulnerabilities |
+| Actual desktop SDK to Android calendar provider | Passed through pinned HTTPS and stdio MCP |
+| Release packaging | Signing certificate, source equality, local archive links and checksums verified |
+
+The broad runs cover provider operations, reminders, handoffs, setup, layouts, animated navigation, continuous paging, widgets, connection lifecycle, strict protocol parsing and TLS. They each reported failures in the timeline UI automation: gestures could scroll past short events or tap the floating Add/Today controls over a partially visible event. The helpers now reset the hourly area through accessibility, wait for stable event bounds and bring targets clear of the floating controls. All nine customization cases then passed on each API level. Earlier test corrections recognize Android's checked state for selected date buttons and use smaller agenda gestures. The full broad suites were not repeated after the final test-only corrections; the production APK stayed unchanged throughout these runs.
+
+The Fold-sized checks cover equal Day card bounds, preset layouts including the full month, the date picker across all Day layouts, separate overlapping-event targets and all-day areas, and layout selection through recreation. The customization suite also verifies overnight hourly blocks on both dates, dense-event overflow, the saved three-day window, and actual dynamic and neutral accent colors. An extra test request left over from emulator startup failed to connect UiAutomation and was discarded; it is not included in the verification results above.
+
+The external desktop test exercised all eight tools, allowed-calendar scope, creation retries, reads, updates, stale revisions, recurring-series protection, import deduplication and deletion. Its isolated calendars and pairing were removed afterward, along with the private temporary configuration files and ADB forwarding. No personal phone calendar or pairing was changed. Widget and large-text landscape captures were inspected privately; no screenshots or videos were published.
+
+Physical Samsung launcher rendering, Fold posture changes, Wi-Fi/Tailscale delivery and manufacturer battery behavior still need phone testing. The hourly timeline places timed events lasting 24 hours or more in its banner area. Tapping an empty hour opens the editor at its default start time. These limits remain separate from the verified overlap, overnight and date-selection behavior.
+
+Version 0.4.0 APK SHA-256:
+
+```text
+fab9ce155ee2b4316223a5fa967ba3d4395d3228a6535d3c4bcf61df4960354e
 ```

@@ -56,4 +56,48 @@ class SettingsStore(context: Context) {
     var navigationAnimation: Boolean
         get() = prefs.getBoolean("navigation_animation", true)
         set(value) { prefs.edit().putBoolean("navigation_animation", value).apply() }
+
+    var materialYou: Boolean
+        get() = prefs.getBoolean("material_you", true)
+        set(value) { prefs.edit().putBoolean("material_you", value).apply() }
+
+    var showNavigationArrows: Boolean
+        get() = prefs.getBoolean("navigation_arrows", false)
+        set(value) { prefs.edit().putBoolean("navigation_arrows", value).apply() }
+
+    var swipeNavigation: Boolean
+        get() = prefs.getBoolean("swipe_navigation", true)
+        set(value) { prefs.edit().putBoolean("swipe_navigation", value).apply() }
+
+    var agendaRange: String
+        get() = choice("agenda_range", "continuous", setOf("continuous", "month", "week", "day"))
+        set(value) { saveChoice("agenda_range", value, setOf("continuous", "month", "week", "day")) }
+
+    var monthLayout: String
+        get() = choice("month_layout", "split", setOf("split", "full"))
+        set(value) { saveChoice("month_layout", value, setOf("split", "full")) }
+
+    var weekLayout: String
+        get() = choice("week_layout", "list", setOf("list", "timeline"))
+        set(value) { saveChoice("week_layout", value, setOf("list", "timeline")) }
+
+    var dayLayout: String
+        get() = choice("day_layout", "cards", setOf("cards", "timeline", "schedule"))
+        set(value) { saveChoice("day_layout", value, setOf("cards", "timeline", "schedule")) }
+
+    var visibleWeekDays: Int
+        get() = prefs.getInt("visible_week_days", 7).takeIf { it == 3 || it == 7 } ?: 7
+        set(value) { require(value == 3 || value == 7); prefs.edit().putInt("visible_week_days", value).apply() }
+
+    var layoutPreset: String
+        get() = choice("layout_preset", "sunlith", setOf("sunlith", "schedule", "planner", "custom"))
+        set(value) { saveChoice("layout_preset", value, setOf("sunlith", "schedule", "planner", "custom")) }
+
+    private fun choice(key: String, fallback: String, values: Set<String>): String =
+        prefs.getString(key, fallback)?.takeIf { it in values } ?: fallback
+
+    private fun saveChoice(key: String, value: String, values: Set<String>) {
+        require(value in values)
+        prefs.edit().putString(key, value).apply()
+    }
 }

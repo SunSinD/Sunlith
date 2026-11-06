@@ -1,6 +1,5 @@
 <resources>
     <string name="beta_settings_appearance">Appearance</string>
-    <string name="beta_settings_calendar">Calendar</string>
     <string name="beta_settings_widget">Widget</string>
     <string name="beta_settings_reminders">Reminders</string>
     <string name="beta_settings_transfer">Import and export</string>

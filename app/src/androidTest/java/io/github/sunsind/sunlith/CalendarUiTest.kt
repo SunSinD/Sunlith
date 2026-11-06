@@ -83,6 +83,9 @@ class CalendarUiTest {
         calendarId = insertLocalCalendar(context, "sunlith-ui-test", "Sunlith UI test", account)
         settings.selectedCalendarIds = setOf(calendarId)
         settings.hasChosenCalendars = true
+        settings.materialYou = false
+        settings.agendaRange = "month"
+        settings.monthLayout = "split"
         settings.themeMode = "dark"
         settings.startView = "Month"
         settings.agendaDisplay = "all"
@@ -144,8 +147,7 @@ class CalendarUiTest {
 
     @Test
     fun appearanceSettingChangesRenderedUiAndPersists() {
-        node(By.desc(text(R.string.action_more))).click()
-        node(By.text(text(R.string.title_settings))).click()
+        node(By.desc(text(R.string.title_settings))).click()
         node(By.text(text(R.string.beta_settings_appearance))).click()
         node(By.text(text(R.string.beta_dark_theme))).click()
         device.waitForIdle()
@@ -172,8 +174,7 @@ class CalendarUiTest {
         node(By.text(french.getString(R.string.editor_new)))
         node(By.text(french.getString(R.string.action_save)))
         node(By.desc(french.getString(R.string.action_close))).click()
-        node(By.desc(french.getString(R.string.action_more))).click()
-        node(By.text(french.getString(R.string.title_settings))).click()
+        node(By.desc(french.getString(R.string.title_settings))).click()
         node(By.text(french.getString(R.string.beta_settings_appearance))).click()
         node(By.text(french.getString(R.string.beta_follow_system)))
         node(By.text(french.getString(R.string.beta_dark_theme)))
