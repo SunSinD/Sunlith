@@ -140,8 +140,25 @@ class CalendarHandoffUiTest {
     }
 
     @Test
+    fun widgetCreateWaitsForTheWelcomeAndLayoutChooser() {
+        context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE).edit()
+            .putBoolean("ai_intro_done", false).putBoolean("layout_setup_done", false).commit()
+        launch(Intent().putExtra(MainActivity.EXTRA_CREATE_EVENT, true))
+        expectText(R.string.ai_intro_title)
+        assertNull(vm.editor)
+        assertTrue(vm.stack.isEmpty())
+        requireNotNull(device.findObject(By.pkg(context.packageName).text(context.getString(R.string.action_without_ai)))).click()
+        expectText(R.string.layout_setup_title)
+        assertNull(vm.editor)
+        assertTrue(vm.stack.isEmpty())
+        requireNotNull(device.findObject(By.pkg(context.packageName).text(context.getString(R.string.layout_continue)))).click()
+        await { vm.editor != null }
+        assertEquals(0, savedEvents())
+    }
+
+    @Test
     fun anInsertWaitsForOnboardingAndDoesNotReplaceAnExistingDraft() {
-        context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE).edit().putBoolean("ai_intro_done", false).commit()
+        context.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE).edit().putBoolean("ai_intro_done", false).putBoolean("layout_setup_done", false).commit()
         val now = System.currentTimeMillis()
         launch(insert(now + 86_400_000, now + 90_000_000))
         expectText(R.string.ai_intro_title)
@@ -161,6 +178,9 @@ class CalendarHandoffUiTest {
             recreated
         }
         requireNotNull(device.findObject(By.pkg(context.packageName).text(context.getString(R.string.action_without_ai)))).click()
+        expectText(R.string.layout_setup_title)
+        assertNull(vm.editor)
+        requireNotNull(device.findObject(By.pkg(context.packageName).text(context.getString(R.string.layout_continue)))).click()
         await { vm.editor?.title == "Incoming appointment" }
         instrumentation.runOnMainSync { vm.updateEditor { it.copy(title = "Draft I am editing") } }
         val newer = insert(now + 172_800_000, now + 176_400_000).putExtra(CalendarContract.Events.TITLE, "Queued appointment")

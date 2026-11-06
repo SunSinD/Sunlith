@@ -10,6 +10,7 @@ import java.util.UUID
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -53,6 +54,15 @@ class SettingsPreferencesTest {
         assertEquals("Month", settings.startView)
         assertFalse(settings.collapseCalendarOnScroll)
         assertTrue(settings.navigationAnimation)
+        assertTrue(settings.materialYou)
+        assertFalse(settings.showNavigationArrows)
+        assertTrue(settings.swipeNavigation)
+        assertEquals("continuous", settings.agendaRange)
+        assertEquals("split", settings.monthLayout)
+        assertEquals("list", settings.weekLayout)
+        assertEquals("cards", settings.dayLayout)
+        assertEquals(7, settings.visibleWeekDays)
+        assertEquals("sunlith", settings.layoutPreset)
     }
 
     @Test
@@ -80,6 +90,15 @@ class SettingsPreferencesTest {
             startView = "last"
             collapseCalendarOnScroll = true
             navigationAnimation = false
+            materialYou = false
+            showNavigationArrows = true
+            swipeNavigation = false
+            agendaRange = "week"
+            monthLayout = "full"
+            weekLayout = "timeline"
+            dayLayout = "schedule"
+            visibleWeekDays = 3
+            layoutPreset = "custom"
         }
         val restored = SettingsStore(isolated)
         assertEquals("light", restored.themeMode)
@@ -91,5 +110,62 @@ class SettingsPreferencesTest {
         assertEquals("last", restored.startView)
         assertTrue(restored.collapseCalendarOnScroll)
         assertFalse(restored.navigationAnimation)
+        assertFalse(restored.materialYou)
+        assertTrue(restored.showNavigationArrows)
+        assertFalse(restored.swipeNavigation)
+        assertEquals("week", restored.agendaRange)
+        assertEquals("full", restored.monthLayout)
+        assertEquals("timeline", restored.weekLayout)
+        assertEquals("schedule", restored.dayLayout)
+        assertEquals(3, restored.visibleWeekDays)
+        assertEquals("custom", restored.layoutPreset)
+    }
+
+    @Test
+    fun unreadableLayoutChoicesFallBackWithoutChangingOtherPreferences() {
+        isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit()
+            .putString("agenda_range", "future-version")
+            .putString("month_layout", "future-version")
+            .putString("week_layout", "future-version")
+            .putString("day_layout", "future-version")
+            .putString("layout_preset", "future-version")
+            .putInt("visible_week_days", 5)
+            .putString("theme", "dark")
+            .putInt("widget_days", 14)
+            .commit()
+        val settings = SettingsStore(isolated)
+        assertEquals("continuous", settings.agendaRange)
+        assertEquals("split", settings.monthLayout)
+        assertEquals("list", settings.weekLayout)
+        assertEquals("cards", settings.dayLayout)
+        assertEquals("sunlith", settings.layoutPreset)
+        assertEquals(7, settings.visibleWeekDays)
+        assertEquals("dark", settings.themeMode)
+        assertEquals(14, settings.widgetDays)
+    }
+
+    @Test
+    fun rejectedLayoutChoicesPreserveTheLastValidSelection() {
+        val settings = SettingsStore(isolated).apply {
+            agendaRange = "day"
+            monthLayout = "full"
+            weekLayout = "timeline"
+            dayLayout = "schedule"
+            visibleWeekDays = 3
+            layoutPreset = "planner"
+        }
+        assertThrows(IllegalArgumentException::class.java) { settings.agendaRange = "invalid" }
+        assertThrows(IllegalArgumentException::class.java) { settings.monthLayout = "invalid" }
+        assertThrows(IllegalArgumentException::class.java) { settings.weekLayout = "invalid" }
+        assertThrows(IllegalArgumentException::class.java) { settings.dayLayout = "invalid" }
+        assertThrows(IllegalArgumentException::class.java) { settings.visibleWeekDays = 5 }
+        assertThrows(IllegalArgumentException::class.java) { settings.layoutPreset = "invalid" }
+        val restored = SettingsStore(isolated)
+        assertEquals("day", restored.agendaRange)
+        assertEquals("full", restored.monthLayout)
+        assertEquals("timeline", restored.weekLayout)
+        assertEquals("schedule", restored.dayLayout)
+        assertEquals(3, restored.visibleWeekDays)
+        assertEquals("planner", restored.layoutPreset)
     }
 }

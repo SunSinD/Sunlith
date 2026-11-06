@@ -2,8 +2,8 @@
     <string name="device_link_title">Computer connection</string>
     <string name="action_refresh">Refresh</string>
     <string name="device_link_lead">Manage Sunlith directly over Wi-Fi or Tailscale.</string>
-    <string name="device_link_access">Calendar access</string>
-    <string name="device_link_consent">Your paired computer can read, create, change and delete events in the calendars you choose.</string>
+    <string name="device_link_access">Calendars shared with computer</string>
+    <string name="device_link_consent">Choose which calendars your computer can read and change. These choices are separate from the calendars shown in Sunlith.</string>
     <string name="device_link_address">Phone address</string>
     <string name="device_link_no_network">Connect to Wi-Fi or Tailscale, then refresh.</string>
     <string name="device_link_refresh">Refresh connection</string>

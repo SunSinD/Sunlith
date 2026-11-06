@@ -62,7 +62,4 @@ Invoke-SunlithAdb @('shell', 'screencap', '-p', '/sdcard/sunlith-calendar.png')
 Invoke-SunlithAdb @('pull', '/sdcard/sunlith-calendar.png', (Join-Path $OutputDirectory 'month-agenda.png'))
 Invoke-SunlithTest 'io.github.sunsind.sunlith.WidgetSmokeTest'
 Invoke-SunlithAdb @('pull', '/sdcard/Android/data/io.github.sunsind.sunlith/files/sunlith-widget.png', (Join-Path $OutputDirectory 'widget.png'))
-Invoke-SunlithTest 'io.github.sunsind.sunlith.AiOnboardingTest'
-Invoke-SunlithAdb @('pull', '/sdcard/Android/data/io.github.sunsind.sunlith/files/sunlith-ai-intro.png', (Join-Path $OutputDirectory 'ai-intro.png'))
-Invoke-SunlithAdb @('pull', '/sdcard/Android/data/io.github.sunsind.sunlith/files/sunlith-ai-setup.png', (Join-Path $OutputDirectory 'ai-setup.png'))
 Write-Output "Captured real emulator UI in $OutputDirectory. Widget image uses an instrumentation-only Android widget host."

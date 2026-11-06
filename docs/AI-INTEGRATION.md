@@ -1,4 +1,4 @@
-# Connect your assistant
+# Computer connection
 
 Sunlith can connect directly to your computer over Wi-Fi or Tailscale. The [MCP companion](../integrations/mcp) reads and changes calendars on your phone. No Google account or second calendar app is required for direct mode. A separate Google connection remains available.
 
@@ -11,7 +11,7 @@ The phone app has no built-in model or chat. Its private calendar server runs on
 3. Save the pairing file and send it privately to your computer. It contains an access key. Do not paste its contents into chat or publish it.
 4. Keep the file outside the repository and companion folder, in your private user profile. Example: `C:\Users\you\.config\sunlith\sunlith-pairing.json`. On macOS or Linux, use `chmod 600 /absolute/path/sunlith-pairing.json`.
 5. In Sunlith, tap Start connection. Allow notifications so you can see when the connection is active.
-6. Install Node.js 22 or newer. Download and extract the companion, then run `npm ci` in its `integrations/mcp` folder.
+6. Install Node.js 22 or newer. [Download and extract the companion](https://github.com/SunSinD/Sunlith/releases/latest), then run `npm ci` in its `integrations/mcp` folder.
 7. Configure your assistant using the examples below, then start a new assistant session.
 8. Ask it to list your Sunlith calendars and read the phone clock. Then create an event and check it in Sunlith.
 
@@ -45,7 +45,7 @@ For clients using `mcpServers` JSON, including Cursor and Gemini CLI:
 
 Replace both paths with your private pairing file and extracted companion location. The other client configuration formats further below also work with `SUNLITH_DEVICE_CONFIG` instead of `SUNLITH_GOOGLE_CREDENTIALS`. Direct mode is selected whenever `SUNLITH_DEVICE_CONFIG` is present. An invalid file does not silently switch to another account.
 
-The companion verifies the phone certificate before sending the pairing key. It can access only calendars chosen during pairing. Display filters are separate from computer access; pairing initially shows those calendars in Sunlith too. Stop connection pauses access. Unpair computer revokes the file. Prefer the phone's Tailscale address for a stable private connection. If its Wi-Fi address changes, pair again or update only `baseUrl` in the private file.
+The companion verifies the phone certificate before sending the pairing key. It can access only calendars chosen during pairing. Display filters are separate from computer access. Pairing does not change which calendars appear in the app or widget; choose those under Settings > Calendars. Stop connection pauses access. Unpair computer revokes the file. Prefer the phone's Tailscale address for a stable private connection. If its Wi-Fi address changes, pair again or update only `baseUrl` in the private file.
 
 In Settings > Computer connection, Activity history shows the latest 100 successful computer changes, including edits, deletions and import totals. Connection details shows pairing information and the last successful request. A running connection means the phone is listening; it does not prove the computer is currently connected. History starts after installing the update that adds it, and clearing it leaves events and pairing unchanged.
 
@@ -59,7 +59,7 @@ Ordinary phone requests have a ten-second network deadline. Imports allow up to 
 
 ## On your phone without a computer
 
-No Google account is needed for this workflow. Use a writable calendar already on your phone, or create an on-device calendar in Settings > Calendar.
+No Google account is needed for this workflow. Use a writable calendar already on your phone, or create an on-device calendar in Settings > Calendars.
 
 1. Ask a mobile assistant that can generate downloadable files to create a `.ics` file for your event. Give the date, start/end time, timezone, and reminder you want. Check those details before importing.
 2. Download the file and open or share it with Sunlith. If your file app does not offer Sunlith, use Settings > Import and export > Import .ics file instead.
@@ -242,7 +242,7 @@ Run `pi mcp list` to check all connections. Inside Pi, use `/mcp` to inspect too
 
 If another app runs one of these assistants for you, configure Sunlith on the computer and user account where that assistant runs. A mobile remote client can send prompts to that session when the computer is reachable. It does not need calendar credentials inside Sunlith's APK.
 
-Hosts can use separate account/config directories. For example, `CODEX_HOME`, `CLAUDE_CONFIG_DIR` or `PI_CODING_AGENT_DIR` may point at another profile. Start a fresh session and check its Sunlith tool list after setup. The APK links to these guides; it does not install CLIs or automatically configure the computer. No client has been tested here with a real Google account.
+Hosts can use separate account/config directories. For example, `CODEX_HOME`, `CLAUDE_CONFIG_DIR` or `PI_CODING_AGENT_DIR` may point at another profile. Start a fresh session and check its Sunlith tool list after setup. The APK links to the direct connection guide; it does not include an assistant picker, install CLIs or automatically configure the computer. No client has been tested here with a real Google account.
 
 ## Google-mode first prompt and event safety
 

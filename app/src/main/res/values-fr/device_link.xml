@@ -2,8 +2,8 @@
     <string name="device_link_title">Connexion à l’ordinateur</string>
     <string name="action_refresh">Actualiser</string>
     <string name="device_link_lead">Gérez Sunlith directement par Wi-Fi ou Tailscale.</string>
-    <string name="device_link_access">Accès aux calendriers</string>
-    <string name="device_link_consent">Votre ordinateur jumelé peut lire, créer, modifier et supprimer les événements des calendriers choisis.</string>
+    <string name="device_link_access">Calendriers partagés avec votre ordinateur</string>
+    <string name="device_link_consent">Choisissez les calendriers que votre ordinateur peut lire et modifier. Ce choix est distinct des calendriers affichés dans Sunlith.</string>
     <string name="device_link_address">Adresse du téléphone</string>
     <string name="device_link_no_network">Connectez-vous au Wi-Fi ou à Tailscale, puis actualisez.</string>
     <string name="device_link_refresh">Actualiser la connexion</string>

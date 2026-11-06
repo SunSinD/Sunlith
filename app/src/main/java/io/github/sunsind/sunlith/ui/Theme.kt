@@ -1,15 +1,19 @@
 package io.github.sunsind.sunlith.ui
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -67,10 +71,10 @@ fun isDarkTheme(themeMode: String): Boolean = when (themeMode) {
 }
 
 @Composable
-fun SunlithTheme(themeMode: String, content: @Composable () -> Unit) {
+fun SunlithTheme(themeMode: String, materialYou: Boolean = true, content: @Composable () -> Unit) {
     val dark = isDarkTheme(themeMode)
     val p = if (dark) DarkPalette else LightPalette
-    val scheme = if (dark) {
+    val neutralScheme = if (dark) {
         darkColorScheme(
             primary = p.accent, onPrimary = p.onAccent,
             primaryContainer = p.raised, onPrimaryContainer = p.ink,
@@ -107,6 +111,24 @@ fun SunlithTheme(themeMode: String, content: @Composable () -> Unit) {
             inverseSurface = p.ink, inverseOnSurface = p.background, inversePrimary = p.onAccent,
         )
     }
+    val scheme = if (materialYou && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (dark) dynamicDarkColorScheme(LocalContext.current) else dynamicLightColorScheme(LocalContext.current)
+    } else neutralScheme
+    val palette = if (materialYou && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        SunlithPalette(
+            background = scheme.background,
+            surface = scheme.surfaceContainerLow,
+            raised = scheme.surfaceContainerHigh,
+            line = scheme.outlineVariant,
+            ink = scheme.onSurface,
+            muted = scheme.onSurfaceVariant,
+            faint = scheme.outline,
+            accent = scheme.primary,
+            onAccent = scheme.onPrimary,
+            danger = scheme.error,
+            dark = dark,
+        )
+    } else p
     val base = Typography()
     val type = base.copy(
         headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp),
@@ -114,7 +136,7 @@ fun SunlithTheme(themeMode: String, content: @Composable () -> Unit) {
         titleMedium = base.titleMedium.copy(fontWeight = FontWeight.Medium),
         labelLarge = base.labelLarge.copy(fontWeight = FontWeight.Medium),
     )
-    CompositionLocalProvider(LocalPalette provides p) {
+    CompositionLocalProvider(LocalPalette provides palette) {
         MaterialTheme(colorScheme = scheme, typography = type, content = content)
     }
 }

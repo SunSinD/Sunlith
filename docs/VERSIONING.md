@@ -1,6 +1,6 @@
 # Versioning
 
-The current version is **v0.3.0**. The Android display version and MCP companion version are `0.3.0`; Android's `versionCode` is `7`. This minor update adds local computer-change history and makes Computer connection the focus of first-run setup.
+The current version is **v0.4.0**. The Android display version and MCP companion version are `0.4.0`; Android's `versionCode` is `8`. This minor update adds configurable calendar layouts, continuous agendas and Material You colors.
 
 Use plain `MAJOR.MINOR.PATCH` numbers, without testing suffixes or an extra build counter. The `v` prefix belongs to the Git tag and release title. Major zero means initial development under [Semantic Versioning](https://semver.org/). Physical-device and integration testing are still in progress.
 
@@ -10,7 +10,7 @@ Increase Android's integer `versionCode` for every distributed update. Use a new
 
 Publish each version as a normal GitHub release marked Latest, titled `Sunlith v<version>`. Upload and verify the APK, companion ZIP, and checksums before publishing. Keep existing release archives intact so earlier downloads remain available. Do not rewrite Git history.
 
-The Update download links workflow updates the README's three links to the most recently published release by publication time, including releases marked as prereleases. It can also be run manually from Actions. Keep the standalone labels `Download the APK`, `Release notes`, and `Download the computer companion` intact so the workflow can find them. Check the workflow after publishing. Setup guides link to the latest release page.
+The README stays focused on the app and setup. Downloads live in GitHub Releases; setup guides use the permanent latest-release link. No per-version README download links or link-update workflow are needed. Release descriptions follow [the release-note format](RELEASE-NOTES.md), with concrete grouped changes and results from that build. Omit routine installation, data-preservation and pairing-compatibility boilerplate.
 
 ## Package a tested build
 

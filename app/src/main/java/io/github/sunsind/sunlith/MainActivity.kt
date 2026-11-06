@@ -61,7 +61,8 @@ class MainActivity : ComponentActivity() {
             else pendingHandoff = restored
         }
         setContent {
-            val ready = viewModel.aiIntroDone && viewModel.hasPermission && !viewModel.needsNotificationStep && viewModel.loaded
+            val ready = viewModel.aiIntroDone && viewModel.layoutSetupDone && viewModel.hasPermission && !viewModel.needsNotificationStep && viewModel.loaded
+            LaunchedEffect(ready) { if (ready) viewModel.deliverPendingLink() }
             val editorOpen = Screen.Editor in viewModel.stack
             LaunchedEffect(pendingHandoff, ready, editorOpen, viewModel.importUi != null) {
                 val item = pendingHandoff
@@ -88,7 +89,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            SunlithTheme(viewModel.themeMode) {
+            SunlithTheme(viewModel.themeMode, viewModel.materialYou) {
                 Column(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f)) { SunlithApp(viewModel) }
                     if (pendingHandoff != null) {

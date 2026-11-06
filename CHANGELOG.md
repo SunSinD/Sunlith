@@ -1,5 +1,15 @@
 # Changes
 
+## 0.4.0
+
+- Choose Sunlith, Schedule or Planner layouts at first launch, then customize each view.
+- Add a full month grid, hourly day and week timelines, and a continuous daily schedule.
+- Restore animated swipes, hide navigation arrows by default, and show Today when needed.
+- Make the Month agenda continuous by default, with optional month, week and day limits.
+- Add Material You wallpaper colors and retain neutral light and dark themes.
+- Open Settings directly from the toolbar and separate calendar display from computer access.
+- Simplify setup, repository documentation and release descriptions.
+
 ## 0.3.0
 
 - Align Day view event cards across different time labels.

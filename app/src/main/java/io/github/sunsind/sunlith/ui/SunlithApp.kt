@@ -73,7 +73,7 @@ fun SunlithApp(vm: SunlithViewModel) {
     LaunchedEffect(settingsOpen) {
         if (!settingsOpen) settingsState.removeState("settings")
     }
-    SunlithTheme(vm.themeMode) {
+    SunlithTheme(vm.themeMode, vm.materialYou) {
         val p = LocalPalette.current
         val activity = LocalActivity.current as? ComponentActivity
         DisposableEffect(p.dark, activity) {
@@ -95,6 +95,7 @@ fun SunlithApp(vm: SunlithViewModel) {
         Box(Modifier.fillMaxSize().background(p.background)) {
             when {
                 !vm.aiIntroDone -> ComputerWelcome(vm)
+                !vm.layoutSetupDone -> LayoutSetupScreen(vm)
                 !vm.hasPermission -> Onboarding(vm)
                 vm.needsNotificationStep -> NotificationStep(vm)
                 else -> {
@@ -116,7 +117,6 @@ fun SunlithApp(vm: SunlithViewModel) {
                             Screen.Search -> SearchScreen(vm)
                             Screen.Settings -> settingsState.SaveableStateProvider("settings") { SettingsScreen(vm) }
                             Screen.Calendars -> CalendarsScreen(vm)
-                            Screen.AiSetup -> AiSetupScreen(vm, onBack = vm::back, onContinue = { vm.stack.clear() })
                             Screen.DeviceLink -> DeviceLinkScreen(vm)
                             Screen.Editor -> EventEditorScreen(vm)
                             is Screen.Details -> DetailsScreen(vm, screen.event)
