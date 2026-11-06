@@ -1,6 +1,6 @@
 # Versioning
 
-The current version is **v0.4.0**. The Android display version and MCP companion version are `0.4.0`; Android's `versionCode` is `8`. This minor update adds configurable calendar layouts, continuous agendas and Material You colors.
+The current version is **v0.5.0**. The Android display version and MCP companion version are `0.5.0`; Android's `versionCode` is `10`. This update adds vector sun/calendar artwork and selectable launcher styles, and fixes date rollover, Today navigation and three-day week loading. Published v0.4.0 binaries remain unchanged.
 
 Use plain `MAJOR.MINOR.PATCH` numbers, without testing suffixes or an extra build counter. The `v` prefix belongs to the Git tag and release title. Major zero means initial development under [Semantic Versioning](https://semver.org/). Physical-device and integration testing are still in progress.
 

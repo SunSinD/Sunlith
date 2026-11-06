@@ -103,7 +103,7 @@ Dux Calendar's README screenshot/demo section was still a placeholder when check
 
 This review used official help pages, source repositories and issue reports. It is a feature comparison, not evidence that one layout suits everyone. Public issue reports describe individual experiences.
 
-- [Google Calendar Android views](https://support.google.com/calendar/answer/6110849?hl=en&co=GENIE.Platform%3DAndroid) documents Schedule, Day, 3-day, Week and Month. Sunlith takes the continuous schedule and hourly-grid patterns, with its own implementation and appearance.
+- [Google Calendar Android views](https://support.google.com/calendar/answer/6110849?hl=en&co=GENIE.Platform%3DAndroid) describes Schedule, Month and viewing multiple days. Sunlith offers a continuous schedule and hourly grids with its own implementation and appearance.
 - [Business Calendar views](https://appgenix.uservoice.com/knowledgebase/articles/428420-introducing-the-different-views) and [week settings](https://appgenix.uservoice.com/knowledgebase/articles/430132-using-the-week-view) demonstrate why month, agenda and multi-day choices belong in separate settings.
 - [Etar swipe feedback](https://github.com/Etar-Group/Etar-Calendar/issues/1535) illustrates accidental month changes when a curved vertical scroll is mistaken for a horizontal gesture. Swipes need direction lock, a clear threshold and an off switch.
 - [Fossify month/agenda feedback](https://github.com/FossifyOrg/Calendar/issues/1111) and [day-grid request](https://github.com/FossifyOrg/Calendar/issues/374) show the tradeoff between readable lists and visible free-time gaps. Neither replaces the other.
@@ -122,3 +122,11 @@ Official Maven metadata and POMs were checked. The existing BOM `2025.11.01` alr
 The [ncr README](https://github.com/greyxp1/ncr), [Fossify Calendar](https://github.com/FossifyOrg/Calendar) and [Etar](https://github.com/Etar-Group/Etar-Calendar) informed the short introduction, useful feature list and links to setup/testing. The repository keeps downloads in Releases and licensing in LICENSE.
 
 The roughly 625-line companion remains JavaScript. [TypeScript](https://www.typescriptlang.org/docs/handbook/typescript-in-5-minutes.html) adds static checking; it does not by itself speed up the runtime. [Node's TypeScript support](https://nodejs.org/api/typescript.html) strips supported types without checking them. The companion already validates inputs with Zod, and conversion would add compiler/runtime-version and packaging work without an established performance benefit. Runtime validation and the integration tests remain necessary in either language.
+
+## Vector icons and launcher styles, November 6, 2026
+
+The sun/calendar reference is redrawn as SVG, with matching Android vectors for Light, Dark and Neutral styles. Android's [adaptive-icon guidance](https://developer.android.com/develop/ui/views/launch/icon_design_adaptive) specifies 108dp layers, a central 66dp safe zone and a monochrome layer for themed icons. The colour artwork fits inside that safe zone; the monochrome layer is slightly smaller to allow for its outline stroke.
+
+The [PackageManager API](https://developer.android.com/reference/android/content/pm/PackageManager) supports changing enabled launcher aliases. API 33 and newer update the aliases in one batch; older versions enable the replacement before disabling the previous entry, with rollback on failure. A short launcher activity forwards to the stable main activity, keeping an open calendar independent of the alias being changed. It also preserves an open document picker when returning from the home screen. Startup reconciliation repairs an interrupted switch. The Settings previews use Android's adaptive icon drawable and the phone's icon mask.
+
+Some launchers cache icon changes or remove the old home-screen shortcut. Emulator checks cover alias state, persistence, recreation and launching; Samsung shortcut migration, splash animations and physical Fold behavior need phone testing. Icon style is independent of the app's existing system, light and dark appearance options.

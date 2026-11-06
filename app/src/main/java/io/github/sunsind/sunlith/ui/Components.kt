@@ -111,7 +111,7 @@ fun InfoCard(text: String, action: String? = null, onAction: () -> Unit = {}) {
     }
 }
 
-/** Uses the same supplied artwork as the launcher, without its adaptive padding. */
+/** The launcher's calendar-and-sunrise artwork (assets/icon/sunlith-icon.svg), cropped without the adaptive-icon padding. */
 @Composable
 fun SunMark(modifier: Modifier = Modifier) {
     Image(painterResource(R.drawable.sunlith_mark), contentDescription = null, modifier = modifier.size(56.dp))

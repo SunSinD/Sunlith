@@ -109,7 +109,8 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var visibleWeekDays by mutableStateOf(settings.visibleWeekDays); private set
     var layoutPreset by mutableStateOf(settings.layoutPreset); private set
 
-    var selectedDate by mutableStateOf(LocalDate.now()); private set
+    var today by mutableStateOf(LocalDate.now()); private set
+    var selectedDate by mutableStateOf(today); private set
     val month: YearMonth get() = YearMonth.from(selectedDate)
     var viewMode by mutableStateOf(launchViewMode()); private set
 
@@ -158,6 +159,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         get() = Build.VERSION.SDK_INT >= 33 && !notificationsGranted && remindersEnabled && !notificationStepDone
 
     fun onResume() {
+        refreshCurrentDate()
         notificationsGranted = notificationGranted()
         val granted = calendarGranted()
         val changed = granted != hasPermission
@@ -247,7 +249,14 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         selectedDate.minusDays(60) to selectedDate.plusDays(120)
     } else gridRange()
 
-    private fun wantedRange() = if (continuousAgenda()) targetWindow ?: initialWindow() else gridRange()
+    private fun wantedRange(): Pair<LocalDate, LocalDate> {
+        if (continuousAgenda()) return targetWindow ?: initialWindow()
+        val grid = gridRange()
+        // Selecting inside a three-day window keeps up to two earlier dates visible.
+        return if (viewMode == ViewMode.Week && weekLayout == "timeline" && visibleWeekDays == 3) {
+            grid.first.minusDays(2) to grid.second
+        } else grid
+    }
 
     fun coversRange(from: LocalDate, to: LocalDate): Boolean =
         containsRange(loadedFrom, loadedTo, from, to) || containsRange(gridLoadedFrom, gridLoadedTo, from, to)
@@ -392,21 +401,32 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
 
     // region date navigation
 
+    internal fun refreshCurrentDate(current: LocalDate = LocalDate.now()) {
+        if (today == current) return
+        Snapshot.withMutableSnapshot {
+            if (selectedDate == today) selectedDate = current
+            today = current
+        }
+        ensureLoaded()
+    }
+
     fun select(date: LocalDate) {
         selectedDate = date
         ensureLoaded()
     }
 
     fun goToday() {
-        select(LocalDate.now())
+        refreshCurrentDate()
+        select(today)
         todayRequest++
     }
 
     fun step(delta: Int) {
+        refreshCurrentDate()
         when (viewMode) {
             ViewMode.Month -> {
                 val next = month.plusMonths(delta.toLong())
-                select(if (next == YearMonth.now()) LocalDate.now() else next.atDay(1))
+                select(if (next == YearMonth.from(today)) today else next.atDay(1))
             }
             ViewMode.Week -> select(selectedDate.plusWeeks(delta.toLong()))
             ViewMode.Day -> select(selectedDate.plusDays(delta.toLong()))
@@ -414,8 +434,9 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun changeViewMode(mode: ViewMode) {
+        refreshCurrentDate()
         Snapshot.withMutableSnapshot {
-            if (mode == ViewMode.Day) selectedDate = LocalDate.now()
+            if (mode == ViewMode.Day) selectedDate = today
             viewMode = mode
             targetWindow = initialWindow()
         }
@@ -748,6 +769,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         settings.weekLayout = value
         weekLayout = settings.weekLayout
         markCustomLayout()
+        ensureLoaded()
     }
 
     fun changeDayLayout(value: String) {
@@ -762,6 +784,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         settings.visibleWeekDays = value
         visibleWeekDays = settings.visibleWeekDays
         markCustomLayout()
+        ensureLoaded()
     }
 
     fun applyLayoutPreset(value: String) {

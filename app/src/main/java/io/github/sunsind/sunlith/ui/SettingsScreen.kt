@@ -10,6 +10,8 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -27,6 +30,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -47,15 +52,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -63,11 +73,17 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.DeviceCalendar
+import io.github.sunsind.sunlith.system.LauncherIcons
 import java.time.LocalDate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 const val SOURCE_URL = "https://github.com/SunSinD/Sunlith"
 const val MIGRATION_URL = "https://github.com/SunSinD/Sunlith/blob/main/docs/MIGRATION.md"
@@ -167,6 +183,7 @@ fun SettingsScreen(vm: SunlithViewModel) {
                         ChoiceRow(stringResource(R.string.custom_material_you), vm.materialYou) { vm.changeMaterialYou(true) }
                         ChoiceRow(stringResource(R.string.custom_neutral), !vm.materialYou) { vm.changeMaterialYou(false) }
                         SettingsNote(stringResource(if (Build.VERSION.SDK_INT >= 31) R.string.custom_material_you_desc else R.string.custom_material_you_fallback))
+                        LauncherIconSection(vm)
                         SectionTitle(stringResource(R.string.custom_presets))
                         SettingsNote(stringResource(R.string.custom_presets_desc))
                         if (vm.layoutPreset == "custom") SettingsNote(stringResource(R.string.custom_preset_active))
@@ -305,6 +322,54 @@ fun SettingsScreen(vm: SunlithViewModel) {
     }
 
     ImportDialog(vm)
+}
+
+/** Home-screen icon choice. Each preview is the real adaptive icon, drawn with this phone's icon mask. */
+@Composable
+private fun LauncherIconSection(vm: SunlithViewModel) {
+    val p = LocalPalette.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var selected by remember { mutableStateOf(LauncherIcons.saved(context)) }
+    var busy by remember { mutableStateOf(false) }
+    val failed = stringResource(R.string.launcher_icon_failed)
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { LauncherIcons.reconcile(context) } }
+    SectionTitle(stringResource(R.string.launcher_icon_title))
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        LauncherIcons.Style.entries.forEach { style ->
+            val chosen = selected == style
+            val iconLabel = stringResource(R.string.launcher_icon_choice, stringResource(style.label))
+            val shape = RoundedCornerShape(14.dp)
+            Column(
+                Modifier.weight(1f).clip(shape).border(if (chosen) 2.dp else 1.dp, if (chosen) p.accent else p.line, shape)
+                    .semantics { contentDescription = iconLabel }
+                    .selectable(chosen, enabled = !busy, role = Role.RadioButton) {
+                        if (!chosen) {
+                            busy = true
+                            scope.launch {
+                                if (withContext(Dispatchers.IO) { LauncherIcons.select(context, style) }) selected = style else vm.message(failed)
+                                busy = false
+                            }
+                        }
+                    }
+                    .padding(vertical = 12.dp, horizontal = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                LauncherIconPreview(style.icon, 56.dp)
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(style.label), style = MaterialTheme.typography.bodyMedium, color = p.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+    SettingsNote(stringResource(R.string.launcher_icon_desc))
+}
+
+@Composable
+private fun LauncherIconPreview(icon: Int, size: Dp) {
+    val context = LocalContext.current
+    val px = with(LocalDensity.current) { size.roundToPx() }
+    val bitmap = remember(icon, px) { ContextCompat.getDrawable(context, icon)?.toBitmap(px, px)?.asImageBitmap() }
+    if (bitmap != null) Image(bitmap, contentDescription = null, modifier = Modifier.size(size))
 }
 
 @Composable

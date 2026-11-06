@@ -1,6 +1,11 @@
 package io.github.sunsind.sunlith.ui
 
 import android.provider.Settings
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -260,6 +265,31 @@ private class CalendarContext(
 
 @Composable
 fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var clockChange by remember { mutableIntStateOf(0) }
+    DisposableEffect(vm, context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                vm.refreshCurrentDate()
+                clockChange++
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_DATE_CHANGED)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    LaunchedEffect(vm, clockChange) {
+        while (true) {
+            vm.refreshCurrentDate()
+            val now = java.time.ZonedDateTime.now()
+            val midnight = now.toLocalDate().plusDays(1).atStartOfDay(now.zone)
+            delay(java.time.Duration.between(now, midnight).toMillis().coerceAtLeast(1) + 50)
+        }
+    }
     val p = LocalPalette.current
     val f = rememberFormats()
     val motion = rememberMotion(vm.navigationAnimation)
@@ -279,7 +309,7 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
         highlightToday = false
     }
 
-    val today = LocalDate.now()
+    val today = vm.today
     val mode = vm.viewMode
     val threeDays = mode == ViewMode.Week && vm.weekLayout == "timeline" && vm.visibleWeekDays == 3
     val window = rememberSaveable(saver = WindowStart.Saver) { WindowStart() }
@@ -329,7 +359,7 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
                     ViewMode.Day -> DayBody(c, Modifier.weight(1f))
                 }
             }
-            TodayPill(!periodHasToday || viewport.away, motion, vm::goToday, Modifier.align(Alignment.BottomCenter))
+            TodayPill(!periodHasToday || viewport.away, motion, today, vm::goToday, Modifier.align(Alignment.BottomCenter))
         }
     }
 
@@ -400,20 +430,20 @@ private fun Header(vm: SunlithViewModel, f: Formats, onTitle: () -> Unit, onStep
  * centred above the bottom edge, and keeps clear of the add button on the right. Large text shows today's number.
  */
 @Composable
-private fun TodayPill(visible: Boolean, motion: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun TodayPill(visible: Boolean, motion: Boolean, today: LocalDate, onClick: () -> Unit, modifier: Modifier) {
     if (motion) {
         AnimatedVisibility(
             visible, modifier,
             enter = fadeIn(tween(150)) + scaleIn(tween(150), initialScale = 0.9f),
             exit = fadeOut(tween(120)) + scaleOut(tween(120), targetScale = 0.9f),
-        ) { TodayPillContent(onClick) }
+        ) { TodayPillContent(today, onClick) }
     } else if (visible) {
-        Box(modifier) { TodayPillContent(onClick) }
+        Box(modifier) { TodayPillContent(today, onClick) }
     }
 }
 
 @Composable
-private fun TodayPillContent(onClick: () -> Unit) {
+private fun TodayPillContent(today: LocalDate, onClick: () -> Unit) {
     val p = LocalPalette.current
     val label = stringResource(R.string.action_today)
     val compact = LocalDensity.current.fontScale > 1.5f
@@ -427,7 +457,7 @@ private fun TodayPillContent(onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            if (compact) LocalDate.now().dayOfMonth.toString() else stringResource(R.string.today),
+            if (compact) today.dayOfMonth.toString() else stringResource(R.string.today),
             color = p.ink, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
     }
@@ -474,7 +504,11 @@ private fun MonthBody(c: CalendarContext, modifier: Modifier) {
             val month = YearMonth.from(d)
             val start = gridStart(month, vm.weekStartsMonday)
             val eventsOn = rememberDayEvents(vm, start, start.plusDays(41))
-            FullMonthGrid(month, d, c.today, vm.weekStartsMonday, eventsOn, c.f, k == 0 && c.highlightToday, onOpenDay = { openDay(vm, it) })
+            FullMonthGrid(
+                month, d, c.today, vm.weekStartsMonday, eventsOn, c.f, k == 0 && c.highlightToday,
+                onOpenDay = { openDay(vm, it) }, todayRequest = vm.todayRequest, active = k == 0,
+                onAwayChanged = { if (k == 0) c.viewport.away = it },
+            )
         }
         return
     }
@@ -1099,7 +1133,7 @@ private fun EmptyRange(row: AgendaRow.Empty, f: Formats, onClick: () -> Unit) {
 @Composable
 private fun DayView(vm: SunlithViewModel, day: LocalDate, events: List<CalendarEvent>, f: Formats, showStatus: Boolean) {
     val p = LocalPalette.current
-    val today = LocalDate.now()
+    val today = vm.today
     val zone = ZoneId.systemDefault()
     val allDay = events.filter { it.allDay || it.span(zone).multiDay }
     val timed = events - allDay.toSet()

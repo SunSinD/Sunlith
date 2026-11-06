@@ -234,11 +234,11 @@ Version code `8` uses the same signing certificate as v0.3.0. The APK was instal
 
 The broad runs cover provider operations, reminders, handoffs, setup, layouts, animated navigation, continuous paging, widgets, connection lifecycle, strict protocol parsing and TLS. They each reported failures in the timeline UI automation: gestures could scroll past short events or tap the floating Add/Today controls over a partially visible event. The helpers now reset the hourly area through accessibility, wait for stable event bounds and bring targets clear of the floating controls. All nine customization cases then passed on each API level. Earlier test corrections recognize Android's checked state for selected date buttons and use smaller agenda gestures. The full broad suites were not repeated after the final test-only corrections; the production APK stayed unchanged throughout these runs.
 
-The Fold-sized checks cover equal Day card bounds, preset layouts including the full month, the date picker across all Day layouts, separate overlapping-event targets and all-day areas, and layout selection through recreation. The customization suite also verifies overnight hourly blocks on both dates, dense-event overflow, the saved three-day window, and actual dynamic and neutral accent colors. An extra test request left over from emulator startup failed to connect UiAutomation and was discarded; it is not included in the verification results above.
+The five Fold-sized cases were `CalendarExperienceTest.dayEventCardsShareTheSameBoundsForDifferentTimeLengths`, `CalendarCustomizationTest.presetsRenderDifferentMonthAndDayViewsWithTheSameCalendarEvents`, `CalendarCustomizationTest.dayPickerChangesTheShownEventsAndTheNewEventDateForEveryDayLayout`, `CalendarCustomizationTest.overlappingTimelineEventsHaveSeparateTapTargetsAndAllDayStaysAboveTheHours`, and `AiOnboardingTest.everyPresetIsSelectableAndPlannerChoiceSurvivesRecreationBeforeConfirmation`. The customization suite also verifies overnight hourly blocks on both dates, dense-event overflow, the saved three-day window, and actual dynamic and neutral accent colors. An extra test request left over from emulator startup failed to connect UiAutomation and was discarded; it is not included in the verification results above.
 
 The external desktop test exercised all eight tools, allowed-calendar scope, creation retries, reads, updates, stale revisions, recurring-series protection, import deduplication and deletion. Its isolated calendars and pairing were removed afterward, along with the private temporary configuration files and ADB forwarding. No personal phone calendar or pairing was changed. Widget and large-text landscape captures were inspected privately; no screenshots or videos were published.
 
-GitHub created no run for the pushed commit. A manual dispatch was rejected with HTTP 422, "Actions has been disabled for this user." Repository Actions permissions and the workflow itself were enabled. The build, lint, dependency install, syntax checks, tests and audit above ran locally on Windows; the workflow's macOS and Linux companion jobs could not be verified for this release. No successful GitHub-hosted run is claimed.
+At initial publication, GitHub rejected workflow dispatch with HTTP 422, "Actions has been disabled for this user." After account recovery on November 6, [run 42276063211](https://github.com/SunSinD/Sunlith/actions/runs/42276063211) passed all four jobs on the exact `v0.4.0` commit, `9207786`: Android build/unit tests/lint and companion install/syntax/tests on Linux, Windows and macOS, plus the Linux dependency audit. CI does not run emulator instrumentation and its APK is signed separately from the published download; the emulator and published-APK checks above remain separate results.
 
 Physical Samsung launcher rendering, Fold posture changes, Wi-Fi/Tailscale delivery and manufacturer battery behavior still need phone testing. The hourly timeline places timed events lasting 24 hours or more in its banner area. Tapping an empty hour opens the editor at its default start time. These limits remain separate from the verified overlap, overnight and date-selection behavior.
 
@@ -246,4 +246,85 @@ Version 0.4.0 APK SHA-256:
 
 ```text
 fab9ce155ee2b4316223a5fa967ba3d4395d3228a6535d3c4bcf61df4960354e
+```
+
+## Unreleased 0.4.1 candidate verification
+
+Before the icon work, an unreleased v0.4.1 candidate with version code `9` fixed a three-day Week timeline loading gap at month boundaries. The checks in this section belong to that earlier candidate, not the final v0.5.0 build. The new regression failed against the published v0.4.0 APK, then passed against the packaged v0.4.1 APK for both Monday-first (January 30–February 1, 2027) and Sunday-first (October 30–November 1, 2026) calendars. It checks that all three dates and the first date's event remain available after selecting the next month's date, changing the Week layout, and switching between three and seven days. The layout-change path also failed against the initial candidate before adding the required range refreshes.
+
+| Check | Result |
+| --- | --- |
+| Android JVM tests | 26 passed |
+| Android lint | 0 errors, 81 warnings, 6 hints |
+| Full Android 16 / API 36 suite | 99 passed, 2 skipped, 0 failures in 525.679 seconds |
+| Fold-sized API 36 at 200% text | All 5 named cases from v0.4.0 repeated and passed in 38.278 seconds at 1768x2208, density 320 |
+| Separate API 36 notification permission recovery | 1 passed in 8.306 seconds |
+| Actual desktop SDK to Android calendar provider | All eight tools passed over pinned HTTPS and stdio MCP; fixture cleanup passed |
+| Desktop syntax and tests after fresh dependency install | 44 passed, 1 opt-in fixture skipped |
+| Desktop dependency audit | 0 vulnerabilities |
+
+The API 30 skips are wallpaper-based Material You colors, which require API 31 or newer, and the separately enabled external desktop fixture. API-level annotations exclude French app locales and notification-permission recovery on API 30. The API 36 full suite skips the external desktop fixture and permission recovery; both passed separately afterward. The external fixture removed its isolated calendars and pairing, and its temporary private desktop files and ADB forwarding were removed. No personal calendar or pairing was accessed.
+
+An initial API 36 full run had 98 passes, two skips and one UI automation failure. Android's event log showed the test event's 15-minute reminder appearing at 14:45 and the automated Search tap clicking that notification, which opened event details. General UI fixtures now disable reminders; reminder behavior remains covered by the separate notification tests. All four focused UI cases passed before this correction. Final full-suite results use the corrected fixture. Startup runs blocked by an Android System UI ANR and runs stopped while extending the regression are excluded.
+
+A later API 36 run had 98 passes, two skips and one shutdown-fixture failure. Its eight TCP connections could still be waiting in the operating system's accept backlog when shutdown was called. The test now waits until the server has accepted all eight, establishing its working/queued-socket precondition before stopping it. All seven focused TLS cases passed with that synchronization; production server code was unchanged.
+
+The packaged APK was installed directly with `adb install -r`, followed by the final instrumentation APK (SHA-256 `f2146232e34b45a53f4a25f1ac60294db19d6c321cd0e3a0e76ef355c65e0bdc`). Its installed bytes match the packaged APK's SHA-256. Gradle connected tests were not used to replace it with another app build. The signing certificate matches v0.4.0; the old release binaries remain unchanged.
+
+Version 0.4.1 APK SHA-256:
+
+```text
+d5c2738d0470ae3b54cd714c545d89d8be994bbaae7666047a5345502192e289
+```
+
+## Version 0.5.0 verification
+
+Version code `10` uses the same signing certificate as v0.4.0. The earlier code-9 candidate was not published. All results below use the final packaged APK and the final instrumentation APK, installed directly with ADB on one emulator at a time.
+
+| Check | Result |
+| --- | --- |
+| Android JVM tests | 26 passed |
+| Android lint | 0 errors, 83 warnings, 6 hints |
+| Full Android 11 / API 30 suite | 108 passed, 2 skipped, 0 failures in 534.879 seconds |
+| Full Android 16 / API 36 suite | 110 passed, 2 skipped, 0 failures in 515.064 seconds |
+| Fold-sized API 36 at 200% text | All 5 named cases from v0.4.0 passed in 34.431 seconds at 1768x2208, density 320 |
+| Separate API 36 notification permission recovery | 1 passed in 6.404 seconds |
+| Actual desktop SDK to Android calendar provider | All eight tools passed through pinned HTTPS and stdio MCP; fixture cleanup passed |
+| Desktop syntax and tests after fresh dependency install | 44 passed, 1 opt-in Android fixture skipped |
+| Desktop dependency audit | 0 vulnerabilities |
+| Release packaging | Source equality, local archive links, APK signing certificate and installed APK hash verified |
+
+The API 30 skips are wallpaper-based Material You colors and the external desktop fixture. API-level annotations exclude the French app-locale and notification-permission cases there. The API 36 skips are the external desktop fixture and permission recovery; both passed separately afterward. Custom demo and performance status messages are excluded from test counts.
+
+New regression coverage checks the three-day month boundary with fixed Monday-first and Sunday-first dates, date rollover without replacing an explicitly chosen date, Today in scrolling and fitting full-month layouts, launcher choices and disk persistence, interrupted-switch repair, recreation, rollback and reopening an active document picker from the launcher. The Appearance test taps the actual icon tiles and waits for the recreated activity. The fitting-grid Today case reproduced Opus's final review finding before the fix, then passed afterward. Both final full suites include that fix. Earlier stopped runs and the first document-picker test setup failure are excluded; the picker test now discovers the actual DocumentsUI window instead of requiring PackageManager visibility.
+
+The running calendar has a stable main activity behind a short launcher activity. Disabling the original direct launcher alias on Android 11 had finished the open app despite `DONT_KILL_APP`; the separate launcher activity fixed that observed behavior. Removing `CLEAR_TOP` also preserves an open document picker when returning from Home. Tests cover both the sequential alias update on API 30 and the atomic update on API 36. Startup repairs an interrupted switch on activity recreation as well as a fresh launch.
+
+A dense-calendar fixture inserts 1,460 reminder-free events over 365 days with roughly 1KB descriptions. It checks rendered initial loading, paging in both directions, a distant date, description search and title search. Times include provider work, UI rendering and input, and are observations from these emulators rather than performance thresholds.
+
+| Dense-calendar operation | API 30 elapsed | API 36 elapsed |
+| --- | --- | --- |
+| Initial Month agenda | 1,468ms | 1,997ms |
+| Page forward | 204ms | 161ms |
+| Page backward | 204ms | 159ms |
+| Select distant month | 316ms | 220ms |
+| Cold description search | 1,318ms | 840ms |
+| Warm title search | 1,558ms | 233ms |
+
+A 25ms main-thread heartbeat observed maximum lateness of 281ms on API 30 and 193ms on API 36 across these operations. This is a coarse responsiveness sample, not a frame-jank benchmark. It does not establish performance for arbitrarily dense calendars or justify speculative rewrites. The fixture removed its events and calendar afterward.
+
+The desktop integration exercised scope restrictions, timed/all-day creation, idempotent retries, reads, edits, stale revisions, recurring-series safeguards, import deduplication and deletion. Its isolated calendars and pairing were removed, along with private desktop fixture files and ADB forwarding. No personal events or phone pairing were accessed. Fold display size, density and font scale were restored after testing.
+
+Opus 5.5 High and GPT 6.1 Sol High independently reviewed the changes and earlier requirements. Concrete findings were fixed and included in the final runs. Samsung home-screen shortcut migration, icon-launch/splash animation, physical Fold posture changes, Wi-Fi/Tailscale delivery and manufacturer battery restrictions still require a real phone. Some launchers may require adding the home-screen shortcut again after an icon change. The existing timeline limits described above remain.
+
+Version 0.5.0 APK SHA-256:
+
+```text
+37333de456ffb9fc8314cb8987e83d6f005e870d9cd4b2ccc06a29b7592d81d9
+```
+
+Final instrumentation APK SHA-256:
+
+```text
+095b6ec24b046524d69af0c78f91d72461fa90d2b213951a5917252b7511d681
 ```
