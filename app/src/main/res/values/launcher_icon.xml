@@ -1,0 +1,9 @@
+<resources>
+    <string name="launcher_icon_title">App icon</string>
+    <string name="launcher_icon_choice">%1$s app icon</string>
+    <string name="launcher_icon_light">Light</string>
+    <string name="launcher_icon_dark">Dark</string>
+    <string name="launcher_icon_neutral">Neutral</string>
+    <string name="launcher_icon_desc">Changes the Sunlith icon on your home screen. It can take a few seconds to appear; some home screens may need you to add the icon again.</string>
+    <string name="launcher_icon_failed">The app icon could not be changed.</string>
+</resources>

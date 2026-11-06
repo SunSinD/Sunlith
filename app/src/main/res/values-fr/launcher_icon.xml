@@ -1,0 +1,9 @@
+<resources>
+    <string name="launcher_icon_title">Icône de l\'app</string>
+    <string name="launcher_icon_choice">Icône de l\'app : %1$s</string>
+    <string name="launcher_icon_light">Clair</string>
+    <string name="launcher_icon_dark">Sombre</string>
+    <string name="launcher_icon_neutral">Neutre</string>
+    <string name="launcher_icon_desc">Change l\'icône de Sunlith sur l\'écran d\'accueil. Elle peut mettre quelques secondes à apparaître ; certains écrans d\'accueil demandent de l\'ajouter à nouveau.</string>
+    <string name="launcher_icon_failed">L\'icône de l\'app n\'a pas pu être changée.</string>
+</resources>

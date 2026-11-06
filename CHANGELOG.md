@@ -1,5 +1,13 @@
 # Changes
 
+## 0.5.0
+
+- Replace the launcher artwork with a vector sun/calendar icon and selectable Light, Dark and Neutral styles.
+- Refresh Today when the date changes and return to its row in a scrolling full-month grid.
+- Keep the three-day week timeline loaded when selecting a date across a month boundary.
+- Refresh the visible date range when changing the Week layout or number of days.
+- Add regression coverage for both Monday-first and Sunday-first calendars.
+
 ## 0.4.0
 
 - Choose Sunlith, Schedule or Planner layouts at first launch, then customize each view.

@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.sunsind.sunlith.system.CalendarHandoff
+import io.github.sunsind.sunlith.system.LauncherIcons
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import io.github.sunsind.sunlith.system.readCalendarHandoff
 import io.github.sunsind.sunlith.system.restoreCalendarHandoff
 import io.github.sunsind.sunlith.system.save
@@ -54,6 +58,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch(Dispatchers.IO) { LauncherIcons.reconcile(applicationContext) }
         if (savedInstanceState == null) handleIntent(intent)
         else {
             val restored = restoreCalendarHandoff(savedInstanceState.getBundle(STATE_HANDOFF))

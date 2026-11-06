@@ -34,6 +34,7 @@ import io.github.sunsind.sunlith.data.CalendarDates
 import io.github.sunsind.sunlith.data.CalendarRepository
 import io.github.sunsind.sunlith.data.EventDraft
 import io.github.sunsind.sunlith.system.SettingsStore
+import io.github.sunsind.sunlith.system.LauncherIcons
 import io.github.sunsind.sunlith.ui.Formats
 import io.github.sunsind.sunlith.ui.SunlithViewModel
 import io.github.sunsind.sunlith.ui.ViewMode
@@ -524,6 +525,117 @@ class CalendarExperienceTest {
         node(today).click()
         node(By.pkg(context.packageName).text(marker))
         awaitUi { vm.selectedDate == LocalDate.now() && !device.hasObject(today) }
+    }
+
+    @Test
+    fun appearanceIconTilesSwitchTheLauncherAndPersistAcrossRecreation() {
+        val original = LauncherIcons.saved(context)
+        try {
+            node(By.pkg(context.packageName).desc(english.getString(R.string.title_settings))).click()
+            node(By.pkg(context.packageName).text(english.getString(R.string.beta_settings_appearance))).click()
+            LauncherIcons.Style.entries.forEach { style ->
+                val selector = By.pkg(context.packageName).desc(english.getString(R.string.launcher_icon_choice, english.getString(style.label)))
+                repeat(8) {
+                    if (!device.hasObject(selector)) {
+                        node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.DOWN, 0.5f, 500)
+                    }
+                }
+                node(selector).click()
+                awaitUi { LauncherIcons.saved(context) == style && LauncherIcons.enabled(context) == listOf(style) }
+            }
+            val previous = requireNotNull(activity)
+            instrumentation.runOnMainSync { previous.recreate() }
+            awaitUi {
+                var restored = false
+                instrumentation.runOnMainSync {
+                    ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                        .filterIsInstance<ComponentActivity>().firstOrNull { it !== previous }?.let {
+                            activity = it
+                            vm = ViewModelProvider(it)[SunlithViewModel::class.java]
+                            restored = true
+                        }
+                }
+                restored && LauncherIcons.enabled(context) == listOf(LauncherIcons.Style.Neutral)
+            }
+            node(By.pkg(context.packageName).desc(english.getString(R.string.launcher_icon_choice, english.getString(R.string.launcher_icon_neutral))))
+            assertEquals(LauncherIcons.Style.Neutral, LauncherIcons.saved(context))
+        } finally {
+            assertTrue(LauncherIcons.select(context, original))
+        }
+    }
+
+    @Test
+    fun currentDateRefreshMovesTodayWithoutReplacingAnExplicitlySelectedDate() {
+        val original = LocalDate.now()
+        onMain { vm.changeViewMode(ViewMode.Day); vm.refreshCurrentDate(original.plusDays(1)) }
+        awaitUi { vm.today == original.plusDays(1) && vm.selectedDate == vm.today }
+        node(day(vm.today))
+        val chosen = original.plusDays(8)
+        onMain { vm.select(chosen); vm.refreshCurrentDate(original.plusDays(2)) }
+        awaitUi { vm.today == original.plusDays(2) }
+        assertEquals("A new day must preserve a date chosen explicitly.", chosen, vm.selectedDate)
+        onMain { vm.refreshCurrentDate(original) }
+    }
+
+    @Test
+    fun fullMonthKeepsTodayHiddenWhenAllRowsFitAfterSelectingALaterDate() {
+        val today = LocalDate.of(2026, 11, 6)
+        onMain {
+            vm.applyLayoutPreset("planner")
+            vm.changeViewMode(ViewMode.Month)
+            vm.refreshCurrentDate(today)
+            vm.select(today.withDayOfMonth(27))
+        }
+        node(By.pkg(context.packageName).res("calendar_full_month"))
+        node(day(today))
+        node(day(today.withDayOfMonth(27)))
+        device.waitForIdle()
+        assertFalse("Today is already visible in the fitting full-month grid.", device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))))
+    }
+
+    @Test
+    fun fullMonthTodayReturnsToItsRowWhenLargeTextRequiresScrolling() {
+        val oldScale = Settings.System.getFloat(context.contentResolver, Settings.System.FONT_SCALE, 1f)
+        fun setScale(scale: Float) {
+            instrumentation.uiAutomation.executeShellCommand("settings put system font_scale $scale")
+                .let { ParcelFileDescriptor.AutoCloseInputStream(it).use { input -> input.readBytes() } }
+        }
+        try {
+            setScale(2f)
+            device.setOrientationLeft()
+            instrumentation.runOnMainSync {
+                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .filterIsInstance<MainActivity>().firstOrNull()?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
+            awaitUi { device.displayWidth > device.displayHeight && context.resources.configuration.fontScale >= 1.99f }
+            onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.goToday() }
+            val today = LocalDate.now()
+            val todayAction = By.pkg(context.packageName).desc(english.getString(R.string.action_today))
+            val grid = node(By.pkg(context.packageName).res("calendar_grid"))
+            val bounds = grid.visibleBounds
+            val top = bounds.top + bounds.height() / 5
+            val bottom = bounds.bottom - bounds.height() / 5
+            val early = java.time.temporal.ChronoUnit.DAYS.between(gridStart(vm.month, vm.weekStartsMonday), today) < 21
+            repeat(5) {
+                device.swipe(bounds.centerX(), if (early) bottom else top, bounds.centerX(), if (early) top else bottom, 30)
+            }
+            node(todayAction).click()
+            awaitUi {
+                device.findObject(day(today))?.visibleBounds?.let { it.height() > 20 && it.centerY() in bounds.top..bounds.bottom } == true &&
+                    !device.hasObject(todayAction)
+            }
+            assertEquals(ViewMode.Month, vm.viewMode)
+            assertEquals(today, vm.selectedDate)
+        } finally {
+            setScale(oldScale)
+            instrumentation.runOnMainSync {
+                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .filterIsInstance<MainActivity>().firstOrNull()?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+            device.setOrientationNatural()
+            device.unfreezeRotation()
+            awaitUi { device.displayHeight > device.displayWidth && abs(context.resources.configuration.fontScale - oldScale) < 0.01f }
+        }
     }
 
     @Test

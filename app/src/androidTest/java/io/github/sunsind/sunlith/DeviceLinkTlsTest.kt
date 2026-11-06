@@ -1,6 +1,7 @@
 package io.github.sunsind.sunlith
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.sunsind.sunlith.device.DeviceLink
@@ -135,6 +136,11 @@ class DeviceLinkTlsTest {
     fun stoppingClosesBothWorkingAndQueuedConnections() {
         val clients = List(8) { Socket("127.0.0.1", server.localPort).apply { soTimeout = 2_000 } }
         try {
+            val field = DeviceLinkServer::class.java.getDeclaredField("clients").apply { isAccessible = true }
+            val accepted = field.get(server) as Set<*>
+            val deadline = SystemClock.elapsedRealtime() + 5_000
+            while (accepted.size < clients.size && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(10)
+            assertEquals("All working and queued sockets must be accepted before testing shutdown.", clients.size, accepted.size)
             server.stop()
             clients.forEach { socket ->
                 try { assertEquals(-1, socket.inputStream.read()) }

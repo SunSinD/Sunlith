@@ -331,6 +331,57 @@ class CalendarCustomizationTest {
     }
 
     @Test
+    fun threeDayTimelineKeepsItsFirstDateLoadedWhenSelectionCrossesTheMonthBoundary() {
+        listOf(
+            true to LocalDate.of(2027, 1, 30),
+            false to LocalDate.of(2026, 10, 30),
+        ).forEach { (mondayFirst, start) ->
+            val shownDates = (0L until 3L).map(start::plusDays)
+            val marker = addTimed(start, "Boundary first date", 9, 10)
+            onMain {
+                vm.applyLayoutPreset("planner")
+                vm.changeViewMode(ViewMode.Week)
+                vm.changeVisibleWeekDays(3)
+                vm.setMondayFirst(mondayFirst)
+                vm.select(start)
+                vm.reload()
+            }
+            awaitUi { shownDates.all { device.hasObject(day(it)) } && vm.events.any { it.id == marker } }
+            node(day(shownDates.last())).click()
+            val nextGrid = gridStart(java.time.YearMonth.from(shownDates.last()), mondayFirst)
+            awaitUi {
+                vm.selectedDate == shownDates.last() && vm.gridLoadedFrom == nextGrid &&
+                    vm.coversRange(start, shownDates.last()) &&
+                    device.hasObject(By.pkg(context.packageName).res("calendar_timeline")) &&
+                    shownDates.all { device.hasObject(day(it)) }
+            }
+            assertTrue("The first date's event must survive a reload for the selected month.", vm.events.any { it.id == marker })
+            revealTimelineEvent(marker)
+
+            onMain { vm.changeWeekLayout("list"); vm.select(start); vm.reload() }
+            awaitUi { vm.coversRange(start, shownDates.last()) }
+            onMain { vm.select(shownDates.last()) }
+            awaitUi { vm.gridLoadedFrom == nextGrid && vm.loadedFrom == nextGrid }
+            onMain { vm.changeWeekLayout("timeline") }
+            awaitUi {
+                vm.coversRange(start, shownDates.last()) &&
+                    device.hasObject(By.pkg(context.packageName).res("calendar_timeline")) &&
+                    shownDates.all { device.hasObject(day(it)) }
+            }
+
+            onMain { vm.changeVisibleWeekDays(7); vm.reload() }
+            awaitUi { vm.loadedFrom == nextGrid }
+            onMain { vm.changeVisibleWeekDays(3) }
+            awaitUi {
+                vm.coversRange(start, shownDates.last()) &&
+                    device.hasObject(By.pkg(context.packageName).res("calendar_timeline")) &&
+                    shownDates.all { device.hasObject(day(it)) }
+            }
+            assertTrue("Layout changes must retain the first date's event.", vm.events.any { it.id == marker })
+        }
+    }
+
+    @Test
     fun denseDayOverlapChooserCanOpenTheLastHiddenEvent() {
         val titles = (0 until 64).map { "Customization dense overlap ${it.toString().padStart(2, '0')}" }
         val ids = titles.map { addTimed(date, it, 15, 17) }

@@ -84,6 +84,7 @@ class CalendarUiTest {
         settings.selectedCalendarIds = setOf(calendarId)
         settings.hasChosenCalendars = true
         settings.materialYou = false
+        settings.remindersEnabled = false
         settings.agendaRange = "month"
         settings.monthLayout = "split"
         settings.themeMode = "dark"
