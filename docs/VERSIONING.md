@@ -16,7 +16,7 @@ The README stays focused on the app and setup. Downloads live in GitHub Releases
 
 From the repository root, after the Android and companion checks pass, run `python tools/package-release.py` with Python 3. It reads the version from the companion package and checks it matches Android. It copies the built `app-debug.apk` to `dist/Sunlith-v<version>.apk`, builds the companion ZIP, and writes `dist/SHA256SUMS.txt`. The ZIP contains START-HERE.md, companion source and tests, package lockfile, setup documentation, license and notices. Credentials, dependencies and private screenshots are excluded. The script verifies archive source equality and local Markdown links.
 
-Before uploading, verify the APK signing certificate matches the previous published APK, install it as an update, and check the packaged files match the tested build. Publish only after CI passes for the tagged commit. Download each uploaded asset and compare its SHA-256 with the checksum file. On Windows use `Get-FileHash <file> -Algorithm SHA256`; on macOS use `shasum -a 256 <file>`; on Linux use `sha256sum <file>`.
+Before uploading, verify the APK signing certificate matches the previous published APK, install it as an update, and check the packaged files match the tested build. Publish after CI passes for the tagged commit. If GitHub refuses to start CI because of an account restriction, run the available build and test commands locally and record the restriction and any unverified platforms in the test record and release notes. Download each uploaded asset and compare its SHA-256 with the checksum file. On Windows use `Get-FileHash <file> -Algorithm SHA256`; on macOS use `shasum -a 256 <file>`; on Linux use `sha256sum <file>`.
 
 ## Name
 

@@ -238,6 +238,8 @@ The Fold-sized checks cover equal Day card bounds, preset layouts including the 
 
 The external desktop test exercised all eight tools, allowed-calendar scope, creation retries, reads, updates, stale revisions, recurring-series protection, import deduplication and deletion. Its isolated calendars and pairing were removed afterward, along with the private temporary configuration files and ADB forwarding. No personal phone calendar or pairing was changed. Widget and large-text landscape captures were inspected privately; no screenshots or videos were published.
 
+GitHub created no run for the pushed commit. A manual dispatch was rejected with HTTP 422, "Actions has been disabled for this user." Repository Actions permissions and the workflow itself were enabled. The build, lint, dependency install, syntax checks, tests and audit above ran locally on Windows; the workflow's macOS and Linux companion jobs could not be verified for this release. No successful GitHub-hosted run is claimed.
+
 Physical Samsung launcher rendering, Fold posture changes, Wi-Fi/Tailscale delivery and manufacturer battery behavior still need phone testing. The hourly timeline places timed events lasting 24 hours or more in its banner area. Tapping an empty hour opens the editor at its default start time. These limits remain separate from the verified overlap, overnight and date-selection behavior.
 
 Version 0.4.0 APK SHA-256:
