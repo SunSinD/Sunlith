@@ -2,6 +2,312 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.1 final distribution verification, 2026-11-07
+
+The packaged APK includes the final all-day Cards correction. Opening an empty
+or all-day-only date consumes the focus request while keeping its heading at the
+top. The regression covers both dates with animations enabled and disabled; it
+fails against the earlier debug product. Timed-event focus remains covered.
+
+| Check | Passed | Failed | Skipped | Seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Full API 36 | 150 | 0 | 2 | 825.478 |
+| Full API 30 | 148 | 0 | 2 | 853.375 |
+| Targeted API 36 | 7 | 0 | 0 | 116.758 |
+| Targeted API 30 | 7 | 0 | 0 | 112.625 |
+| Cards at 320dp/200% text | 1 | 0 | 0 | 15.572 |
+| External Android provider fixture | 1 | 0 | 0 | 4.477 |
+| JVM | 26 | 0 | 0 | |
+
+Desktop tests passed 44 cases with one opt-in skip; all eight external tools
+passed against this exact APK. Lint reports zero errors, 131 warnings and seven
+hints. Installed app/test hashes matched the frozen distribution pair on both
+APIs. All 117 Android source, resource, test and build inputs stayed unchanged
+during final runtime verification. Twelve final Cards screenshots were inspected,
+including the narrow large-text captures. Test-only synchronization and date-cell
+click corrections preceded this freeze; earlier failures and the stopped run are
+retained in `.toolchain/cards-top-final-verification-summary.json`.
+
+Final app SHA-256 (`2,624,170` bytes):
+
+```text
+83132bc8b09ec5e716c6c362ca759aac5bfc23639dbf2249aa93d4438a222e6d
+```
+
+Final test SHA-256 (`552,189` bytes):
+
+```text
+86f3cee3c2ab22833db557b8709f0d22ec7e6e76da3ef7ae721d111b54e5c9d5
+```
+
+Both retain certificate `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039`.
+The APK remains nondebuggable and R8-minified with the exact test API constraints
+described below. The 48 performance runs below measured the immediately preceding
+optimized APK, not this final hash. Only the Cards banner-scroll predicate changed
+in production afterward; the benchmarked paging paths are unchanged. Physical
+phone motion, TalkBack, vendor launchers, Taildrop and Doze remain unverified.
+Synthetic fixtures, credentials, exports and forwarding were cleaned up; display,
+font, animation and locale settings were restored, and both emulators stopped.
+
+Evidence: `.toolchain/cards-top-final-verification-summary.json`,
+`cards-top-ready-final-full-emulator-5556.log`,
+`cards-top-ready-final-full-emulator-5554.log`,
+`cards-top-ready-final-images-emulator-5556/`,
+`cards-top-ready-final-images-emulator-5554/` and
+`cards-top-ready-final-narrow-images-emulator-5556/`.
+
+## 0.6.1 preceding optimized distribution verification, 2026-11-07
+
+This preceding candidate superseded the debug candidates below. Its APK is
+nondebuggable and R8-minified, version 0.6.1/code 12, signed with the same certificate
+as 0.6.0. The distribution variant preserves 229 classes and 672 exact members used
+by instrumentation, including three reflected fields and callback overrides.
+R8 method optimization and obfuscation remain enabled. These constraints are
+explicit in `proguard-distribution-test-api.pro`; this is not an unconstrained
+release build. Target and test APKs were built together and tested as an exact pair.
+
+| Check | Passed | Failed | Skipped | Seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Full API 36 | 149 | 0 | 2 | 792.768 |
+| Full API 30 | 147 | 0 | 2 | 770.430 |
+| Narrow 320/360dp, normal and 200% text | 8 | 0 | 0 | 223.336 |
+| Resized Fold emulator, 200% text | 6 | 0 | 0 | 49.095 |
+| Motion and boundary checks | 2 | 0 | 0 | 23.447 |
+| Notification recovery | 1 | 0 | 0 | 4.860 |
+| External Android provider fixture | 1 | 0 | 0 | 4.753 |
+| JVM | 26 | 0 | 0 | |
+
+Expected skips retain the opt-in/API reasons listed below. The desktop static suite
+passed 44 cases with one opt-in skip; exact-APK desktop integration exercised all
+eight tools. Lint reports zero errors, 131 warnings and seven hints. Full declared
+test counts match terminal results. A 162-file source fingerprint remained equal
+across runtime checks. Only the packaging script subsequently changed; its guards
+were checked separately without changing the Android inputs or APK.
+
+The Today regression was reproduced on the old three-day Week timeline: an
+unnecessary zero-distance vertical animation swallowed an immediate swipe.
+Clamping the target and skipping equal offsets fixed the three-day case, and
+immediate swipe/reversal checks pass for both Week timelines on both APIs. The
+old seven-day symptom was not separately established. Large-text dropdowns now
+stack title and value; inspected French 200% captures retain full selected values.
+At 320dp/200% the toolbar date can ellipsize; the full accessible label remains.
+
+Forty-eight alternating debug/distribution runs used equivalent source harnesses
+built for their respective target variants, two warm-up swipes and six measured
+swipes per run, with no forced compilation profile. The table reports the median
+of each build's three trial P95 durations in milliseconds, not pooled percentiles.
+
+| Layout | Debug drag start | Distribution drag start | Debug landing | Distribution landing |
+| --- | ---: | ---: | ---: | ---: |
+| Grid | 67.8 | 34.2 | 46.0 | 28.0 |
+| Agenda | 84.2 | 35.4 | 80.9 | 34.8 |
+| Continuous Agenda | 51.7 | 34.0 | 78.5 | 34.4 |
+| Week list | 85.0 | 30.9 | 51.4 | 30.2 |
+| Day cards | 60.8 | 28.6 | 47.4 | 28.6 |
+| Day timeline | 66.0 | 28.7 | 34.6 | 29.0 |
+| Seven-day timeline | 82.1 | 29.0 | 51.8 | 30.3 |
+| Three-day timeline | 65.7 | 30.4 | 46.0 | 45.6 |
+
+Some median frame durations increased, especially during Continuous Agenda drags.
+The three-day timeline's landing tail improved only modestly. Optimized Agenda
+tracing still includes about 21.4ms of main-thread measurement work, and P95
+durations exceed a 16.7ms frame budget. These are measured improvements, not a
+claim of uninterrupted 60 FPS or perfect fluidity. Physical-phone motion remains
+unverified. Recordings were inspected with sampled frames, alongside raw frame
+timings and traces. Vendor launchers, physical TalkBack, Taildrop and Doze retain
+the hardware limits disclosed below.
+
+Evidence: `.toolchain/optimized-verification-summary.json`, `optimized-full-api36.log`,
+`optimized-full-api30.log`, `optimized-final-fair-summary.json`,
+`optimized-final-traces-summary.json`, `optimized-dense-reversals.mp4`,
+`optimized-narrow-320dp-font2.0-v0.6.1/` and `optimized-fold200-v0.6.1/`.
+Earlier failed/incomplete R8 callback candidates are retained with their focused
+reproduction and exact callback-signature fix. Both emulators are restored and
+stopped; synthetic fixtures, credentials, exports and forwarding were cleaned up.
+
+Distribution APK SHA-256 (`2,624,170` bytes):
+
+```text
+f7ae9860da84631aef0c03096526f802d6db7e8d9850b17376710d2339e8623d
+```
+
+Distribution test APK SHA-256 (`550,345` bytes):
+
+```text
+326b968bf98bf001d20d839ebdaf9c233ddcce9261a427a67d5107f5db9659cc
+```
+
+Both certificates: `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039`.
+
+## 0.6.1 debug verification after independent review (superseded), 2026-11-07
+
+This is the latest frozen candidate. It supersedes the initial candidate below.
+Both full suites used the exact packaged APK, with one emulator running at a time.
+The 160-file source fingerprint was unchanged during these runs; subsequent
+documentation updates change the companion archive, not the APK.
+
+| Check | Passed | Failed | Skipped | Seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Full API 36 | 148 | 0 | 2 | 852.872 |
+| Full API 30 | 146 | 0 | 2 | 831.439 |
+| Narrow 320dp and 360dp | 4 | 0 | 0 | 122.974 |
+| Resized emulator, 200% text | 6 | 0 | 0 | 58.844 |
+| Motion and buffer boundary | 2 | 0 | 0 | 29.003 |
+| Notification recovery | 1 | 0 | 0 | 7.554 |
+| External Android provider fixture | 1 | 0 | 0 | 7.488 |
+| JVM | 26 | 0 | 0 | |
+
+The complete refinement class passed 19 tests on each API. Full-run skips have the
+same opt-in/API reasons listed for the initial candidate. Desktop integration
+against the exact final APK passed all eight tools. Lint has zero errors, 129
+warnings and seven hints. The desktop static suite remains 44 passes and one
+opt-in skip.
+
+Review fixes remove the stripe from the onboarding mark as well as the launcher,
+preserve Week/Day customization when changing the Month layout, anchor distant
+Schedule dates before focus in all three agenda display modes, and persist an
+icon reopen request outside the disposable settings page. Delayed provider-query
+tests exercise distant forward/backward dates and recreation. Delayed icon
+application tests exercise leaving the page and recreation. Grid sizing now
+happens outside each pager page, dates/callbacks are retained by absolute period,
+and bounded event data covers more neighboring periods. Agenda pages are prewarmed.
+
+### Measured paging improvements and remaining stalls
+
+Forty-eight alternating runs used the same final test APK against the preserved
+pre-review candidate and this APK: three trials per build for eight layouts, two
+warm-up swipes and six measured swipes per run. Values below are the medians of
+the three runs' P95 frame durations in milliseconds, not pooled percentiles.
+
+| Layout | Drag start before | Drag start after | Landing before | Landing after |
+| --- | ---: | ---: | ---: | ---: |
+| Grid | 101.7 | 68.6 | 87.1 | 48.7 |
+| Agenda | 179.3 | 99.4 | 221.2 | 72.0 |
+| Continuous Agenda | 235.1 | 60.7 | 186.3 | 94.8 |
+| Week list | 118.4 | 84.3 | 135.6 | 55.7 |
+| Day cards | 84.4 | 56.0 | 81.6 | 51.4 |
+| Day timeline | 89.4 | 68.8 | 51.8 | 47.9 |
+| Seven-day timeline | 84.3 | 84.3 | 80.2 | 64.6 |
+| Three-day timeline | 68.2 | 73.4 | 62.0 | 62.4 |
+
+Moving Grid composition out of measurement reduced traced prefetch measure from
+approximately 106ms to 5.3ms. After that change, keeping one neighbor improved
+reversal/Agenda tails, so one was retained. This supersedes the initial candidate's
+zero-neighbor decision. Remaining work is real: Agenda prefetch reached 75.6ms of
+main-thread CPU and a measured frame reached 152.2ms. Timeline drag-start spikes
+remain; the three-day timeline shows no clear tail improvement. Functional tests
+and improved medians do not establish perfect motion. Physical-phone performance
+has not been measured, and no hardware-smoothness claim is made.
+
+Final visual evidence includes all three Day openings, eight-layout captures,
+dense RTL reversals, French menus, narrow toolbars and 200% text. Full titles remain
+available through event details/previews; dense overview and closed-menu truncation
+limits remain. Physical Taildrop, vendor launchers, Doze and physical TalkBack are
+still unverified. Both emulators were restored and stopped; isolated fixtures,
+credentials, exports and ADB forwarding were cleaned up.
+
+Evidence: `.toolchain/post-review-verification-summary.json`,
+`post-review-verified-full-api36.log`, `post-review-verified-full-api30.log`,
+`post-review-final-fair-summary.json`, `post-review-final-v3-traces-summary.json`,
+`post-review-final-dense-reversals.mp4` and `post-review-final-layout-contact.png`.
+Earlier failed/incomplete candidates and their fixes are retained in the summary.
+
+APK SHA-256 (`20,544,824` bytes):
+
+```text
+d2dfb7960208e3f395610cdfa490e2483d0efad136b361378a1ea6bba14bb28f
+```
+
+Test APK SHA-256 (`765,419` bytes):
+
+```text
+3997b92163ebafa7433db8c2d5afd9d57b964f5577ff1024790f9fcd660dbc77
+```
+
+The signing certificate remains `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039`.
+
+## 0.6.1 initial candidate verification (superseded), 2026-11-07
+
+The frozen 0.6.1/code 12 APK was installed directly for these runs, with one headless
+emulator running at a time. Source fingerprints covering 160 files matched before
+and after runtime verification. These results supersede the earlier diagnostic
+candidates; interrupted runs and failures remain in the local evidence.
+
+| Check | Passed | Failed | Skipped | Seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Full Android 16 / API 36 | 142 | 0 | 2 | 809.444 |
+| Full Android 11 / API 30 | 140 | 0 | 2 | 807.591 |
+| Narrow 360dp and 320dp | 4 | 0 | 0 | 119.924 |
+| Fold emulator, 200% text | 6 | 0 | 0 | 55.860 |
+| Notification permission recovery | 1 | 0 | 0 | 7.363 |
+| External Android provider fixture | 1 | 0 | 0 | 6.865 |
+| JVM | 26 | 0 | 0 | |
+| Desktop companion | 44 | 0 | 1 | |
+
+The API 36 full run skips the opt-in notification recovery and external-client
+fixtures; both passed separately. API 30 skips wallpaper colors requiring API 31
+and the external-client fixture. The desktop SDK integration separately passed
+against the Android provider, exercising all eight tools in 2.251 seconds. Lint
+reported zero errors, 127 warnings and seven hints; the dependency audit found zero
+vulnerabilities. A skipped opt-in test is not counted as a pass.
+
+New regressions cover retained incoming pager composition, diagonal swipes, queued
+arrows, disabled swipes, dense RTL reversals, reduced motion, date-switch defaults
+and persistence, distant-date loading, focus during provider refresh, and a visible
+top-to-first-event scroll in Cards, Timeline and Compact schedule. Icon confirmation
+checks a fresh calendar activity after reopening. Settings tests exercise the real
+choice menus, agenda range, separate transfer/About pages and French choices.
+
+All 30 final Day-motion captures, eight dense RTL landings, narrow English/French/
+Arabic toolbars and French choice menus were inspected. At 200% text some closed
+choice values ellipsize; opening the menu exposes the full reachable options.
+Dense week/month overviews retain the bounded-title limits described below.
+
+### Swipe measurements and remaining limit
+
+The same synthetic fixture, with 24 all-day events and six alternating full-month
+swipes, measured actual window frames. Three standalone 0.6.0 runs had landing
+P95 durations of 334–384ms and maxima of 486–635ms. Three paired runs with the new
+pager and zero forced offscreen neighbors had P95 durations of 126–141ms and maxima
+of 151–152ms. Keeping one forced neighbor gave P95 durations of 144–160ms and maxima
+of 183–186ms, so zero forced neighbors was retained with native lazy prefetch.
+
+The final frozen standalone run recorded 208 frames, including 66 landing frames:
+P50 31.4ms, P95 138.9ms and maximum 217.6ms. Frame counts differ between versions,
+and median durations did not consistently improve. Traces show real Compose CPU
+work, roughly 100ms prefetch measurements, and graphics-command time in a slow
+frame. The remaining stalls cannot be dismissed as emulator-only. These checks
+establish functional paging and reduced tail stalls, not perfect animation or
+physical-phone smoothness. Real-device performance remains unverified.
+
+Evidence is retained locally under `.toolchain/`: `sol-final-verification-summary.json`,
+`sol-full-api36-v0.6.1.log`, `sol-full-api30-v0.6.1.log`,
+`pager-neighbor-v0.6.1-summary.json`, `sol-frozen-standalone-frames-api36-v0.6.1.log`,
+`sol-final-day-motion-v0.6.1/`, `sol-narrow-320dp-v0.6.1/`,
+`sol-narrow-360dp-v0.6.1/`, `sol-fold200-v0.6.1/` and `settings-v0.6.1/`.
+Temporary fixture credentials, exports, sentinel and ADB forwarding were removed;
+test calendars were cleaned, existing calendars preserved, display/font/locale
+restored and both emulators stopped. Physical Taildrop, vendor launcher refresh,
+Doze and physical TalkBack remain unverified.
+
+Production APK SHA-256 (`20,502,648` bytes):
+
+```text
+65cc5ade69215014b401c607a304afeabc596bec3097c4d546d5ce9d49165d54
+```
+
+Instrumentation APK SHA-256 (`745,964` bytes):
+
+```text
+ee62da599b3d70041c80e034a0d9e87a2316524e266057571f2800506dc2e586
+```
+
+Both APKs use certificate SHA-256:
+
+```text
+059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039
+```
+
 Use an emulator with API 26 or newer. The local test setup includes API 30 and API 36 Pixel 5 emulators. Run both to cover older provider behavior and newer notification/PendingIntent rules. A system image being installed does not establish that tests have passed on it.
 
 ## Build and run

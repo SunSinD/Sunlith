@@ -150,15 +150,18 @@ class CalendarUiTest {
     fun appearanceSettingChangesRenderedUiAndPersists() {
         node(By.desc(text(R.string.title_settings))).click()
         node(By.text(text(R.string.beta_settings_appearance))).click()
-        scrollToSetting(text(R.string.theme_light)).click()
+        scrollToSetting(text(R.string.settings_theme)).click()
+        node(By.pkg(context.packageName).res("settings_choice_light")).click()
         device.waitForIdle()
         assertEquals("light", settings.themeMode)
         assertBackground(dark = false)
-        scrollToSetting(text(R.string.theme_dark)).click()
+        scrollToSetting(text(R.string.settings_theme)).click()
+        node(By.pkg(context.packageName).res("settings_choice_dark")).click()
         device.waitForIdle()
         assertEquals("dark", settings.themeMode)
         assertBackground(dark = true)
-        scrollToSetting(text(R.string.theme_system)).click()
+        scrollToSetting(text(R.string.settings_theme)).click()
+        node(By.pkg(context.packageName).res("settings_choice_system")).click()
         device.waitForIdle()
         assertEquals("system", settings.themeMode)
         val systemDark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
@@ -176,8 +179,28 @@ class CalendarUiTest {
         node(By.desc(french.getString(R.string.action_close))).click()
         node(By.desc(french.getString(R.string.title_settings))).click()
         node(By.text(french.getString(R.string.beta_settings_appearance))).click()
-        scrollToSetting(french.getString(R.string.theme_system))
-        scrollToSetting(french.getString(R.string.theme_dark))
+        scrollToSetting(french.getString(R.string.settings_theme)).click()
+        node(By.pkg(context.packageName).text(french.getString(R.string.theme_system)))
+        node(By.pkg(context.packageName).text(french.getString(R.string.theme_dark)))
+        device.pressBack()
+        SystemClock.sleep(300)
+        device.takeScreenshot(File(context.filesDir, "settings-fr-appearance-colors.png"))
+        device.pressBack()
+        node(By.pkg(context.packageName).text(french.getString(R.string.beta_settings_about)))
+        SystemClock.sleep(300)
+        device.takeScreenshot(File(context.filesDir, "settings-fr-root.png"))
+        listOf(Triple(R.string.settings_general, "general", R.string.settings_keep_date),
+            Triple(R.string.beta_settings_transfer, "transfer", R.string.settings_import),
+            Triple(R.string.beta_settings_widget, "widget", R.string.settings_widget_shared),
+            Triple(R.string.beta_settings_about, "about", R.string.about_source)).forEach { (label, name, content) ->
+            node(By.pkg(context.packageName).text(french.getString(label))).click()
+            node(By.pkg(context.packageName).text(french.getString(content)))
+            SystemClock.sleep(300)
+            device.takeScreenshot(File(context.filesDir, "settings-fr-$name.png"))
+            device.pressBack()
+            node(By.pkg(context.packageName).text(french.getString(R.string.beta_settings_about)))
+            SystemClock.sleep(300)
+        }
     }
 
     @Test

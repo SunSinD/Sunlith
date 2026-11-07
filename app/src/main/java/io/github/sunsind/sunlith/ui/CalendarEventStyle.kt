@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,8 +31,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
@@ -46,12 +50,18 @@ import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.min
+import kotlin.math.sign
+import kotlin.math.sqrt
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 
 /** Fill and text colors for an event drawn as a solid block. */
 @Immutable
@@ -135,24 +145,68 @@ internal class CompactTimes(locale: Locale, is24Hour: Boolean, private val join:
 }
 
 /**
- * A one-time request to bring a date's most relevant event into view in the hourly timeline. Each instance is
- * handled once; data reloads that do not create a new request never move the timeline.
+ * Explicit date opens consume their request before moving, so recreation cannot replay a scroll in progress.
  */
 @Stable
-internal class TimelineFocus(val date: LocalDate)
+internal class TimelineFocus(val date: LocalDate, val request: Int = 0, private val onStart: () -> Unit = {}) {
+    fun start() = onStart()
+}
 
 /**
- * The event a timeline should scroll to on [day]: for today, the first event that has not ended yet (or the last one
- * if all are over); for other days, the first timed event. Days with only all-day events give the first of those.
+ * The first timed event on the chosen day, including today. All-day-only dates use their first banner.
  */
-internal fun focusTarget(events: List<CalendarEvent>, day: LocalDate, now: LocalDateTime, zone: ZoneId): CalendarEvent? {
+internal fun focusTarget(events: List<CalendarEvent>, day: LocalDate, zone: ZoneId): CalendarEvent? {
     val timed = events.filter { !it.isTimelineBanner() }.sortedWith(compareBy<CalendarEvent> { it.startMillis }.thenBy { it.endMillis })
     if (timed.isEmpty()) return events.firstOrNull { it.isTimelineBanner() }
-    if (day != now.toLocalDate()) return timed.firstOrNull {
-        Instant.ofEpochMilli(it.startMillis).atZone(zone).toLocalDate() == day
-    } ?: timed.first()
-    val nowMillis = now.atZone(zone).toInstant().toEpochMilli()
-    return timed.firstOrNull { it.endMillis > nowMillis } ?: timed.last()
+    return timed.firstOrNull { Instant.ofEpochMilli(it.startMillis).atZone(zone).toLocalDate() == day } ?: timed.first()
+}
+
+internal suspend fun awaitFocusStart(motion: Boolean) {
+    withFrameNanos { }
+    withFrameNanos { }
+    if (motion) delay(100)
+}
+
+internal fun focusScrollDuration(distance: Float, viewport: Int): Int =
+    (550 + abs(distance) / viewport.coerceAtLeast(1) * 110).toInt().coerceIn(550, 1_800)
+
+/** LazyList's long-distance animateScrollToItem teleports. Scroll measured pixels instead, keeping every frame continuous. */
+internal suspend fun LazyListState.scrollToFocus(index: Int, motion: Boolean) {
+    snapshotFlow { layoutInfo.visibleItemsInfo.isNotEmpty() }.first { it }
+    if (!motion) {
+        scrollToItem(index)
+        return
+    }
+    fun distance(): Float {
+        val visible = layoutInfo.visibleItemsInfo
+        visible.firstOrNull { it.index == index }?.let { return it.offset.toFloat() }
+        val first = visible.firstOrNull() ?: return 0f
+        val average = visible.map { it.size }.average().toFloat().coerceAtLeast(1f)
+        return (index - first.index) * average + first.offset
+    }
+    val viewport = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset).coerceAtLeast(1)
+    val initial = abs(distance())
+    val topSpeed = maxOf(viewport * 1.5f, initial / focusScrollDuration(initial, viewport) * 1_700f)
+    val acceleration = topSpeed * 5f
+    val durationScale = currentCoroutineContext()[MotionDurationScale]
+    var snapAfter = false
+    scroll {
+        var speed = 0f
+        var previous = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val scale = durationScale?.scaleFactor ?: 1f
+            if (scale == 0f) { snapAfter = true; break }
+            val dt = ((now - previous) / 1_000_000_000f).coerceAtMost(0.032f) / scale
+            previous = now
+            val left = distance()
+            if (abs(left) <= 1f) { scrollBy(left); break }
+            speed = min(min(topSpeed, speed + acceleration * dt), sqrt(2f * acceleration * abs(left)))
+            val step = sign(left) * min(abs(left), speed * dt)
+            if (abs(scrollBy(step)) < abs(step) * 0.5f) break
+        }
+    }
+    if (snapAfter) scrollToItem(index)
 }
 
 /** Minutes from midnight on [day] where [event] starts, or 0 when it began on an earlier day. */

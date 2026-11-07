@@ -30,10 +30,19 @@ jobs:
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - run: chmod +x gradlew
       - run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
+      - run: ./gradlew --no-daemon -PtestBuildType=distribution :app:assembleDistribution :app:assembleDistributionAndroidTest
       - uses: actions/upload-artifact@v4
         with:
           name: sunlith-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sunlith-distribution-apk-and-tests
+          path: |
+            app/build/outputs/apk/distribution/app-distribution.apk
+            app/build/outputs/apk/androidTest/distribution/app-distribution-androidTest.apk
+            app/build/outputs/mapping/distribution/
           retention-days: 30
       - uses: actions/upload-artifact@v4
         if: always()

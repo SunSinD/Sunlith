@@ -4,7 +4,19 @@
     <string name="settings_general">Général</string>
     <string name="settings_theme">Thème</string>
     <string name="settings_wallpaper_colors">Couleurs du fond d\'écran</string>
-    <string name="launcher_icon_notice_title">Remarque</string>
-    <string name="launcher_icon_notice_body">Sunlith va se rouvrir pour mettre à jour son icône</string>
+    <string name="launcher_icon_notice_title">Changer l\'icône de l\'app?</string>
+    <string name="launcher_icon_notice_body">Sunlith va se fermer et se rouvrir.</string>
+    <string name="launcher_icon_apply">Appliquer et rouvrir</string>
     <string name="settings_widget_shared">S’applique à tous les widgets Sunlith</string>
+    <string name="settings_layout">Disposition</string>
+    <string name="settings_week_list">Liste</string>
+    <string name="settings_week_timeline3">Grille de 3 jours</string>
+    <string name="settings_week_timeline7">Grille de 7 jours</string>
+    <string name="settings_keep_date">Garder la date en changeant de vue</string>
+    <string name="settings_agenda_range">Période</string>
+    <string name="settings_agenda_days">Jours</string>
+    <string name="settings_agenda_all">Tous les jours</string>
+    <string name="settings_agenda_grouped">Regrouper les vides</string>
+    <string name="settings_agenda_events">Jours avec événements</string>
+    <string name="settings_version">Version</string>
 </resources>

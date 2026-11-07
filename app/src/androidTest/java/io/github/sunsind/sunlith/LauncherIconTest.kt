@@ -54,6 +54,18 @@ class LauncherIconTest {
 
     @Test
     fun adaptiveArtworkUsesThePageInsteadOfABlackOrWhiteSurround() {
+        val mark = requireNotNull(ContextCompat.getDrawable(context, R.drawable.sunlith_mark))
+        val rendered = Bitmap.createBitmap(660, 660, Bitmap.Config.ARGB_8888)
+        mark.setBounds(0, 0, 660, 660)
+        mark.draw(Canvas(rendered))
+        val paper = Color.parseColor("#FDF8EA")
+        for (y in 170..205) for (x in 80..580) {
+            assertEquals("The onboarding mark must keep its paper continuous below the pins.", paper, rendered.getPixel(x, y))
+        }
+        File(context.filesDir, "launcher-onboarding-mark.png").outputStream().use {
+            assertTrue(rendered.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
+        rendered.recycle()
         LauncherIcons.availableStyles.forEach { style ->
             val drawable = requireNotNull(ContextCompat.getDrawable(context, style.icon))
             val bitmap = Bitmap.createBitmap(216, 216, Bitmap.Config.ARGB_8888)

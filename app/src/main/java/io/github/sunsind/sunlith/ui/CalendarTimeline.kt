@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -67,7 +68,6 @@ import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import kotlin.math.ceil
@@ -219,15 +219,14 @@ internal fun Timeline(
         val gutter = rememberTimeGutter(gutterLabels, railStyle, 44.dp, maxWidth * 0.25f)
         val column = (maxWidth - gutter - 4.dp) / days.size
         if (column < minColumn) {
-            LaunchedEffect(focus, autoScroll) {
-                val request = focus ?: return@LaunchedEffect
-                if (autoScroll && request.date in days) reportFocus(request)
-            }
             fallback()
         } else {
             val allDayHeight = maxHeight / 4
             val hourPx = with(density) { hour.toPx() }
+            var initialPositioned by rememberSaveable { mutableStateOf(false) }
             LaunchedEffect(scroll, autoScroll) {
+                if (initialPositioned) return@LaunchedEffect
+                initialPositioned = true
                 if (!autoScroll || !showHeaders || scroll.value != 0 || focus != null) return@LaunchedEffect
                 if (!awaitScrollable(scroll)) return@LaunchedEffect
                 val anchor = if (today in days) (LocalTime.now().hour - 1).coerceAtLeast(0) else DEFAULT_START_HOUR
@@ -237,25 +236,32 @@ internal fun Timeline(
             LaunchedEffect(todayRequest) {
                 if (todayRequest == handled[0] || !autoScroll) return@LaunchedEffect
                 handled[0] = todayRequest
+                if (!awaitScrollable(scroll)) return@LaunchedEffect
                 val target = ((LocalTime.now().hour - 1).coerceAtLeast(0) * hourPx).roundToInt()
-                if (motion) scroll.animateScrollTo(target, tween(300)) else scroll.scrollTo(target)
+                    .coerceIn(0, scroll.maxValue)
+                if (target != scroll.value) {
+                    if (motion) scroll.animateScrollTo(target, tween(300)) else scroll.scrollTo(target)
+                }
             }
             LaunchedEffect(focus, autoScroll) {
                 val request = focus ?: return@LaunchedEffect
                 if (!autoScroll || request.date !in days) return@LaunchedEffect
-                val now = LocalDateTime.now()
-                val target = focusTarget(eventsOn(request.date), request.date, now, zone)
-                val minute = when {
-                    target != null && !target.isTimelineBanner() -> (startMinuteOn(target, request.date, zone) - 30).coerceAtLeast(0)
-                    request.date == now.toLocalDate() -> ((now.hour - 1).coerceAtLeast(0)) * 60
-                    else -> DEFAULT_START_HOUR * 60
-                }
-                if (awaitScrollable(scroll)) {
-                    val y = (minute / 60f * hourPx).roundToInt().coerceIn(0, scroll.maxValue)
-                    if (motion) scroll.animateScrollTo(y, tween(350)) else scroll.scrollTo(y)
-                }
-                highlighted = target?.key()
-                reportFocus(request)
+                request.start()
+                try {
+                    awaitFocusStart(motion)
+                    val target = focusTarget(eventsOn(request.date), request.date, zone)
+                    val minute = if (target != null && !target.isTimelineBanner())
+                        (startMinuteOn(target, request.date, zone) - 30).coerceAtLeast(0) else 0
+                    if (awaitScrollable(scroll)) {
+                        val y = (minute / 60f * hourPx).roundToInt().coerceIn(0, scroll.maxValue)
+                        val distance = (y - scroll.value).toFloat()
+                        if (distance != 0f) {
+                            if (motion) scroll.animateScrollTo(y, tween(focusScrollDuration(distance, scroll.viewportSize)))
+                            else scroll.scrollTo(y)
+                        }
+                    }
+                    highlighted = target?.key()
+                } finally { reportFocus(request) }
             }
             Column(Modifier.fillMaxSize()) {
                 if (showHeaders) {

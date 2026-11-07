@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.sunsind.sunlith"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.6.0"
+        versionCode = 12
+        versionName = "0.6.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -22,6 +22,17 @@ android {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        create("distribution") {
+            initWith(getByName("release"))
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            proguardFiles("proguard-distribution-test-api.pro")
+            testProguardFiles("proguard-android-test.pro")
+        }
+    }
+    testBuildType = providers.gradleProperty("testBuildType").getOrElse("debug").also {
+        require(it == "debug" || it == "distribution") { "testBuildType must be debug or distribution" }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

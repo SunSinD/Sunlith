@@ -1,6 +1,6 @@
 # Versioning
 
-The current version is **v0.6.0**. Android and the companion use `0.6.0`; Android's `versionCode` is `11`. This update refines calendar navigation, event rendering, settings, icons and computer setup. Published binaries remain unchanged.
+The current version is **v0.6.1**. Android and the companion use `0.6.1`; Android's `versionCode` is `12`. This update refines calendar motion, settings, view switching and icon artwork. Published binaries remain unchanged.
 
 Use plain `MAJOR.MINOR.PATCH` numbers, without testing suffixes or an extra build counter. The `v` prefix belongs to the Git tag and release title. Major zero means initial development under [Semantic Versioning](https://semver.org/). Physical-device and integration testing are still in progress.
 
@@ -14,7 +14,33 @@ The README stays focused on the app and setup. Downloads live in GitHub Releases
 
 ## Package a tested build
 
-From the repository root, after the Android and companion checks pass, run `python tools/package-release.py` with Python 3. It reads the version from the companion package and checks it matches Android. It copies the built `app-debug.apk` to `dist/Sunlith-v<version>.apk`, builds the companion ZIP, and writes `dist/SHA256SUMS.txt`. The ZIP contains START-HERE.md, companion source and tests, package lockfile, setup documentation, license and notices. Credentials, dependencies and private screenshots are excluded. The script verifies archive source equality and local Markdown links.
+The distributed APK uses the nondebuggable, R8-minified `distribution` variant.
+It retains the existing signing certificate so it can update previous installs.
+This variant preserves the exact APIs used by instrumentation while allowing R8
+method optimization and obfuscation; it is not the unconstrained `release` variant.
+Its explicit API rules live in `app/proguard-distribution-test-api.pro` and must
+track new instrumentation calls. The normal debug workflow remains available.
+
+Build and test the distribution pair before packaging:
+
+```powershell
+.\gradlew.bat --no-daemon -PtestBuildType=distribution :app:assembleDistribution :app:assembleDistributionAndroidTest
+```
+
+Install the exact `app/build/outputs/apk/distribution/app-distribution.apk` and
+`app/build/outputs/apk/androidTest/distribution/app-distribution-androidTest.apk`
+on the isolated emulator, then run instrumentation with ADB. After Android and
+companion checks pass, run `python tools/package-release.py` with Python 3.
+The default is the distribution output; `--apk <verified-apk>` can name a frozen
+copy, whose bytes must match that output. `--build-type debug` is an explicit
+development alternative, not the public release default.
+
+The script checks Android/companion versions, variant metadata, source freshness
+and APK equality, copies the APK to `dist/Sunlith-v<version>.apk`, builds the
+companion ZIP, and writes `dist/SHA256SUMS.txt`. The ZIP contains START-HERE.md,
+companion source and tests, package lockfile, setup documentation, license and
+notices. Credentials, dependencies and private screenshots are excluded. Archive
+source equality and local Markdown links are verified.
 
 Before uploading, verify the APK signing certificate matches the previous published APK, install it as an update, and check the packaged files match the tested build. Publish after CI passes for the tagged commit. If GitHub refuses to start CI because of an account restriction, run the available build and test commands locally and record the restriction and any unverified platforms in the test record and release notes. Download each uploaded asset and compare its SHA-256 with the checksum file. On Windows use `Get-FileHash <file> -Algorithm SHA256`; on macOS use `shasum -a 256 <file>`; on Linux use `sha256sum <file>`.
 

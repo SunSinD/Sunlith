@@ -1,6 +1,6 @@
 # Calendar usability refinement
 
-Research and design decisions for 0.6.0, checked 2026-11-06. These are product decisions
+Research and design decisions for 0.6.0 and 0.6.1, checked 2026-11-07. These are product decisions
 informed by documentation and the reported screenshots, not results of a user study.
 
 ## Calendar navigation and event visibility
@@ -19,8 +19,9 @@ with full titles and time ranges. Date tapping still opens Day. This uses the
 [Material bottom-sheet pattern](https://m3.material.io/components/bottom-sheets/guidelines);
 it is Sunlith's choice, not a claim about Google's implementation.
 
-Opening Day or explicitly picking a date requests its first timed event, or today's
-next/current event, with a brief focus ring. Reloads, swipes and recreation do not
+Opening Day or explicitly picking a date requests its first timed event, including
+today, with a brief focus ring. The top renders before the gentle scroll begins;
+empty and all-day-only dates stay at the top. Reloads, swipes and recreation do not
 repeat consumed focus requests. Back restores the parent calendar.
 Continuous agenda loading waits for user scrolling: programmatic positioning must not
 extend the date range and restart its own focus request. A distant-date regression
@@ -37,13 +38,23 @@ range uses that height, the full title remains available by opening the event.
 
 ## Gestures, space and motion
 
-[Compose gesture propagation](https://developer.android.com/develop/ui/compose/touch-input/pointer-input/understand-gestures#event-propagation)
-explains Initial, Main and Final pointer passes. The calendar claims deliberate sideways
-movement on Initial, at a 1.4 horizontal-to-vertical ratio. Once vertical scrolling wins,
-curving sideways cannot change the period. The first movement retains its excess beyond
-touch slop, matching the framework's drag detector. Full-month neighbors are prepared
-after the first frame to avoid composing them at gesture recognition. Timelines keep
-on-demand neighbors so they inherit the current hour position.
+[Compose paging](https://developer.android.com/develop/ui/compose/layouts/pager)
+provides the standard horizontal pager used for the full grid, bounded Agenda,
+Week list and hourly/card pages.
+Absolute period keys retain the incoming composition when its date is committed after
+settling. The former relative slots rebuilt the arriving grid at this point. Adjacent
+pages and their data are buffered; event merging and date indexing run off the UI
+thread, following [Compose performance guidance](https://developer.android.com/develop/ui/compose/performance/bestpractices).
+Continuous Agenda retains a shared horizontal drag with absolute period keys.
+Their drag detector uses the Initial pointer pass, keeps excess movement beyond touch
+slop and yields after vertical scrolling wins. See
+[gesture propagation](https://developer.android.com/develop/ui/compose/touch-input/pointer-input/understand-gestures#event-propagation).
+
+The first explicit Day scroll uses measured pixel movement rather than a long-distance
+`animateScrollToItem`, whose implementation can skip distant content. Timeline motion
+also scales with distance. Reduced motion remains immediate. These mechanisms need
+runtime checks of both content position and rendered frames; stable composition alone
+does not prove smooth animation on a physical phone.
 
 View controls share the toolbar with the date, search, settings and optional arrows.
 Narrow screens and large text use a view menu to preserve touch targets. With arrows
@@ -60,7 +71,7 @@ System chooses light or dark. Wallpaper colors independently select Android 12+
 [dynamic color](https://developer.android.com/develop/ui/compose/designsystems/material3#dynamic_color).
 Earlier Android versions use the app palette. This separation avoids implying that
 Material You is synonymous with dark mode. The duplicate Neutral choice is removed.
-Legacy Schedule layouts keep their individual settings and appear as Custom.
+Legacy Schedule layouts keep their individual settings.
 
 [Android adaptive icons](https://developer.android.com/develop/ui/views/launch/icon_design_adaptive)
 use separate 108dp layers and a central safe area, then let the launcher choose its mask.
@@ -79,8 +90,32 @@ removes the separate white/black surround without depending on broken transparen
 The SVG references use the same paper colors. Themed icons still use a launcher-chosen
 filled shape; an app cannot require an unmasked icon on every home screen.
 The monochrome layer remains available for themed icons. A short confirmation applies
-the new style and refreshes the activity. PackageManager requests the component change
+the new style and reopens the app task. PackageManager requests the component change
 immediately; third-party launcher cache timing remains outside the app's control.
+
+### 0.6.1 feedback: icon and settings
+
+The reported horizontal mark was the calendar header path in the artwork, not a
+launcher rendering defect. It is removed from both styles, the legacy reference
+and the themed layer. Pins, sun and date dots remain.
+
+The previous `recreate()` rebuilt the same activity in place, which did not match
+the notice promising a reopen. Applying a confirmed icon now uses Android's
+[makeRestartActivityTask](https://developer.android.com/reference/android/content/Intent#makeRestartActivityTask(android.content.ComponentName))
+to open a fresh calendar task without killing the process. The ViewModel owns
+application of the icon and persists a pending reopen request, consumed by a resumed
+activity, so leaving Appearance or recreation cannot cancel a successful reopen.
+
+Settings uses seven single-line entries without separator rules or calendar-count
+subtitles. About and Import and export are separate pages. The primary Agenda/Grid
+choice appears only in Appearance and changes only Month after setup, preserving
+custom Week and Day choices; distinct Week and Day alternatives stay there
+as compact menus. General keeps startup, date retention, week start, agenda range,
+agenda days, navigation and reminders. The agenda range is one visible menu with
+Continuous, Month, Week and Day, rather than four permanently expanded choices.
+These choices follow the Android
+[settings pattern](https://developer.android.com/develop/ui/views/components/settings)
+and Material [menus](https://m3.material.io/components/menus/guidelines).
 
 ## Connection and widgets
 
