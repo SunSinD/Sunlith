@@ -7,19 +7,23 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -68,6 +72,8 @@ internal class PeriodSwipeState(private val scope: CoroutineScope) {
     }
 
     fun cancel() { start(); offset = 0f }
+
+    fun cancelDrag() { settle(0f, 0) }
 
     fun dragBy(delta: Float) {
         val w = width.toFloat()
@@ -136,67 +142,95 @@ internal fun rememberPeriodSwipe(enabled: Boolean, motion: Boolean, onCommit: (I
 }
 
 /**
- * Detects sideways drags anywhere in the calendar body. A drag only becomes horizontal when it is clearly sideways
- * (more than twice as far across as down); anything mostly vertical, or already taken by a scrolling list, is left
- * alone, so curved thumb scrolls keep scrolling the agenda. When swiping is off, sideways drags are still consumed so
- * they never count as a tap on an event.
+ * Claims deliberate sideways drags on the Initial pass, before a vertical child can take the same movement.
+ * Once vertical scrolling wins, the rest of that gesture stays with the child, even if the thumb curves sideways.
+ * When swiping is off, sideways drags are still consumed so they never count as a tap on an event or date.
  */
 internal fun Modifier.periodSwipe(state: PeriodSwipeState): Modifier = pointerInput(state) {
     val slop = viewConfiguration.touchSlop
     val flingVelocity = 400.dp.toPx()
     awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = false)
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
         val tracker = VelocityTracker()
         tracker.addPosition(down.uptimeMillis, down.position)
         var total = Offset.Zero
         var dragging = false
         var released = false
-        while (true) {
-            val event = awaitPointerEvent()
-            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-            if (change.changedToUpIgnoreConsumed()) {
-                if (dragging) {
-                    tracker.addPosition(change.uptimeMillis, change.position)
-                    state.release(tracker.calculateVelocity().x, flingVelocity)
-                    released = true
+        try {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                tracker.addPosition(change.uptimeMillis, change.position)
+                if (change.changedToUpIgnoreConsumed()) {
+                    if (dragging) {
+                        change.consume()
+                        state.release(tracker.calculateVelocity().x, flingVelocity)
+                        released = true
+                    }
+                    break
                 }
-                break
-            }
-            if (!dragging) {
                 if (change.isConsumed || event.changes.count { it.pressed } > 1) break
-                total += change.positionChange()
-                val ax = abs(total.x)
-                val ay = abs(total.y)
-                if (ay > slop && ay * 2f >= ax) break
-                if (ax > slop && ax > ay * 2f) {
-                    dragging = true
-                    state.start()
+                if (!dragging) {
+                    total += change.positionChange()
+                    val ax = abs(total.x)
+                    val ay = abs(total.y)
+                    if (ay > slop && ay >= ax) break
+                    if (ax > slop && ax > ay * 1.4f) {
+                        dragging = true
+                        state.start()
+                        if (state.enabled) state.dragBy(total.x - sign(total.x) * slop)
+                        change.consume()
+                    } else {
+                        // Honour a child that starts scrolling while the direction is still undecided.
+                        val finalEvent = awaitPointerEvent(PointerEventPass.Final)
+                        if (finalEvent.changes.any { it.id == down.id && it.isConsumed }) break
+                    }
+                } else {
+                    if (state.enabled) state.dragBy(change.positionChange().x)
                     change.consume()
                 }
-            } else {
-                tracker.addPosition(change.uptimeMillis, change.position)
-                if (state.enabled) state.dragBy(change.positionChange().x)
-                change.consume()
             }
+        } finally {
+            if (dragging && !released) state.cancelDrag()
         }
-        if (dragging && !released) state.release(0f, flingVelocity)
     }
 }
 
 /**
- * Shows [content] for the current period (0) and, while dragging, the neighbouring period beside it. The current
- * slot keeps its position in the tree, so its state survives the change of period.
+ * The current slot stays in the composition, preserving its scroll state. Full-month callers can opt into warming
+ * both neighbours after the first frame, avoiding composition at touch slop. Other layouts create a neighbour on
+ * demand so a timeline can capture the current vertical scroll position. Neighbours never affect the current slot's
+ * measured size and stay outside accessibility.
  */
 @Composable
-internal fun SlidingPeriod(state: PeriodSwipeState, modifier: Modifier = Modifier, content: @Composable (Int) -> Unit) {
-    val peek = state.peek
+internal fun SlidingPeriod(
+    state: PeriodSwipeState,
+    modifier: Modifier = Modifier,
+    prewarmNeighbours: Boolean = false,
+    content: @Composable (Int) -> Unit,
+) {
+    var prewarmed by remember(state, prewarmNeighbours) { mutableStateOf(false) }
+    LaunchedEffect(state, prewarmNeighbours) {
+        if (prewarmNeighbours) {
+            withFrameNanos { }
+            prewarmed = true
+        }
+    }
     Box(modifier.clipToBounds()) {
         Box(Modifier.graphicsLayer { translationX = state.offset }) { content(0) }
-        if (peek != 0) {
-            Box(
-                Modifier.graphicsLayer { translationX = state.offset - sign(state.offset) * state.width }
-                    .clearAndSetSemantics { },
-            ) { key(peek) { content(peek) } }
+        repeat(2) { index ->
+            val dir = if (index == 0) -1 else 1
+            if (prewarmed || state.peek == dir) {
+                key(dir) {
+                    Box(
+                        Modifier.matchParentSize().graphicsLayer {
+                            val side = if ((dir > 0) != state.rtl) 1f else -1f
+                            translationX = state.offset + side * state.width
+                            alpha = if (state.peek == dir) 1f else 0f
+                        }.clearAndSetSemantics { },
+                    ) { content(dir) }
+                }
+            }
         }
     }
 }

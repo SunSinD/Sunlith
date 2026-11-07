@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connection_setup_share_local_hint">Choisissez comment envoyer le fichier à votre ordinateur.</string>
+    <string name="connection_setup_step3_local_body">Touchez Connecter l’ordinateur et envoyez le fichier à votre ordinateur. Terminez avec le guide ci-dessous.</string>
+    <string name="connection_setup_connect_computer">Connecter l’ordinateur</string>
+    <string name="connection_setup_share_again">Partager de nouveau le fichier de connexion</string>
+    <string name="connection_setup_share_title">Envoyer à votre ordinateur</string>
+    <string name="connection_setup_share_hint">Dans la liste, choisissez Tailscale, puis votre ordinateur.</string>
+    <string name="connection_setup_step1_title">1. Connectez ce téléphone et votre ordinateur</string>
+    <string name="connection_setup_step1_body">Activez Tailscale sur les deux appareils avec le même compte, ou connectez-les au même Wi-Fi.</string>
+    <string name="connection_setup_step2_title">2. Choisissez les calendriers</string>
+    <string name="connection_setup_step2_body">Votre ordinateur peut lire et modifier seulement les calendriers cochés. Cette autorisation unique reste active jusqu’à ce que vous touchiez Retirer le jumelage.</string>
+    <string name="connection_setup_step3_title">3. Envoyez le fichier de connexion</string>
+    <string name="connection_setup_step3_body">Touchez Connecter l’ordinateur. Choisissez Tailscale, puis votre ordinateur dans la liste de partage. Terminez avec le guide ci-dessous.</string>
+    <string name="connection_setup_address_one">Ce téléphone : %1$s (%2$s)</string>
+    <string name="connection_setup_address_tailscale">Tailscale</string>
+    <string name="connection_setup_address_wifi">Réseau local</string>
+    <string name="connection_setup_address_other_vpn">VPN</string>
+    <string name="connection_setup_open_calendar">Ouvrir le calendrier</string>
+    <string name="connection_setup_paired_body">Votre ordinateur peut utiliser les calendriers ci-dessous quand la connexion est active.</string>
+    <string name="connection_setup_running_short">Gardez la connexion active pendant que votre ordinateur utilise votre calendrier.</string>
+</resources>

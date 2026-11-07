@@ -3,6 +3,8 @@ package io.github.sunsind.sunlith
 import android.Manifest
 import android.app.Activity
 import android.app.LocaleManager
+import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -10,6 +12,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.LocaleList
 import android.os.SystemClock
+import android.provider.CalendarContract
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -191,6 +194,33 @@ class CalendarCustomizationTest {
     }
 
     @Test
+    fun providerEventColorOverridesItsCalendarAndKeepsCardsDistinctInBothThemes() {
+        val blue = android.graphics.Color.rgb(35, 80, 200)
+        val red = android.graphics.Color.rgb(200, 45, 35)
+        assertEquals(1, context.contentResolver.update(localCalendarUri(calendarId, account), ContentValues().apply {
+            put(CalendarContract.Calendars.CALENDAR_COLOR, blue)
+        }, null, null))
+        assertEquals(1, context.contentResolver.update(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, secondId), ContentValues().apply {
+            put(CalendarContract.Events.EVENT_COLOR, red)
+        }, null, null))
+        onMain { vm.changeDayLayout("cards"); vm.select(date); vm.reload() }
+        awaitUi { vm.events.any { it.id == firstId && it.color == blue } && vm.events.any { it.id == secondId && it.color == red } }
+        listOf("light", "dark").forEach { theme ->
+            onMain { vm.setTheme(theme) }
+            val blueFill = dominantRenderedColor(By.pkg(context.packageName).res("day_event_$firstId"))
+            val redFill = dominantRenderedColor(By.pkg(context.packageName).res("day_event_$secondId"))
+            assertTrue("Calendar and event override colors must remain visibly distinct in $theme.", blueFill != redFill)
+            assertTrue("The calendar color must retain its blue identity.", android.graphics.Color.blue(blueFill) > android.graphics.Color.red(blueFill))
+            assertTrue("An event override must retain its red identity.", android.graphics.Color.red(redFill) > android.graphics.Color.blue(redFill))
+            node(By.pkg(context.packageName).res("day_event_$secondId")).click()
+            awaitUi { (vm.stack.lastOrNull() as? Screen.Details)?.event?.id == secondId }
+            node(By.pkg(context.packageName).textContains(secondTitle))
+            device.pressBack()
+            node(By.pkg(context.packageName).res("day_event_$firstId"))
+        }
+    }
+
+    @Test
     fun presetsRenderDifferentMonthAndDayViewsWithTheSameCalendarEvents() {
         onMain { vm.applyLayoutPreset("sunlith"); vm.changeViewMode(ViewMode.Month); vm.select(date) }
         node(By.pkg(context.packageName).res("calendar_grid"))
@@ -198,7 +228,7 @@ class CalendarCustomizationTest {
         onMain { vm.changeViewMode(ViewMode.Day); vm.select(date) }
         node(By.pkg(context.packageName).res("day_event_$firstId"))
 
-        onMain { vm.applyLayoutPreset("schedule") }
+        onMain { vm.changeDayLayout("schedule") }
         val schedule = node(By.pkg(context.packageName).res("calendar_schedule"))
         assertTrue(schedule.visibleBounds.height() > 0)
         node(By.pkg(context.packageName).textContains(firstTitle))
@@ -217,6 +247,201 @@ class CalendarCustomizationTest {
         val event = revealTimelineEvent(firstId)
         assertTrue(event.isEnabled)
         assertFalse(device.hasObject(By.pkg(context.packageName).res("calendar_schedule")))
+    }
+
+    @Test
+    fun gridDateOpensItsLateTimelineEventWithoutScrollingAndBackRestoresTheMonth() {
+        val target = date.plusDays(2)
+        val late = addTimed(target, "Late evening drill-down marker", 20, 21)
+        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+        awaitUi { vm.events.any { it.id == late } }
+        val parentMonth = vm.month
+        node(day(target)).click()
+        awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
+        val eventSelector = By.pkg(context.packageName).res("timeline_event_$late")
+        awaitUi {
+            val timeline = device.findObject(By.pkg(context.packageName).res("calendar_timeline"))?.visibleBounds
+            val bounds = device.findObject(eventSelector)?.visibleBounds
+            timeline != null && bounds != null && bounds.height() > 20 && bounds.top >= timeline.top && bounds.bottom <= timeline.bottom
+        }
+        assertTrue("Opening a date must bring its 20:00 event into the hourly viewport without a swipe.", node(eventSelector).visibleBounds.height() > 20)
+        assertFalse(device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))))
+        device.pressBack()
+        awaitUi { vm.viewMode == ViewMode.Month && vm.month == parentMonth && vm.selectedDate == date }
+        node(By.pkg(context.packageName).res("calendar_full_month"))
+        node(day(target)).click()
+        awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
+        awaitUi { device.findObject(eventSelector)?.visibleBounds?.height()?.let { it > 20 } == true }
+        assertTrue("Opening the same date again must renew the event focus request.", node(eventSelector).visibleBounds.height() > 20)
+        device.pressBack()
+        awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
+    }
+
+    @Test
+    fun dayFocusIsConsumedAcrossRecreationAndSwipesKeepTheChosenHour() {
+        val target = date.plusDays(2)
+        val late = addTimed(target, "Focused evening event", 20, 21)
+        val next = addTimed(target.plusDays(1), "Next evening event", 20, 21)
+        onMain { vm.applyLayoutPreset("planner"); vm.openDay(target); vm.reload() }
+        awaitUi { vm.events.any { it.id == late } }
+        fun visible(id: Long): Boolean = device.findObject(By.pkg(context.packageName).res("timeline_event_$id"))
+            ?.visibleBounds?.height()?.let { it > 20 } == true
+        awaitUi { visible(late) }
+        timelineScroller().scroll(Direction.UP, 1f, 500)
+        device.waitForIdle()
+        awaitUi { !visible(late) }
+        recreateActivity()
+        node(By.pkg(context.packageName).res("calendar_timeline"))
+        assertFalse("Rotation must preserve the manually chosen hour after focus is consumed.", visible(late))
+        val bounds = timelineScroller().visibleBounds
+        device.swipe(bounds.right - bounds.width() / 6, bounds.centerY(), bounds.left + bounds.width() / 6, bounds.centerY(), 24)
+        awaitUi { vm.selectedDate == target.plusDays(1) }
+        device.waitForIdle()
+        assertFalse("Swiping must retain the chosen hour rather than refocusing the next event.", visible(next))
+    }
+
+    @Test
+    fun customCardsAndScheduleOpenAtTheTimedEventAfterManyAllDayEntries() {
+        val target = date.plusDays(2)
+        repeat(12) { i ->
+            repository.saveEvent(EventDraft(calendarId = calendarId, title = "Earlier all-day entry $i",
+                startMillis = CalendarDates.allDayMillis(target), endMillis = CalendarDates.allDayMillis(target.plusDays(1)),
+                allDay = true, timeZone = "UTC", reminderMinutes = emptyList()))
+        }
+        val late = addTimed(target, "Timed focus after banners", 20, 21)
+        val monthStart = date.plusMonths(1).withDayOfMonth(1)
+        repeat(12) { i ->
+            repository.saveEvent(EventDraft(calendarId = calendarId, title = "Month-start all-day entry $i",
+                startMillis = CalendarDates.allDayMillis(monthStart), endMillis = CalendarDates.allDayMillis(monthStart.plusDays(1)),
+                allDay = true, timeZone = "UTC", reminderMinutes = emptyList()))
+        }
+        val monthStartEvent = addTimed(monthStart, "Month-start timed focus", 20, 21)
+        listOf("cards", "schedule").forEach { layout ->
+            onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout(layout); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+            awaitUi { vm.events.any { it.id == late } }
+            val dateCell = node(day(target)).visibleBounds
+            device.click(dateCell.centerX(), dateCell.top + (14 * context.resources.displayMetrics.density).toInt())
+            awaitUi { vm.viewMode == ViewMode.Day }
+            val selector = By.pkg(context.packageName).res(if (layout == "cards") "day_event_$late" else "schedule_event_$late")
+            awaitUi { device.findObject(selector)?.visibleBounds?.height()?.let { it > 30 } == true }
+            node(selector).click()
+            awaitUi { (vm.stack.lastOrNull() as? Screen.Details)?.event?.id == late }
+            device.pressBack()
+            if (layout == "schedule") {
+                onMain { vm.selectAndFocus(monthStart) }
+                awaitUi { device.findObject(By.pkg(context.packageName).res("schedule_event_$monthStartEvent"))
+                    ?.visibleBounds?.height()?.let { it > 30 } == true }
+                device.waitForIdle()
+                assertTrue("Date navigation must keep the timed event visible after the focus request is consumed.",
+                    node(By.pkg(context.packageName).res("schedule_event_$monthStartEvent")).visibleBounds.height() > 30)
+            }
+            device.pressBack()
+            awaitUi { vm.viewMode == ViewMode.Month }
+        }
+    }
+
+    @Test
+    fun scheduleWaitsForDistantDatesAndEmptyDatesAdvanceToTheNextEvent() {
+        val distant = date.plusMonths(8).withDayOfMonth(15)
+        repeat(18) { i ->
+            repository.saveEvent(EventDraft(calendarId = calendarId, title = "Distant banner $i",
+                startMillis = CalendarDates.allDayMillis(distant), endMillis = CalendarDates.allDayMillis(distant.plusDays(1)),
+                allDay = true, timeZone = "UTC", reminderMinutes = emptyList()))
+        }
+        val event = addTimed(distant, "Distant focused event", 20, 21)
+        val next = addTimed(distant.plusDays(2), "Next event after an empty date", 10, 11)
+        onMain {
+            vm.applyLayoutPreset("planner")
+            vm.changeDayLayout("schedule")
+            vm.changeAgendaDisplay("events")
+            vm.changeViewMode(ViewMode.Day)
+            vm.select(date)
+            vm.reload()
+        }
+        awaitUi { vm.coversRange(date, date) }
+        assertFalse("The regression must request a date outside the current loaded window.", vm.coversRange(distant, distant))
+        onMain { vm.selectAndFocus(distant) }
+        awaitUi { vm.coversRange(distant, distant) && vm.events.any { it.id == event } }
+        val eventSelector = By.pkg(context.packageName).res("schedule_event_$event")
+        awaitUi { device.findObject(eventSelector)?.visibleBounds?.height()?.let { it > 30 } == true }
+        onMain { vm.selectAndFocus(distant.plusDays(1)) }
+        val nextSelector = By.pkg(context.packageName).res("schedule_event_$next")
+        awaitUi { device.findObject(nextSelector)?.visibleBounds?.height()?.let { it > 30 } == true }
+        assertEquals(distant.plusDays(1), vm.selectedDate)
+        assertTrue("Programmatic event positioning must not page the agenda repeatedly.", !requireNotNull(vm.loadedTo).isAfter(distant.plusDays(120)))
+    }
+
+    @Test
+    fun toolbarKeepsEnabledArrowsAndAReadableDateWithDayBackNavigation() {
+        onMain { vm.applyLayoutPreset("planner"); vm.changeShowNavigationArrows(true); vm.changeViewMode(ViewMode.Month); vm.openDay(date) }
+        val languages = if (Build.VERSION.SDK_INT >= 33) listOf("en", "fr-CA", "ar") else listOf("en")
+        languages.forEach { language ->
+            if (Build.VERSION.SDK_INT >= 33 && language != "en") {
+                val previous = requireNotNull(activity)
+                context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(language)
+                awaitUi {
+                    var restored = false
+                    instrumentation.runOnMainSync {
+                        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                            .filterIsInstance<MainActivity>().firstOrNull { it !== previous }?.let { current ->
+                                activity = current
+                                vm = ViewModelProvider(current)[SunlithViewModel::class.java]
+                                restored = true
+                            }
+                    }
+                    restored
+                }
+            }
+            val locale = Locale.forLanguageTag(language)
+            val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
+            val labels = listOf(R.string.action_back, R.string.action_prev_day, R.string.action_next_day, R.string.title_settings)
+            val bounds = labels.map { label ->
+                generateSequence(node(By.pkg(context.packageName).desc(localized.getString(label)))) { it.parent }
+                    .first { it.isClickable }.visibleBounds
+            }
+            bounds.forEach { assertTrue("Toolbar controls must retain full touch targets inside the screen in $language: $it", it.left >= 0 && it.right <= device.displayWidth && it.width() >= 47 * context.resources.displayMetrics.density) }
+            val format = Formats(localized, locale)
+            val titleNode = node(By.pkg(context.packageName).res("calendar_period_title"))
+            device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "toolbar-$language.xml"))
+            device.takeScreenshot(File(context.filesDir, "toolbar-$language.png"))
+            val titleTexts = (listOf(titleNode) + titleNode.findObjects(By.text(java.util.regex.Pattern.compile(".+")))).mapNotNull { it.text }
+            val visibleDate = titleTexts.firstOrNull { it in listOf(format.dayMonth(date), format.numericDayMonth(date)) }
+            assertTrue("The displayed date must retain both month and day in $language: $titleTexts", visibleDate != null)
+            if (device.displayWidth / context.resources.displayMetrics.density <= 320.5f) {
+                assertEquals("A narrow toolbar must use the complete numeric date.", format.numericDayMonth(date), visibleDate)
+            }
+            val title = titleNode.visibleBounds
+            assertTrue("The date must retain readable space beside enabled arrows and Back in $language: $title", title.width() >= 48 * context.resources.displayMetrics.density)
+            if (language == "ar") assertTrue("Back must be on the leading edge in RTL.", bounds[0].centerX() > bounds.last().centerX())
+            device.takeScreenshot(File(context.filesDir, "toolbar-$language.png"))
+        }
+    }
+
+    @Test
+    fun longPressingAGridDatePreviewsTheCompleteLongTitleAndKeepsTheMonthBehindIt() {
+        val target = date.plusDays(2)
+        val title = listOf(
+            "Electrical engineering laboratory preparation and equipment reservation",
+            "Review the complete circuit diagram and bring the measurement notes",
+            "Check every oscilloscope probe and compare both signal channels",
+            "Prepare the digital communication demonstration with the whole team",
+            "Record the expected voltage readings for each important test point",
+            "Keep the final observations and the teacher instructions together",
+            "Complete title ending marker",
+        ).joinToString("\n")
+        val eventId = addTimed(target, title, 20, 21)
+        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+        awaitUi { vm.events.any { it.id == eventId } }
+        node(day(target)).longClick()
+        val preview = node(By.pkg(context.packageName).textContains(title))
+        assertEquals("A preview must leave the Month view active.", ViewMode.Month, vm.viewMode)
+        assertEquals(date, vm.selectedDate)
+        assertTrue("The complete long title must occupy more space than a three-line clipped preview.", preview.visibleBounds.height() > 120 * context.resources.displayMetrics.density * context.resources.configuration.fontScale)
+        node(By.pkg(context.packageName).text(english.getString(R.string.calendar_open_day)))
+        device.pressBack()
+        node(By.pkg(context.packageName).res("calendar_full_month"))
+        assertEquals(ViewMode.Month, vm.viewMode)
+        assertFalse(device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.calendar_open_day))))
     }
 
     @Test
@@ -270,10 +495,17 @@ class CalendarCustomizationTest {
 
     @Test
     fun threeDayAndSevenDayWeekTimelinesChangeTheNumberOfSelectableDates() {
-        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Week); vm.select(date) }
+        val zone = ZoneId.systemDefault()
+        val shortId = repository.saveEvent(EventDraft(calendarId = calendarId, title = "Short event ending at 10:30",
+            startMillis = date.plusDays(2).atTime(10, 0).atZone(zone).toInstant().toEpochMilli(),
+            endMillis = date.plusDays(2).atTime(10, 30).atZone(zone).toInstant().toEpochMilli(),
+            timeZone = zone.id, reminderMinutes = emptyList()))
+        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Week); vm.select(date); vm.reload() }
         node(By.pkg(context.packageName).res("calendar_timeline"))
         val dates = date.minusDays(2).let { monday -> (0L until 7L).map { monday.plusDays(it) } }
         assertEquals(7, dates.count { device.hasObject(day(it)) })
+        revealTimelineEvent(shortId)
+        device.takeScreenshot(File(context.filesDir, "week-seven-days.png"))
         onMain { vm.changeVisibleWeekDays(3) }
         node(By.pkg(context.packageName).res("calendar_timeline"))
         awaitUi { dates.count { device.hasObject(day(it)) } == 3 }
@@ -477,11 +709,14 @@ class CalendarCustomizationTest {
         setGestureMargins(bounds.width() / 10, bounds.height() / 5, bounds.width() / 10, bounds.height() / 4)
     }
 
-    private fun dominantFabColor(): Int {
-        val bounds = node(By.pkg(context.packageName).desc(english.getString(R.string.action_new_event))).visibleBounds
+    private fun dominantFabColor(): Int = dominantRenderedColor(By.pkg(context.packageName).desc(english.getString(R.string.action_new_event)))
+
+    private fun dominantRenderedColor(selector: BySelector): Int {
+        val bounds = node(selector).visibleBounds
         val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
         return try {
-            val area = Rect(bounds).apply { intersect(0, 0, screenshot.width, screenshot.height) }
+            val area = Rect(bounds)
+            assertTrue("The rendered control must intersect the screenshot.", area.intersect(0, 0, screenshot.width, screenshot.height))
             val colors = mutableMapOf<Int, Int>()
             for (y in area.top until area.bottom step 2) {
                 for (x in area.left until area.right step 2) {

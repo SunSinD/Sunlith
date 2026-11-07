@@ -47,6 +47,7 @@ enum class ViewMode { Month, Week, Day }
 sealed interface Screen {
     data object Search : Screen
     data object Settings : Screen
+    data object WidgetSettings : Screen
     data object Calendars : Screen
     data object DeviceLink : Screen
     data object Editor : Screen
@@ -111,6 +112,9 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
 
     var today by mutableStateOf(LocalDate.now()); private set
     var selectedDate by mutableStateOf(today); private set
+    private var dayParent by mutableStateOf<Pair<ViewMode, LocalDate>?>(null)
+    val hasDayParent: Boolean get() = dayParent != null
+    var dayFocusRequest by mutableStateOf(0); private set
     val month: YearMonth get() = YearMonth.from(selectedDate)
     var viewMode by mutableStateOf(launchViewMode()); private set
 
@@ -159,6 +163,10 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         get() = Build.VERSION.SDK_INT >= 33 && !notificationsGranted && remindersEnabled && !notificationStepDone
 
     fun onResume() {
+        widgetDays = settings.widgetDays
+        widgetOpacity = settings.widgetOpacity
+        widgetShowCalendarName = settings.widgetShowCalendarName
+        widgetShowEmptyDays = settings.widgetShowEmptyDays
         refreshCurrentDate()
         notificationsGranted = notificationGranted()
         val granted = calendarGranted()
@@ -194,7 +202,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun finishLayoutSetup() {
-        val initialView = if (layoutPreset == "schedule") ViewMode.Day else ViewMode.Month
+        val initialView = ViewMode.Month
         changeStartView(initialView.name)
         changeViewMode(initialView)
         uiPrefs.edit().putBoolean("layout_setup_done", true).apply()
@@ -435,9 +443,11 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
 
     fun changeViewMode(mode: ViewMode) {
         refreshCurrentDate()
+        dayParent = null
         Snapshot.withMutableSnapshot {
             if (mode == ViewMode.Day) selectedDate = today
             viewMode = mode
+            if (mode == ViewMode.Day) dayFocusRequest++
             targetWindow = initialWindow()
         }
         ensureLoaded()
@@ -454,12 +464,44 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
 
     // region navigation
 
+    fun openDay(date: LocalDate) {
+        if (viewMode != ViewMode.Day) dayParent = viewMode to selectedDate
+        Snapshot.withMutableSnapshot {
+            viewMode = ViewMode.Day
+            selectedDate = date
+            targetWindow = initialWindow()
+            dayFocusRequest++
+        }
+        ensureLoaded()
+    }
+
+    fun selectAndFocus(date: LocalDate) {
+        if (viewMode == ViewMode.Day) dayFocusRequest++
+        select(date)
+    }
+
+    fun openCalendar() {
+        stack.clear()
+        editor = null
+        editorInitial = null
+    }
+
     fun open(screen: Screen) {
         if (stack.lastOrNull() != screen) stack.add(screen)
     }
 
     fun back() {
-        if (stack.isEmpty()) return
+        if (stack.isEmpty()) {
+            val parent = dayParent ?: return
+            dayParent = null
+            Snapshot.withMutableSnapshot {
+                viewMode = parent.first
+                selectedDate = parent.second
+                targetWindow = initialWindow()
+            }
+            ensureLoaded()
+            return
+        }
         val top = stack.removeAt(stack.lastIndex)
         if (top == Screen.Editor) { editor = null; editorInitial = null }
     }
@@ -775,6 +817,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     fun changeDayLayout(value: String) {
         settings.dayLayout = value
         dayLayout = settings.dayLayout
+        if (viewMode == ViewMode.Day) dayFocusRequest++
         markCustomLayout()
         targetWindow = initialWindow()
         reload()

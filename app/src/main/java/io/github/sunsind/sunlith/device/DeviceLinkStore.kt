@@ -36,7 +36,7 @@ internal object DeviceLinkStore {
         return cached
     }
 
-    /** Replaces any previous pairing and returns the new raw token. The raw token is never persisted. */
+    /** Stores only the token hash here. The caller can export the raw token in the private share cache. */
     fun pair(context: Context, calendarIds: Set<Long>): String {
         require(calendarIds.isNotEmpty() && calendarIds.all { it > 0 }) { "Choose at least one calendar." }
         val bytes = ByteArray(32).also(SecureRandom()::nextBytes)

@@ -1,6 +1,7 @@
 package io.github.sunsind.sunlith
 
 import android.Manifest
+import android.app.Activity
 import android.app.LocaleManager
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetHostView
@@ -24,6 +25,7 @@ import android.widget.TextView
 import android.widget.RemoteViews
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.ViewModelProvider
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -36,6 +38,7 @@ import io.github.sunsind.sunlith.data.EventDraft
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.ui.SunlithViewModel
 import io.github.sunsind.sunlith.widget.AgendaWidgetReceiver
+import io.github.sunsind.sunlith.widget.WidgetConfigureActivity
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
@@ -216,6 +219,55 @@ class WidgetExperienceTest {
         val named = readRow(0, "First day event")
         assertTrue(named.metaVisible)
         assertEquals(providerName, named.meta)
+    }
+
+    @Test
+    fun launcherCanReconfigureTheWidgetAndBackCancelsWhileDoneReturnsItsId() {
+        val manager = AppWidgetManager.getInstance(context)
+        val info = requireNotNull(manager.getAppWidgetInfo(widgetId))
+        assertEquals(ComponentName(context, WidgetConfigureActivity::class.java), info.configure)
+        if (Build.VERSION.SDK_INT >= 28) {
+            assertTrue(info.widgetFeatures and android.appwidget.AppWidgetProviderInfo.WIDGET_FEATURE_RECONFIGURABLE != 0)
+        }
+        if (Build.VERSION.SDK_INT >= 31) assertTrue(info.widgetFeatures and android.appwidget.AppWidgetProviderInfo.WIDGET_FEATURE_CONFIGURATION_OPTIONAL != 0)
+        val intent = Intent(context, WidgetConfigureActivity::class.java).setAction(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE)
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+        ActivityScenario.launchActivityForResult<WidgetConfigureActivity>(intent).use { scenario ->
+            val showName = By.pkg(context.packageName).text(context.getString(R.string.beta_widget_calendar_name))
+            requireNotNull(device.wait(Until.findObject(showName), 10_000)).click()
+            assertTrue(settings.widgetShowCalendarName)
+            scenario.recreate()
+            assertTrue(device.wait(Until.hasObject(showName), 10_000))
+            device.pressBack()
+            val result = scenario.result
+            assertEquals(Activity.RESULT_CANCELED, result.resultCode)
+            assertEquals(widgetId, requireNotNull(result.resultData).getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID))
+        }
+        ActivityScenario.launchActivityForResult<WidgetConfigureActivity>(intent).use { scenario ->
+            requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).text(context.getString(R.string.action_done))), 10_000)).click()
+            assertEquals(Activity.RESULT_OK, scenario.result.resultCode)
+            assertEquals(widgetId, requireNotNull(scenario.result.resultData).getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID))
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+            assertTrue("The retained main ViewModel must read native widget changes on resume.",
+                ViewModelProvider(requireNotNull(activity))[SunlithViewModel::class.java].widgetShowCalendarName)
+        }
+        assertTrue("Applying widget configuration must refresh its real collection.", device.wait(Until.hasObject(By.res(context.packageName, "widget_meta").text(providerName)), 10_000))
+    }
+
+    @Test
+    fun invalidWidgetConfigurationReturnsCancelledWithoutChangingWidgetPreferences() {
+        val days = settings.widgetDays
+        val names = settings.widgetShowCalendarName
+        val intent = Intent(context, WidgetConfigureActivity::class.java).setAction(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE)
+        ActivityScenario.launchActivityForResult<WidgetConfigureActivity>(intent).use { scenario ->
+            val result = scenario.result
+            assertEquals(Activity.RESULT_CANCELED, result.resultCode)
+            assertEquals(AppWidgetManager.INVALID_APPWIDGET_ID, requireNotNull(result.resultData).getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1))
+        }
+        assertEquals(days, settings.widgetDays)
+        assertEquals(names, settings.widgetShowCalendarName)
     }
 
     @Test

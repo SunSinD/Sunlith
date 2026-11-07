@@ -2,6 +2,9 @@
 
 Sources checked on November 4, 2026. This is a feature survey, not a market-share ranking. Selected public reviews illustrate needs; they do not establish how common an issue is.
 
+The dated sections below record decisions through v0.5.0. For the current two presets,
+theme controls, launcher artwork and navigation, see the [v0.6.0 refinement](RESEARCH-REFINEMENT.md).
+
 ## What Sunlith borrows
 
 | App | Useful ideas | Primary source |

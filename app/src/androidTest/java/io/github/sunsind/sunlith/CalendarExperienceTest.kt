@@ -9,6 +9,7 @@ import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Point
+import android.graphics.Rect
 import android.os.Build
 import android.os.LocaleList
 import android.os.Bundle
@@ -233,25 +234,22 @@ class CalendarExperienceTest {
         assertFalse(device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.settings_import))))
         assertFalse(device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.settings_widget_opacity))))
         node(By.pkg(context.packageName).text(english.getString(R.string.title_calendars))).click()
-        node(By.pkg(context.packageName).text(english.getString(R.string.settings_choose_calendars))).click()
         node(By.pkg(context.packageName).text("Experience calendar"))
         back()
-        node(By.pkg(context.packageName).text(english.getString(R.string.settings_choose_calendars)))
-        assertFalse("Returning from filters preserves the calendar settings subpage.", device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.beta_settings_widget))))
-        back()
-        scrollToText(english.getString(R.string.beta_start_view)).click()
+        node(By.pkg(context.packageName).text(english.getString(R.string.settings_general)))
+        scrollToText(english.getString(R.string.settings_general)).click()
+        node(By.pkg(context.packageName).text(english.getString(R.string.beta_start_view).uppercase(Locale.ENGLISH)))
         node(By.pkg(context.packageName).text(english.getString(R.string.view_week))).click()
         awaitUi { settings.startView == "Week" }
-        back()
-        scrollToText(english.getString(R.string.custom_agenda)).click()
         scrollToText(english.getString(R.string.beta_event_days)).click()
         awaitUi { settings.agendaDisplay == "events" }
-        back()
-        scrollToText(english.getString(R.string.custom_month_layout)).click()
         scrollToText(english.getString(R.string.beta_collapse_calendar)).click()
         awaitUi { settings.collapseCalendarOnScroll }
         scrollToText(english.getString(R.string.beta_collapse_calendar)).click()
         awaitUi { !settings.collapseCalendarOnScroll }
+        scrollToText(english.getString(R.string.settings_reminders_toggle))
+        scrollToText(english.getString(R.string.settings_import))
+        scrollToText(english.getString(R.string.settings_export))
         back()
         scrollToText(english.getString(R.string.beta_settings_widget)).click()
         setProgress(english.getString(R.string.beta_widget_days), 14f)
@@ -263,15 +261,7 @@ class CalendarExperienceTest {
         scrollToText(english.getString(R.string.beta_widget_calendar_name)).click()
         assertTrue(settings.widgetShowCalendarName)
         back()
-        scrollToText(english.getString(R.string.beta_settings_transfer)).click()
-        node(By.pkg(context.packageName).text(english.getString(R.string.settings_import)))
-        node(By.pkg(context.packageName).text(english.getString(R.string.settings_export)))
-        back()
-        scrollToText(english.getString(R.string.beta_settings_reminders)).click()
-        node(By.pkg(context.packageName).text(english.getString(R.string.settings_reminders_toggle)))
-        back()
-        scrollToText(english.getString(R.string.beta_settings_about)).click()
-        node(By.pkg(context.packageName).text(english.getString(R.string.about_source)))
+        scrollToText(english.getString(R.string.about_source))
     }
 
     @Test
@@ -341,12 +331,12 @@ class CalendarExperienceTest {
     @Test
     fun dayTabReturnsToTodayFromAnotherDateAndWhenAlreadyInDayView() {
         onMain { vm.select(LocalDate.of(2027, 2, 10)) }
-        node(By.pkg(context.packageName).text(english.getString(R.string.view_day))).click()
+        selectView(ViewMode.Day)
         awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == LocalDate.now() }
         node(By.pkg(context.packageName).text(marker))
         onMain { vm.step(1) }
         assertEquals(LocalDate.now().plusDays(1), vm.selectedDate)
-        node(By.pkg(context.packageName).text(english.getString(R.string.view_day))).click()
+        selectView(ViewMode.Day)
         awaitUi { vm.selectedDate == LocalDate.now() }
         node(By.pkg(context.packageName).text(marker))
     }
@@ -396,7 +386,9 @@ class CalendarExperienceTest {
     @Test
     fun horizontalSwipesNavigateAndCanBeDisabledWithoutOpeningAnEditor() {
         fun swipe(forward: Boolean) {
-            val bounds = node(By.pkg(context.packageName).res("calendar_grid")).visibleBounds
+            device.waitForIdle()
+            instrumentation.uiAutomation.serviceInfo = instrumentation.uiAutomation.serviceInfo
+            val bounds = stableBounds(By.pkg(context.packageName).res("calendar_grid"))
             val left = bounds.left + bounds.width() / 6
             val right = bounds.right - bounds.width() / 6
             device.swipe(if (forward) right else left, bounds.centerY(), if (forward) left else right, bounds.centerY(), 25)
@@ -528,23 +520,38 @@ class CalendarExperienceTest {
     }
 
     @Test
-    fun appearanceIconTilesSwitchTheLauncherAndPersistAcrossRecreation() {
+    fun dayLayoutsNeverShowTheFloatingTodayActionEvenAwayFromToday() {
+        val today = By.pkg(context.packageName).desc(english.getString(R.string.action_today))
+        listOf("cards", "timeline", "schedule").forEach { layout ->
+            onMain { vm.changeDayLayout(layout); vm.changeViewMode(ViewMode.Day); vm.select(LocalDate.now().plusDays(40)) }
+            node(By.pkg(context.packageName).res("calendar_day_picker"))
+            assertFalse("Day $layout must use the Day view control to return to today.", device.hasObject(today))
+            selectView(ViewMode.Day)
+            awaitUi { vm.selectedDate == LocalDate.now() }
+            assertFalse(device.hasObject(today))
+        }
+    }
+
+    @Test
+    fun appearanceIconTilesRequireConfirmationAndPersistAcrossRecreation() {
         val original = LauncherIcons.saved(context)
         try {
             node(By.pkg(context.packageName).desc(english.getString(R.string.title_settings))).click()
             node(By.pkg(context.packageName).text(english.getString(R.string.beta_settings_appearance))).click()
-            LauncherIcons.Style.entries.forEach { style ->
-                val selector = By.pkg(context.packageName).desc(english.getString(R.string.launcher_icon_choice, english.getString(style.label)))
-                repeat(8) {
-                    if (!device.hasObject(selector)) {
-                        node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.DOWN, 0.5f, 500)
-                    }
-                }
-                node(selector).click()
-                awaitUi { LauncherIcons.saved(context) == style && LauncherIcons.enabled(context) == listOf(style) }
+            val target = if (original == LauncherIcons.Style.Light) LauncherIcons.Style.Dark else LauncherIcons.Style.Light
+            val selector = By.pkg(context.packageName).desc(english.getString(R.string.launcher_icon_choice, english.getString(target.label)))
+            repeat(8) {
+                if (!device.hasObject(selector)) node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.DOWN, 0.5f, 500)
             }
+            assertFalse("Only Light and Dark are offered.", device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.launcher_icon_choice, english.getString(R.string.launcher_icon_neutral)))))
+            node(selector).click()
+            node(By.pkg(context.packageName).text(english.getString(R.string.launcher_icon_notice_title)))
+            assertEquals("Opening the notice must not change the icon.", original, LauncherIcons.saved(context))
+            node(By.pkg(context.packageName).text(english.getString(R.string.action_cancel))).click()
+            assertEquals(original, LauncherIcons.saved(context))
+            node(selector).click()
             val previous = requireNotNull(activity)
-            instrumentation.runOnMainSync { previous.recreate() }
+            node(By.pkg(context.packageName).text(english.getString(R.string.action_ok))).click()
             awaitUi {
                 var restored = false
                 instrumentation.runOnMainSync {
@@ -555,13 +562,29 @@ class CalendarExperienceTest {
                             restored = true
                         }
                 }
-                restored && LauncherIcons.enabled(context) == listOf(LauncherIcons.Style.Neutral)
+                restored && LauncherIcons.saved(context) == target && LauncherIcons.enabled(context) == listOf(target)
             }
-            node(By.pkg(context.packageName).desc(english.getString(R.string.launcher_icon_choice, english.getString(R.string.launcher_icon_neutral))))
-            assertEquals(LauncherIcons.Style.Neutral, LauncherIcons.saved(context))
+            node(selector)
+            assertEquals(target, LauncherIcons.saved(context))
         } finally {
             assertTrue(LauncherIcons.select(context, original))
         }
+    }
+
+    private fun selectView(mode: ViewMode) {
+        refreshAccessibility()
+        val menu = device.findObject(By.pkg(context.packageName).res("calendar_view_menu"))
+        menu?.click()
+        if (menu != null) device.waitForIdle()
+        val label = when (mode) {
+            ViewMode.Month -> R.string.view_month
+            ViewMode.Week -> R.string.view_week
+            ViewMode.Day -> R.string.view_day
+        }
+        val selector = By.pkg(context.packageName).text(english.getString(label))
+        node(selector)
+        if (menu == null) node(selector).click() else device.findObjects(selector).maxBy { it.visibleBounds.centerY() }.click()
+        awaitUi { vm.viewMode == mode }
     }
 
     @Test
@@ -760,9 +783,15 @@ class CalendarExperienceTest {
     }
 
     private fun scrollToText(text: String): UiObject2 {
+        val selector = By.pkg(context.packageName).text(text)
+        device.wait(Until.findObject(selector), 300)?.let { return it }
         repeat(12) {
-            device.wait(Until.findObject(By.pkg(context.packageName).text(text)), 300)?.let { return it }
+            node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.UP, 0.8f)
+            device.wait(Until.findObject(selector), 200)?.let { return it }
+        }
+        repeat(18) {
             node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.DOWN, 0.65f)
+            device.wait(Until.findObject(selector), 300)?.let { return it }
         }
         error("Expected settings control was not reachable: $text")
     }
@@ -815,6 +844,14 @@ class CalendarExperienceTest {
         device.wait(Until.findObject(selector), 15_000)?.let { return it }
         captureFailure()
         error("Expected calendar UI was not shown: $selector")
+    }
+
+    private fun stableBounds(selector: BySelector): Rect {
+        repeat(5) {
+            try { return node(selector).visibleBounds }
+            catch (_: androidx.test.uiautomator.StaleObjectException) { device.waitForIdle() }
+        }
+        error("The calendar viewport did not settle: $selector")
     }
 
     private fun refreshAccessibility() {

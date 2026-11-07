@@ -1,6 +1,6 @@
 # Versioning
 
-The current version is **v0.5.0**. The Android display version and MCP companion version are `0.5.0`; Android's `versionCode` is `10`. This update adds vector sun/calendar artwork and selectable launcher styles, and fixes date rollover, Today navigation and three-day week loading. Published v0.4.0 binaries remain unchanged.
+The current version is **v0.6.0**. Android and the companion use `0.6.0`; Android's `versionCode` is `11`. This update refines calendar navigation, event rendering, settings, icons and computer setup. Published binaries remain unchanged.
 
 Use plain `MAJOR.MINOR.PATCH` numbers, without testing suffixes or an extra build counter. The `v` prefix belongs to the Git tag and release title. Major zero means initial development under [Semantic Versioning](https://semver.org/). Physical-device and integration testing are still in progress.
 
@@ -10,7 +10,7 @@ Increase Android's integer `versionCode` for every distributed update. Use a new
 
 Publish each version as a normal GitHub release marked Latest, titled `Sunlith v<version>`. Upload and verify the APK, companion ZIP, and checksums before publishing. Keep existing release archives intact so earlier downloads remain available. Do not rewrite Git history.
 
-The README stays focused on the app and setup. Downloads live in GitHub Releases; setup guides use the permanent latest-release link. No per-version README download links or link-update workflow are needed. Release descriptions follow [the release-note format](RELEASE-NOTES.md), with concrete grouped changes and results from that build. Omit routine installation, data-preservation and pairing-compatibility boilerplate.
+The README stays focused on the app and setup. Downloads live in GitHub Releases; setup guides use the permanent latest-release link. No per-version README download links or link-update workflow are needed. Release descriptions follow [the release-note format](RELEASE-NOTES.md), with concrete grouped changes and brief asset explanations. Keep build results in TESTING.md. Omit routine installation, data-preservation and pairing-compatibility boilerplate.
 
 ## Package a tested build
 

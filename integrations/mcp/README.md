@@ -4,7 +4,7 @@ Manage calendars stored on your Sunlith phone from your computer over Wi-Fi or T
 
 The companion uses standard input/output. Sunlith runs a private HTTPS server only while Computer connection is on. Pairing pins the phone certificate and grants access to calendars you select. Stop pauses access; Unpair revokes it.
 
-Requires Node.js 22 or later. [Download and extract the companion ZIP](https://github.com/SunSinD/Sunlith/releases/latest), or clone the repository and open `integrations/mcp`. Run `npm ci`. In Sunlith, open Settings > Computer connection, choose calendars, save the pairing file and transfer it privately to your computer. Keep it outside the repository. Start the phone connection, then configure your assistant to launch `node` with the full path to `src/index.js` and `SUNLITH_DEVICE_CONFIG` pointing to that file. No browser login is needed.
+Requires Node.js 22 or later. [Download and extract the companion ZIP](https://github.com/SunSinD/Sunlith/releases/latest), or clone the repository and open `integrations/mcp`. Run `npm ci`. In Sunlith, open Settings > Computer connection, choose calendars and tap Connect computer to share the connection file privately to your computer. With Tailscale, choose Tailscale and then your computer in the share list. Keep it outside the repository. Start the phone connection, then configure your assistant to launch `node` with the full path to `src/index.js` and `SUNLITH_DEVICE_CONFIG` pointing to that file. No browser login is needed.
 
 Keep both devices on the same Wi-Fi or private Tailscale network. The phone connection must remain on; Android battery restrictions can interrupt background access. It does not restart automatically after reboot.
 

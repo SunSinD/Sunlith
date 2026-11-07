@@ -1,0 +1,10 @@
+<resources>
+    <string name="layout_preset_agenda">Agenda</string>
+    <string name="layout_preset_grid">Grille</string>
+    <string name="settings_general">Général</string>
+    <string name="settings_theme">Thème</string>
+    <string name="settings_wallpaper_colors">Couleurs du fond d\'écran</string>
+    <string name="launcher_icon_notice_title">Remarque</string>
+    <string name="launcher_icon_notice_body">Sunlith va se rouvrir pour mettre à jour son icône</string>
+    <string name="settings_widget_shared">S’applique à tous les widgets Sunlith</string>
+</resources>

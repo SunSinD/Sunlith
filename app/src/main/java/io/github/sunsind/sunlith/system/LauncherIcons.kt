@@ -20,6 +20,7 @@ object LauncherIcons {
 
     /** Matches android:enabled in the manifest: only the Light alias is enabled on install and upgrade. */
     val Default = Style.Light
+    val availableStyles = listOf(Style.Light, Style.Dark)
     private const val KEY = "launcher_icon"
     private const val FLAGS = PackageManager.DONT_KILL_APP
 
@@ -29,7 +30,7 @@ object LauncherIcons {
     /** The style the user chose. Unknown or missing values fall back to the manifest default. */
     fun saved(context: Context): Style {
         val key = prefs(context).getString(KEY, null)
-        return Style.entries.firstOrNull { it.key == key } ?: Default
+        return availableStyles.firstOrNull { it.key == key } ?: Default
     }
 
     /** Aliases the launcher can currently see. Healthy state is exactly one. */
@@ -50,6 +51,7 @@ object LauncherIcons {
      */
     @Synchronized
     fun select(context: Context, style: Style): Boolean {
+        if (style == Style.Neutral) return select(context, Default)
         val prefs = prefs(context)
         val previous = prefs.getString(KEY, null)
         if (!prefs.edit().putString(KEY, style.key).commit()) return false

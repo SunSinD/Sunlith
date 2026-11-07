@@ -5,7 +5,7 @@ Sunlith reads calendars available through Android's shared calendar provider. Yo
 ## Select calendars already on your phone
 
 1. Allow calendar access when Sunlith asks.
-2. Open Settings > Calendar > Calendars shown in Sunlith and select the calendars you want to display. Check the account as well as the calendar name.
+2. Open Settings > Calendars and select the calendars you want to display. Check the account as well as the calendar name.
 3. Compare several events with your existing calendar app, including an all-day event and a repeating event.
 
 If the same events already appear, no import is needed. Importing a backup into that calendar can create duplicates.
@@ -18,7 +18,7 @@ Calendars stored only on the phone do not automatically sync to an account. Keep
 
 ## Save an ICS backup
 
-1. Open Settings > Import and export > Export .ics file.
+1. Open Settings > General > Export .ics file.
 2. Select the calendars to export, then choose where to save the `.ics` file through Android's file picker.
 3. Read the result and any warnings. Confirm that the backup contains the events you expect before deleting or moving the originals.
 
@@ -26,7 +26,7 @@ An export includes supported event fields. It is not a guarantee of a complete c
 
 ## Import an ICS file
 
-1. Open Settings > Import and export > Import .ics file and select a `.ics` file through Android's file picker.
+1. Open Settings > General > Import .ics file and select a `.ics` file through Android's file picker.
 2. Review the preview and choose a writable destination calendar. For a first test, use a separate empty calendar where possible.
 3. Read the import report, then check dates, timezones, repeating events and reminders in the destination.
 

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connection_setup_share_local_hint">Choose how to send the file to your computer.</string>
+    <string name="connection_setup_step3_local_body">Tap Connect computer and send the file to your computer. Finish with the computer setup guide below.</string>
+    <string name="connection_setup_connect_computer">Connect computer</string>
+    <string name="connection_setup_share_again">Share connection file again</string>
+    <string name="connection_setup_share_title">Send to your computer</string>
+    <string name="connection_setup_share_hint">In the list, choose Tailscale, then choose your computer.</string>
+    <string name="connection_setup_step1_title">1. Connect this phone and your computer</string>
+    <string name="connection_setup_step1_body">Turn on Tailscale on both devices using the same account, or connect both to the same Wi-Fi.</string>
+    <string name="connection_setup_step2_title">2. Choose calendars</string>
+    <string name="connection_setup_step2_body">Your computer can read and change only the calendars you tick. This one-time permission stays until you tap Unpair computer.</string>
+    <string name="connection_setup_step3_title">3. Send the connection file</string>
+    <string name="connection_setup_step3_body">Tap Connect computer. Choose Tailscale, then your computer in the share list. Finish with the computer setup guide below.</string>
+    <string name="connection_setup_address_one">This phone: %1$s (%2$s)</string>
+    <string name="connection_setup_address_tailscale">Tailscale</string>
+    <string name="connection_setup_address_wifi">Local network</string>
+    <string name="connection_setup_address_other_vpn">VPN</string>
+    <string name="connection_setup_open_calendar">Open calendar</string>
+    <string name="connection_setup_paired_body">Your computer can use the calendars below while the connection is on.</string>
+    <string name="connection_setup_running_short">Keep this on while your computer works with your calendar.</string>
+</resources>

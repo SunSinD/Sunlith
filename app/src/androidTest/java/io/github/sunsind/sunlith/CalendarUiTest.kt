@@ -150,18 +150,17 @@ class CalendarUiTest {
     fun appearanceSettingChangesRenderedUiAndPersists() {
         node(By.desc(text(R.string.title_settings))).click()
         node(By.text(text(R.string.beta_settings_appearance))).click()
-        node(By.text(text(R.string.beta_dark_theme))).click()
+        scrollToSetting(text(R.string.theme_light)).click()
         device.waitForIdle()
         assertEquals("light", settings.themeMode)
         assertBackground(dark = false)
-        node(By.text(text(R.string.beta_dark_theme))).click()
+        scrollToSetting(text(R.string.theme_dark)).click()
         device.waitForIdle()
         assertEquals("dark", settings.themeMode)
         assertBackground(dark = true)
-        node(By.text(text(R.string.beta_follow_system))).click()
+        scrollToSetting(text(R.string.theme_system)).click()
         device.waitForIdle()
         assertEquals("system", settings.themeMode)
-        assertTrue("A manual dark-theme toggle must only appear when following the system is off.", device.wait(Until.gone(By.text(text(R.string.beta_dark_theme))), 5_000))
         val systemDark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         assertBackground(dark = systemDark)
     }
@@ -177,8 +176,8 @@ class CalendarUiTest {
         node(By.desc(french.getString(R.string.action_close))).click()
         node(By.desc(french.getString(R.string.title_settings))).click()
         node(By.text(french.getString(R.string.beta_settings_appearance))).click()
-        node(By.text(french.getString(R.string.beta_follow_system)))
-        node(By.text(french.getString(R.string.beta_dark_theme)))
+        scrollToSetting(french.getString(R.string.theme_system))
+        scrollToSetting(french.getString(R.string.theme_dark))
     }
 
     @Test
@@ -198,7 +197,13 @@ class CalendarUiTest {
             while ((device.displayWidth <= device.displayHeight || context.resources.configuration.fontScale < 1.99f) && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100)
             assertTrue("The fixture must actually use landscape and 200% font size.", device.displayWidth > device.displayHeight && context.resources.configuration.fontScale >= 1.99f)
             device.waitForIdle()
-            var visible = device.hasObject(By.pkg(context.packageName).text(marker))
+            var visible = device.wait(Until.hasObject(By.pkg(context.packageName).text(marker)), 5_000)
+            repeat(3) {
+                if (!visible) {
+                    node(By.pkg(context.packageName).res("calendar_agenda")).scroll(Direction.UP, 0.8f)
+                    visible = device.wait(Until.hasObject(By.pkg(context.packageName).text(marker)), 500)
+                }
+            }
             repeat(8) {
                 if (!visible) {
                     val agenda = requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).res("calendar_agenda")), 5_000)) {
@@ -208,6 +213,10 @@ class CalendarUiTest {
                     agenda.scroll(Direction.DOWN, 0.8f)
                     visible = device.wait(Until.hasObject(By.pkg(context.packageName).text(marker)), 1_000)
                 }
+            }
+            if (!visible) {
+                device.takeScreenshot(File(context.filesDir, "large-text-failure.png"))
+                device.dumpWindowHierarchy(File(context.filesDir, "large-text-failure.xml"))
             }
             assertTrue("The selected day's event must remain reachable at 200% font size in landscape.", visible)
         } finally {
@@ -219,6 +228,22 @@ class CalendarUiTest {
             device.unfreezeRotation()
             device.waitForIdle()
         }
+    }
+
+    private fun scrollToSetting(label: String): UiObject2 {
+        val selector = By.pkg(context.packageName).text(label)
+        val iconDescription = context.getString(R.string.launcher_icon_choice, label)
+        repeat(12) {
+            device.waitForIdle()
+            device.findObjects(selector).forEach { labelNode ->
+                val control = generateSequence(labelNode) { it.parent }.firstOrNull { it.isClickable || it.isCheckable }
+                if (control != null && control.contentDescription != iconDescription &&
+                    control.findObject(By.desc(iconDescription)) == null &&
+                    control.visibleBounds.height() >= 48 * context.resources.displayMetrics.density) return control
+            }
+            node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.DOWN, 0.55f)
+        }
+        error("Expected appearance setting: $label")
     }
 
     private fun launch() {

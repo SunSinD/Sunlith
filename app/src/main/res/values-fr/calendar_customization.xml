@@ -20,7 +20,7 @@
     <string name="custom_material_you">Material You</string>
     <string name="custom_neutral">Neutre</string>
     <string name="custom_material_you_desc">Material You utilise les couleurs du fond d\'écran du téléphone. Le mode neutre utilise le noir, le blanc et le gris.</string>
-    <string name="custom_material_you_fallback">Les couleurs du fond d\'écran nécessitent Android 12 ou plus récent. Ce téléphone utilise les couleurs neutres.</string>
+    <string name="custom_material_you_fallback">Les couleurs du fond d\'écran nécessitent Android 12 ou plus récent. Ce téléphone utilise les couleurs de Sunlith.</string>
     <string name="custom_presets">Dispositions prédéfinies</string>
     <string name="custom_presets_desc">Un choix modifie les vues du mois, de la semaine et de la journée. Chaque vue peut ensuite être ajustée.</string>
     <string name="custom_preset_active">Disposition personnalisée sélectionnée</string>

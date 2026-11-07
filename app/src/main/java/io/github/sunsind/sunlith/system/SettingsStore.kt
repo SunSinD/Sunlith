@@ -90,7 +90,7 @@ class SettingsStore(context: Context) {
         set(value) { require(value == 3 || value == 7); prefs.edit().putInt("visible_week_days", value).apply() }
 
     var layoutPreset: String
-        get() = choice("layout_preset", "sunlith", setOf("sunlith", "schedule", "planner", "custom"))
+        get() = choice("layout_preset", "sunlith", setOf("sunlith", "schedule", "planner", "custom")).let { if (it == "schedule") "custom" else it }
         set(value) { saveChoice("layout_preset", value, setOf("sunlith", "schedule", "planner", "custom")) }
 
     private fun choice(key: String, fallback: String, values: Set<String>): String =

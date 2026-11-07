@@ -1,5 +1,9 @@
 package io.github.sunsind.sunlith.ui
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -54,9 +58,12 @@ fun LayoutSetupScreen(vm: SunlithViewModel) {
         Column(
             Modifier.weight(1f).widthIn(max = 560.dp).fillMaxWidth().verticalScroll(rememberScrollState()),
         ) {
-            Text(stringResource(R.string.layout_setup_title), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.layout_setup_lead), style = MaterialTheme.typography.bodyLarge, color = p.muted)
+            Text(
+                stringResource(R.string.layout_setup_title),
+                color = p.ink,
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.semantics { heading() },
+            )
             Spacer(Modifier.height(20.dp))
             LayoutPresetChoices(selected) { selected = it }
             Spacer(Modifier.height(16.dp))
@@ -74,12 +81,11 @@ fun LayoutSetupScreen(vm: SunlithViewModel) {
 fun LayoutPresetChoices(selected: String, onSelect: (String) -> Unit) {
     val p = LocalPalette.current
     val presets = listOf(
-        Triple("sunlith", R.string.layout_preset_sunlith, R.string.layout_preset_sunlith_desc),
-        Triple("schedule", R.string.layout_preset_schedule, R.string.layout_preset_schedule_desc),
-        Triple("planner", R.string.layout_preset_planner, R.string.layout_preset_planner_desc),
+        "sunlith" to R.string.layout_preset_agenda,
+        "planner" to R.string.layout_preset_grid,
     )
     Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        presets.forEach { (value, title, description) ->
+        presets.forEach { (value, title) ->
             val chosen = selected == value
             val shape = RoundedCornerShape(14.dp)
             Surface(
@@ -92,8 +98,6 @@ fun LayoutPresetChoices(selected: String, onSelect: (String) -> Unit) {
                     LayoutPreview(value, Modifier.size(width = 92.dp, height = 88.dp).clearAndSetSemantics { })
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(title), style = MaterialTheme.typography.titleMedium, color = p.ink)
-                        Spacer(Modifier.height(4.dp))
-                        Text(stringResource(description), style = MaterialTheme.typography.bodyMedium, color = p.muted)
                     }
                     RadioButton(chosen, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = p.accent, unselectedColor = p.faint))
                 }
@@ -105,7 +109,8 @@ fun LayoutPresetChoices(selected: String, onSelect: (String) -> Unit) {
 @Composable
 private fun LayoutPreview(preset: String, modifier: Modifier) {
     val p = LocalPalette.current
-    Canvas(modifier) {
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    Canvas(modifier.graphicsLayer { scaleX = if (rtl) -1f else 1f }) {
         fun block(x: Float, y: Float, width: Float, height: Float, accent: Boolean = false) {
             drawRoundRect(
                 color = if (accent) p.accent.copy(alpha = 0.75f) else p.muted.copy(alpha = 0.20f),
@@ -132,17 +137,9 @@ private fun LayoutPreview(preset: String, modifier: Modifier) {
                 repeat(3) { row -> repeat(7) { col ->
                     block(0.09f + col * 0.12f, 0.21f + row * 0.095f, 0.055f, 0.035f, row == 1 && col == 2)
                 } }
-                if (preset == "schedule") {
-                    repeat(3) { row ->
-                        block(0.09f, 0.56f + row * 0.12f, 0.10f, 0.025f)
-                        block(0.25f, 0.54f + row * 0.12f, 0.025f, 0.08f, true)
-                        block(0.33f, 0.56f + row * 0.12f, 0.51f, 0.035f)
-                    }
-                } else {
-                    repeat(2) { row ->
-                        block(0.09f, 0.55f + row * 0.19f, 0.82f, 0.13f)
-                        block(0.13f, 0.59f + row * 0.19f, 0.025f, 0.05f, true)
-                    }
+                repeat(2) { row ->
+                    block(0.09f, 0.55f + row * 0.19f, 0.82f, 0.13f)
+                    block(0.13f, 0.59f + row * 0.19f, 0.025f, 0.05f, true)
                 }
             }
         }

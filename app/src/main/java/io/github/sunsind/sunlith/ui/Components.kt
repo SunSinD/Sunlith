@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -75,22 +76,22 @@ fun EventCard(event: CalendarEvent, day: LocalDate, f: Formats, onClick: () -> U
     val zone = ZoneId.systemDefault()
     val time = context.timeLabel(event, day, zone, f)
     val title = event.title.ifBlank { stringResource(R.string.untitled) }
+    val colors = eventColors(event.color, p)
     Row(
         modifier.fillMaxWidth().height(IntrinsicSize.Min).heightIn(min = 52.dp).clip(RoundedCornerShape(10.dp))
-            .background(p.surface).clickable(role = Role.Button, onClick = onClick).padding(vertical = 10.dp),
+            .background(colors.container).clickable(role = Role.Button, onClick = onClick).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.padding(start = 8.dp).width(3.dp).fillMaxHeight().background(eventTint(event.color, p), RoundedCornerShape(2.dp)))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = p.ink, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(time, color = p.muted, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+            Text(title, color = colors.content, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(time, color = colors.content, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
             if (event.location.isNotBlank()) {
-                Text(event.location, color = p.muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(event.location, color = colors.content, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (!event.rrule.isNullOrBlank()) {
-            Icon(Icons.Outlined.Repeat, stringResource(R.string.repeating), tint = p.faint, modifier = Modifier.padding(horizontal = 12.dp).size(16.dp))
+            Icon(Icons.Outlined.Repeat, stringResource(R.string.repeating), tint = colors.content, modifier = Modifier.padding(horizontal = 12.dp).size(16.dp))
         } else {
             Spacer(Modifier.width(12.dp))
         }
@@ -120,8 +121,9 @@ fun SunMark(modifier: Modifier = Modifier) {
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     val p = LocalPalette.current
+    val locale = LocalConfiguration.current.locales[0]
     Text(
-        text.uppercase(), modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp).semantics { heading() },
+        text.uppercase(locale), modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp).semantics { heading() },
         color = p.muted, style = SectionLabel,
     )
 }
