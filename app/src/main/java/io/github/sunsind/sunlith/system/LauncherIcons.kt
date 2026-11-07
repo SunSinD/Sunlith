@@ -6,6 +6,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import io.github.sunsind.sunlith.MainActivity
 import io.github.sunsind.sunlith.R
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Switches the home-screen icon between the launcher activity-aliases declared in the manifest.
@@ -62,6 +66,30 @@ object LauncherIcons {
             editor.commit()
         }
         return ok
+    }
+
+    fun reopenPending(context: Context): Boolean = prefs(context).getBoolean("launcher_reopen_pending", false)
+
+    fun reopenRequests(context: Context): Flow<Boolean> = callbackFlow {
+        val preferences = prefs(context)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "launcher_reopen_pending") trySend(reopenPending(context))
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        trySend(reopenPending(context))
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
+
+    @Synchronized
+    fun selectAndRequestReopen(context: Context, style: Style): Boolean {
+        if (!select(context, style)) return false
+        return prefs(context).edit().putBoolean("launcher_reopen_pending", true).commit()
+    }
+
+    @Synchronized
+    fun consumeReopen(context: Context): Boolean {
+        if (!reopenPending(context)) return false
+        return prefs(context).edit().remove("launcher_reopen_pending").commit()
     }
 
     /** Repairs a half-finished switch, for example after the process died between two calls on API 32 and lower. */

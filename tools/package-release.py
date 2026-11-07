@@ -1,23 +1,38 @@
 from pathlib import Path
-import hashlib, json, os, re, shutil, zipfile
+import argparse, hashlib, json, os, re, shutil, zipfile
 root = Path(__file__).resolve().parents[1]
 version = 'v' + json.loads((root / 'integrations/mcp/package.json').read_text(encoding='utf-8'))['version']
 os.chdir(root)
+parser = argparse.ArgumentParser(description='Package a built and verified Sunlith APK and companion.')
+parser.add_argument('--build-type', choices=['debug', 'distribution'], default='distribution',
+                    help='APK variant to package (default: distribution)')
+parser.add_argument('--apk', type=Path, help='Verified APK path, relative to the repository root or absolute; must match the selected build output')
+args = parser.parse_args()
 
 def require(condition, message):
     if not condition:
         raise ValueError(message)
 
-require(f'versionName = "{version[1:]}"' in (root / 'app/build.gradle.kts').read_text(encoding='utf-8'), 'Android and companion versions must match')
-metadata = json.loads((root / 'app/build/outputs/apk/debug/output-metadata.json').read_text(encoding='utf-8'))
-require(metadata['elements'][0]['versionName'] == version[1:], 'Rebuild the APK for this version before packaging')
-source_files = [p for folder in ['app/src/main', 'gradle'] for p in (root / folder).rglob('*') if p.is_file()]
-source_files += [root / name for name in ['app/build.gradle.kts', 'build.gradle.kts', 'settings.gradle.kts', 'gradle.properties'] if (root / name).is_file()]
-require(all(p.stat().st_mtime <= (root / 'app/build/outputs/apk/debug/app-debug.apk').stat().st_mtime for p in source_files), 'Source changed after the APK was built; rebuild and retest before packaging')
+android_build = (root / 'app/build.gradle.kts').read_text(encoding='utf-8')
+require(f'versionName = "{version[1:]}"' in android_build, 'Android and companion versions must match')
+metadata_path = root / 'app/build/outputs/apk' / args.build_type / 'output-metadata.json'
+metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+require(metadata['variantName'] == args.build_type and metadata['applicationId'] == 'io.github.sunsind.sunlith', 'APK metadata must match the selected variant and application')
+require(len(metadata['elements']) == 1 and not metadata['elements'][0]['filters'], 'Packaging requires one universal APK')
+element = metadata['elements'][0]
+require(element['versionName'] == version[1:] and element['versionCode'] == int(re.search(r'versionCode\s*=\s*(\d+)', android_build)[1]), 'Rebuild the APK for this version before packaging')
+built_apk = metadata_path.parent / element['outputFile']
+input_apk = (args.apk or built_apk).resolve()
+require(input_apk.is_file() and built_apk.is_file(), 'Build the selected APK before packaging')
+require(hashlib.sha256(input_apk.read_bytes()).digest() == hashlib.sha256(built_apk.read_bytes()).digest(), 'The verified APK must exactly match the selected variant build output')
+source_files = [p for folder in ['app/src/main', f'app/src/{args.build_type}', 'gradle'] for p in (root / folder).rglob('*') if p.is_file()]
+source_files += [p for folder in [root, root / 'app'] for pattern in ['*.gradle', '*.gradle.kts', '*.pro', 'gradle.properties'] for p in folder.glob(pattern) if p.is_file()]
+require(all(p.stat().st_mtime_ns <= built_apk.stat().st_mtime_ns for p in source_files), 'Source changed after the APK was built; rebuild and retest before packaging')
+print('Packaging', args.build_type, 'APK:', input_apk)
 dist = root / 'dist'
 dist.mkdir(exist_ok=True)
 apk = dist / f'Sunlith-{version}.apk'
-shutil.copy2(root / 'app/build/outputs/apk/debug/app-debug.apk', apk)
+shutil.copy2(input_apk, apk)
 archive = dist / f'Sunlith-companion-{version}.zip'
 prefix = f'Sunlith-companion-{version}/'
 start = (root / 'integrations/mcp/START-HERE.md').read_text(encoding='utf-8')

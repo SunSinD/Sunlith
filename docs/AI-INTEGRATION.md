@@ -72,7 +72,7 @@ Ordinary phone requests have a ten-second network deadline. Imports allow up to 
 No Google account is needed for this workflow. Use a writable calendar already on your phone, or create an on-device calendar in Settings > Calendars.
 
 1. Ask a mobile assistant that can generate downloadable files to create a `.ics` file for your event. Give the date, start/end time, timezone, and reminder you want. Check those details before importing.
-2. Download the file and open or share it with Sunlith. If your file app does not offer Sunlith, use Settings > General > Import .ics file instead.
+2. Download the file and open or share it with Sunlith. If your file app does not offer Sunlith, use Settings > Import and export > Import .ics file instead.
 3. Review the preview, select the destination calendar, and tap Import. Check the saved event and reminder.
 
 Opening or sharing a supported calendar attachment starts the import preview. It does not save events automatically. Direct file handoff supports `text/calendar`, `text/x-vcalendar`, and `application/ics` attachments provided through Android's content-file access. Generic file types can use the in-app picker instead. The assistant must be able to produce a file; Sunlith does not interpret chat messages or plain text as event commands.

@@ -1,5 +1,18 @@
 # Changes
 
+## 0.6.1
+
+- Distribute a nondebuggable, optimized APK with the existing signing certificate.
+- Retain incoming calendar pages while swiping and prepare nearby event data away from the main thread.
+- Start an opened day at the top, then scroll gently to its first timed event in every Day layout.
+- Simplify Settings with compact choices, no root descriptions or separator rules, and separate About and Import/export pages.
+- Keep agenda range controls near the top of General, including continuous and bounded ranges.
+- Add the option to retain the selected date when changing views; the default returns to today.
+- Remove the horizontal stripe from the launcher artwork and reopen the calendar after a confirmed icon change.
+- Hide the redundant view picker when opening a date from the calendar.
+- Preserve independent Week/Day choices when changing the Month layout, and fit setting values at large text sizes.
+- Avoid an unnecessary Today scroll animation that could block an immediate Week swipe.
+
 ## 0.6.0
 
 ### Calendar

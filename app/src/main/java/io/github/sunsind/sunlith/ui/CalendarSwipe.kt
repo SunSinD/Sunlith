@@ -2,23 +2,32 @@ package io.github.sunsind.sunlith.ui
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -36,6 +45,7 @@ import kotlin.math.abs
 import kotlin.math.sign
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /**
@@ -45,11 +55,12 @@ import kotlinx.coroutines.launch
  */
 @Stable
 internal class PeriodSwipeState(private val scope: CoroutineScope) {
+    var pager by mutableStateOf<PagerState?>(null)
     var offset by mutableFloatStateOf(0f)
         private set
     var width = 0
-    var enabled = true
-    var motion = true
+    var enabled by mutableStateOf(true)
+    var motion by mutableStateOf(true)
     var rtl = false
     var onCommit: (Int) -> Unit = {}
     private var job: Job? = null
@@ -99,6 +110,21 @@ internal class PeriodSwipeState(private val scope: CoroutineScope) {
     fun animateStep(dir: Int) {
         if (job?.isActive == true) {
             queuedSteps += dir
+            return
+        }
+        pager?.let { pages ->
+            job = scope.launch {
+                var next = dir
+                try {
+                    do {
+                        val target = (pages.settledPage + next).coerceIn(0, pages.pageCount - 1)
+                        if (motion) pages.animateScrollToPage(target, animationSpec = tween(280, easing = FastOutSlowInEasing))
+                        else pages.scrollToPage(target)
+                        next = queuedSteps.compareTo(0)
+                        queuedSteps -= next
+                    } while (next != 0)
+                } finally { job = null; queuedSteps = 0 }
+            }
             return
         }
         val w = width.toFloat()
@@ -151,6 +177,7 @@ internal fun Modifier.periodSwipe(state: PeriodSwipeState): Modifier = pointerIn
     val flingVelocity = 400.dp.toPx()
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        if (state.pager != null && state.enabled) return@awaitEachGesture
         val tracker = VelocityTracker()
         tracker.addPosition(down.uptimeMillis, down.position)
         var total = Offset.Zero
@@ -196,41 +223,91 @@ internal fun Modifier.periodSwipe(state: PeriodSwipeState): Modifier = pointerIn
     }
 }
 
-/**
- * The current slot stays in the composition, preserving its scroll state. Full-month callers can opt into warming
- * both neighbours after the first frame, avoiding composition at touch slop. Other layouts create a neighbour on
- * demand so a timeline can capture the current vertical scroll position. Neighbours never affect the current slot's
- * measured size and stay outside accessibility.
- */
+/** Split layouts share one drag across their header and body. Absolute keys retain the incoming period on commit. */
 @Composable
 internal fun SlidingPeriod(
     state: PeriodSwipeState,
+    period: Long,
     modifier: Modifier = Modifier,
-    prewarmNeighbours: Boolean = false,
-    content: @Composable (Int) -> Unit,
+    content: @Composable (Long) -> Unit,
 ) {
-    var prewarmed by remember(state, prewarmNeighbours) { mutableStateOf(false) }
-    LaunchedEffect(state, prewarmNeighbours) {
-        if (prewarmNeighbours) {
-            withFrameNanos { }
-            prewarmed = true
-        }
+    var prepared by remember { mutableStateOf(setOf(period)) }
+    LaunchedEffect(period, state.enabled, state.motion) {
+        if (state.enabled && state.motion) {
+            for (next in listOf(period - 1, period + 1)) {
+                withFrameNanos { }
+                withFrameNanos { }
+                prepared = (prepared + period + next).filterTo(mutableSetOf()) { it in (period - 1)..(period + 1) }
+            }
+        } else prepared = setOf(period)
     }
     Box(modifier.clipToBounds()) {
-        Box(Modifier.graphicsLayer { translationX = state.offset }) { content(0) }
-        repeat(2) { index ->
-            val dir = if (index == 0) -1 else 1
-            if (prewarmed || state.peek == dir) {
-                key(dir) {
+        for (absolute in (period - 1)..(period + 1)) {
+            val dir = (absolute - period).toInt()
+            key(absolute) {
+                if (dir == 0 || state.peek == dir || absolute in prepared) {
                     Box(
-                        Modifier.matchParentSize().graphicsLayer {
+                        (if (dir == 0) Modifier else Modifier.matchParentSize()).graphicsLayer {
                             val side = if ((dir > 0) != state.rtl) 1f else -1f
-                            translationX = state.offset + side * state.width
-                            alpha = if (state.peek == dir) 1f else 0f
-                        }.clearAndSetSemantics { },
-                    ) { content(dir) }
+                            translationX = state.offset + if (dir == 0) 0f else side * state.width
+                        }.then(if (dir == 0) Modifier else Modifier.clearAndSetSemantics { }),
+                    ) { content(absolute) }
                 }
             }
+        }
+    }
+}
+
+/** The visible page remains the same composition and scroll state when its settled date is committed. */
+@Composable
+internal fun PagedPeriod(
+    state: PeriodSwipeState,
+    period: Long,
+    modifier: Modifier = Modifier,
+    content: @Composable (Long) -> Unit,
+) {
+    val origin = rememberSaveable { period }
+    val center = 1_000_000
+    val expected = (center + period - origin).toInt().coerceIn(0, 2_000_000)
+    val pager = rememberPagerState(initialPage = expected, pageCount = { 2_000_001 })
+    val accepted = remember(pager) { intArrayOf(expected) }
+    val syncing = remember(pager) { booleanArrayOf(false) }
+    DisposableEffect(state, pager) {
+        state.pager = pager
+        onDispose { if (state.pager === pager) state.pager = null }
+    }
+    LaunchedEffect(period) {
+        if (expected != accepted[0]) {
+            syncing[0] = true
+            accepted[0] = expected
+            state.start()
+            pager.scrollToPage(expected)
+            syncing[0] = false
+        }
+    }
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { settled ->
+            if (!syncing[0]) {
+                val delta = settled - accepted[0]
+                accepted[0] = settled
+                if (delta != 0) state.onCommit(delta)
+            }
+        }
+    }
+    HorizontalPager(
+        state = pager,
+        modifier = modifier,
+        key = { origin + it - center },
+        userScrollEnabled = state.enabled,
+        beyondViewportPageCount = 1,
+        flingBehavior = PagerDefaults.flingBehavior(
+            state = pager,
+            snapAnimationSpec = if (state.motion) tween(280, easing = FastOutSlowInEasing) else snap(),
+            snapPositionalThreshold = 0.25f,
+        ),
+    ) { page ->
+        Box(Modifier.fillMaxSize().then(if (page == expected) Modifier else Modifier.clearAndSetSemantics { })) {
+            content(origin + page - center)
         }
     }
 }

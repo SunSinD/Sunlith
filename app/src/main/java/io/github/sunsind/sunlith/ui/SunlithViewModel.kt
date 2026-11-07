@@ -24,6 +24,7 @@ import io.github.sunsind.sunlith.data.IcsTransfer
 import io.github.sunsind.sunlith.data.ImportPreview
 import io.github.sunsind.sunlith.data.ImportReport
 import io.github.sunsind.sunlith.system.AppRefresh
+import io.github.sunsind.sunlith.system.LauncherIcons
 import io.github.sunsind.sunlith.system.SettingsStore
 import java.io.FileNotFoundException
 import java.io.File
@@ -72,6 +73,21 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = SettingsStore(app)
     private val uiPrefs = app.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE)
 
+    var launcherIcon by mutableStateOf(LauncherIcons.saved(context)); private set
+    var launcherIconBusy by mutableStateOf(false); private set
+
+    fun changeLauncherIcon(style: LauncherIcons.Style) {
+        if (launcherIconBusy || style == launcherIcon) return
+        launcherIconBusy = true
+        viewModelScope.launch {
+            try {
+                val applied = withContext(Dispatchers.IO) { LauncherIcons.selectAndRequestReopen(context, style) }
+                launcherIcon = LauncherIcons.saved(context)
+                if (!applied) message(context.getString(R.string.launcher_icon_failed))
+            } finally { launcherIconBusy = false }
+        }
+    }
+
     var hasPermission by mutableStateOf(calendarGranted()); private set
     var notificationsGranted by mutableStateOf(notificationGranted()); private set
     var notificationStepDone by mutableStateOf(uiPrefs.getBoolean(KEY_NOTIFY_ASKED, false)); private set
@@ -81,12 +97,14 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var calendars by mutableStateOf(emptyList<DeviceCalendar>()); private set
     var activeIds by mutableStateOf(emptySet<Long>()); private set
     var events by mutableStateOf(emptyList<CalendarEvent>()); private set
+    var eventsByDay by mutableStateOf(emptyMap<LocalDate, List<CalendarEvent>>()); private set
     var loadedFrom by mutableStateOf<LocalDate?>(null); private set
     var loadedTo by mutableStateOf<LocalDate?>(null); private set
     var gridLoadedFrom by mutableStateOf<LocalDate?>(null); private set
     var gridLoadedTo by mutableStateOf<LocalDate?>(null); private set
     var extendingAgenda by mutableStateOf(false); private set
     var loaded by mutableStateOf(false); private set
+    var loadingEvents by mutableStateOf(false); private set
     var loadError by mutableStateOf<String?>(null); private set
 
     var themeMode by mutableStateOf(settings.themeMode); private set
@@ -103,6 +121,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var materialYou by mutableStateOf(settings.materialYou); private set
     var showNavigationArrows by mutableStateOf(settings.showNavigationArrows); private set
     var swipeNavigation by mutableStateOf(settings.swipeNavigation); private set
+    var keepSelectedDate by mutableStateOf(settings.keepSelectedDate); private set
     var agendaRange by mutableStateOf(settings.agendaRange); private set
     var monthLayout by mutableStateOf(settings.monthLayout); private set
     var weekLayout by mutableStateOf(settings.weekLayout); private set
@@ -115,6 +134,12 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     private var dayParent by mutableStateOf<Pair<ViewMode, LocalDate>?>(null)
     val hasDayParent: Boolean get() = dayParent != null
     var dayFocusRequest by mutableStateOf(0); private set
+    private var handledDayFocus = 0
+    val pendingDayFocus: Boolean get() = viewMode == ViewMode.Day && handledDayFocus != dayFocusRequest
+
+    fun consumeDayFocus(request: Int) {
+        if (request == dayFocusRequest) handledDayFocus = request
+    }
     val month: YearMonth get() = YearMonth.from(selectedDate)
     var viewMode by mutableStateOf(launchViewMode()); private set
 
@@ -138,6 +163,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     val messages = messageChannel.receiveAsFlow()
 
     private var loadJob: Job? = null
+    private var loadingRange: Pair<Pair<LocalDate, LocalDate>, Pair<LocalDate, LocalDate>>? = null
     private var extensionJob: Job? = null
     private var agendaEvents = emptyList<CalendarEvent>()
     private var gridEvents = emptyList<CalendarEvent>()
@@ -176,8 +202,10 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
             loadJob?.cancel()
             extensionJob?.cancel()
             loadGeneration++
+            loadingEvents = false
             extendingAgenda = false
             calendars = emptyList(); events = emptyList(); loaded = false
+            eventsByDay = emptyMap()
             loadedFrom = null; loadedTo = null
             gridLoadedFrom = null; gridLoadedTo = null
             agendaEvents = emptyList(); gridEvents = emptyList(); targetWindow = null
@@ -250,7 +278,13 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         return start to start.plusDays(41)
     }
 
-    private fun continuousAgenda() = (viewMode == ViewMode.Month && agendaRange == "continuous") ||
+    private fun bufferedGridRange(): Pair<LocalDate, LocalDate> =
+        gridStart(month.minusMonths(2), weekStartsMonday) to gridStart(month.plusMonths(2), weekStartsMonday).plusDays(41)
+
+    private fun requiredGridRange(): Pair<LocalDate, LocalDate> =
+        gridStart(month.minusMonths(1), weekStartsMonday) to gridStart(month.plusMonths(1), weekStartsMonday).plusDays(41)
+
+    private fun continuousAgenda() = (viewMode == ViewMode.Month && monthLayout != "full" && agendaRange == "continuous") ||
         (viewMode == ViewMode.Day && dayLayout == "schedule")
 
     private fun initialWindow(): Pair<LocalDate, LocalDate> = if (continuousAgenda()) {
@@ -278,7 +312,15 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         }
         val (from, to) = wantedRange()
         val (gridFrom, gridTo) = gridRange()
-        if (!coversRange(from, to) || !coversRange(gridFrom, gridTo) || loadJob?.isActive == true) reload()
+        val buffer = requiredGridRange()
+        if (loadJob?.isActive == true) {
+            val loading = loadingRange
+            if (loading == null ||
+                !(containsRange(loading.first.first, loading.first.second, from, to) || containsRange(loading.second.first, loading.second.second, from, to)) ||
+                !containsRange(loading.second.first, loading.second.second, buffer.first, buffer.second)) reload()
+            return
+        }
+        if (!coversRange(from, to) || !coversRange(gridFrom, gridTo) || !coversRange(buffer.first, buffer.second)) reload()
     }
 
     private fun eventsBetween(from: LocalDate, to: LocalDate, ids: Set<Long>): List<CalendarEvent> {
@@ -292,11 +334,13 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         if (!hasPermission) return
         val (from, to) = wantedRange()
         targetWindow = from to to
-        val grid = gridRange()
+        val buffer = bufferedGridRange()
+        loadingRange = (from to to) to buffer
         loadJob?.cancel()
         extensionJob?.cancel()
         extendingAgenda = false
         val generation = ++loadGeneration
+        loadingEvents = true
         loadJob = viewModelScope.launch {
             try {
                 val cals = withContext(Dispatchers.IO) { repo.calendars() }
@@ -307,19 +351,20 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val result = withContext(Dispatchers.IO) {
                     val agenda = eventsBetween(from, to, ids)
-                    val calendar = if (containsRange(from, to, grid.first, grid.second)) agenda
-                        else eventsBetween(grid.first, grid.second, ids)
-                    agenda to calendar
+                    val calendar = if (containsRange(from, to, buffer.first, buffer.second)) agenda
+                        else eventsBetween(buffer.first, buffer.second, ids)
+                    prepareEvents(agenda, calendar, minOf(from, buffer.first), maxOf(to, buffer.second))
                 }
-                if (generation != loadGeneration || gridRange() != grid || wantedRange() != (from to to)) return@launch
+                val wanted = wantedRange()
+                if (generation != loadGeneration ||
+                    !(containsRange(from, to, wanted.first, wanted.second) || containsRange(buffer.first, buffer.second, wanted.first, wanted.second)) ||
+                    !containsRange(buffer.first, buffer.second, gridRange().first, gridRange().second)) return@launch
                 Snapshot.withMutableSnapshot {
-                    agendaEvents = result.first
-                    gridEvents = result.second
-                    publishEvents()
+                    publishEvents(result)
                     loadedFrom = from
                     loadedTo = to
-                    gridLoadedFrom = grid.first
-                    gridLoadedTo = grid.second
+                    gridLoadedFrom = buffer.first
+                    gridLoadedTo = buffer.second
                     loadError = null
                     loaded = true
                 }
@@ -329,6 +374,8 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 loadError = e.userMessage()
                 loaded = true
+            } finally {
+                if (generation == loadGeneration) loadingEvents = false
             }
         }
     }
@@ -340,6 +387,10 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         val to = loadedTo ?: return
         val ids = activeIds
         val grid = gridRange()
+        val buffer = bufferedGridRange()
+        val previousAgenda = agendaEvents
+        val previousGrid = gridEvents
+        val gridCovered = containsRange(gridLoadedFrom, gridLoadedTo, buffer.first, buffer.second)
         val generation = loadGeneration
         val nextFrom = if (forward) from else from.minusDays(90)
         val nextTo = if (forward) to.plusDays(90) else to
@@ -350,24 +401,22 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val result = withContext(Dispatchers.IO) {
                     val added = if (forward) eventsBetween(to.plusDays(1), nextTo, ids) else eventsBetween(nextFrom, from.minusDays(1), ids)
-                    val calendar = if (gridLoadedFrom == grid.first && gridLoadedTo == grid.second) gridEvents
-                        else eventsBetween(grid.first, grid.second, ids)
-                    added to calendar
-                }
-                if (generation != loadGeneration || loadedFrom != from || loadedTo != to || activeIds != ids || gridRange() != grid) return@launch
-                val zone = ZoneId.systemDefault()
-                Snapshot.withMutableSnapshot {
-                    agendaEvents = (agendaEvents + result.first).distinctBy { it.key() }.filter {
+                    val calendar = if (gridCovered) previousGrid else eventsBetween(buffer.first, buffer.second, ids)
+                    val zone = ZoneId.systemDefault()
+                    val agenda = (previousAgenda + added).distinctBy { it.key() }.filter {
                         val span = it.span(zone)
                         !span.last.isBefore(boundedFrom) && !span.first.isAfter(boundedTo)
                     }
-                    gridEvents = result.second
-                    publishEvents()
+                    prepareEvents(agenda, calendar, minOf(boundedFrom, buffer.first), maxOf(boundedTo, buffer.second))
+                }
+                if (generation != loadGeneration || loadedFrom != from || loadedTo != to || activeIds != ids || gridRange() != grid) return@launch
+                Snapshot.withMutableSnapshot {
+                    publishEvents(result)
                     targetWindow = boundedFrom to boundedTo
                     loadedFrom = boundedFrom
                     loadedTo = boundedTo
-                    gridLoadedFrom = grid.first
-                    gridLoadedTo = grid.second
+                    gridLoadedFrom = buffer.first
+                    gridLoadedTo = buffer.second
                 }
             } catch (c: CancellationException) {
                 throw c
@@ -379,8 +428,21 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun publishEvents() {
-        events = (agendaEvents + gridEvents).distinctBy { it.key() }.sortedWith(compareBy({ it.startMillis }, { it.id }))
+    private class EventSnapshot(
+        val agenda: List<CalendarEvent>, val grid: List<CalendarEvent>, val events: List<CalendarEvent>,
+        val byDay: Map<LocalDate, List<CalendarEvent>>,
+    )
+
+    private fun prepareEvents(agenda: List<CalendarEvent>, grid: List<CalendarEvent>, from: LocalDate, to: LocalDate): EventSnapshot {
+        val merged = (agenda + grid).distinctBy { it.key() }.sortedWith(compareBy({ it.startMillis }, { it.id }))
+        return EventSnapshot(agenda, grid, merged, indexByDay(merged, ZoneId.systemDefault(), from, to))
+    }
+
+    private fun publishEvents(result: EventSnapshot) {
+        agendaEvents = result.agenda
+        gridEvents = result.grid
+        events = result.events
+        eventsByDay = result.byDay
     }
 
     private fun effectiveIds(cals: List<DeviceCalendar>): Set<Long> {
@@ -442,10 +504,11 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun changeViewMode(mode: ViewMode) {
+        if (mode == viewMode) return
         refreshCurrentDate()
         dayParent = null
         Snapshot.withMutableSnapshot {
-            if (mode == ViewMode.Day) selectedDate = today
+            if (!keepSelectedDate) selectedDate = today
             viewMode = mode
             if (mode == ViewMode.Day) dayFocusRequest++
             targetWindow = initialWindow()
@@ -789,6 +852,11 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         swipeNavigation = settings.swipeNavigation
     }
 
+    fun changeKeepSelectedDate(enabled: Boolean) {
+        settings.keepSelectedDate = enabled
+        keepSelectedDate = enabled
+    }
+
     fun changeAgendaRange(value: String) {
         settings.agendaRange = value
         agendaRange = settings.agendaRange
@@ -805,6 +873,8 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         settings.monthLayout = value
         monthLayout = settings.monthLayout
         markCustomLayout()
+        targetWindow = initialWindow()
+        ensureLoaded()
     }
 
     fun changeWeekLayout(value: String) {

@@ -69,6 +69,10 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean("swipe_navigation", true)
         set(value) { prefs.edit().putBoolean("swipe_navigation", value).apply() }
 
+    var keepSelectedDate: Boolean
+        get() = prefs.getBoolean("keep_selected_date", false)
+        set(value) { prefs.edit().putBoolean("keep_selected_date", value).apply() }
+
     var agendaRange: String
         get() = choice("agenda_range", "continuous", setOf("continuous", "month", "week", "day"))
         set(value) { saveChoice("agenda_range", value, setOf("continuous", "month", "week", "day")) }

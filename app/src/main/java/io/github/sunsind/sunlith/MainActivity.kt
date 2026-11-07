@@ -2,6 +2,7 @@ package io.github.sunsind.sunlith
 
 import android.Manifest
 import android.content.Intent
+import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.os.Bundle
@@ -13,6 +14,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +62,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         lifecycleScope.launch(Dispatchers.IO) { LauncherIcons.reconcile(applicationContext) }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                LauncherIcons.reopenRequests(applicationContext).collect { pending ->
+                    if (pending && LauncherIcons.consumeReopen(applicationContext)) {
+                        startActivity(Intent.makeRestartActivityTask(ComponentName(this@MainActivity, MainActivity::class.java)))
+                        finish()
+                    }
+                }
+            }
+        }
         if (savedInstanceState == null) handleIntent(intent)
         else {
             val restored = restoreCalendarHandoff(savedInstanceState.getBundle(STATE_HANDOFF))

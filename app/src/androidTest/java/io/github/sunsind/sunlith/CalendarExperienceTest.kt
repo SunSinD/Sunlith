@@ -42,6 +42,8 @@ import io.github.sunsind.sunlith.ui.ViewMode
 import io.github.sunsind.sunlith.ui.gridStart
 import java.time.LocalDate
 import java.time.YearMonth
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.Locale
 import java.util.UUID
 import java.util.regex.Pattern
@@ -99,6 +101,7 @@ class CalendarExperienceTest {
         settings.hasChosenCalendars = true
         settings.themeMode = "dark"
         settings.startView = "Month"
+        settings.keepSelectedDate = true
         settings.materialYou = false
         settings.agendaRange = "month"
         settings.monthLayout = "split"
@@ -229,29 +232,57 @@ class CalendarExperienceTest {
     @Test
     fun groupedSettingsExposeRelevantControlsAndPersistRealUiChanges() {
         node(By.pkg(context.packageName).desc(english.getString(R.string.title_settings))).click()
-        node(By.pkg(context.packageName).text(english.getString(R.string.title_calendars)))
-        node(By.pkg(context.packageName).text(english.getString(R.string.beta_settings_appearance)))
+        captureSettings("root", R.string.beta_settings_about)
+        assertFalse(device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.custom_computer_access_desc))))
+        assertFalse(device.hasObject(By.pkg(context.packageName).text(english.resources.getQuantityString(R.plurals.calendars_shown, 1, 1))))
         assertFalse(device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.settings_import))))
-        assertFalse(device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.settings_widget_opacity))))
         node(By.pkg(context.packageName).text(english.getString(R.string.title_calendars))).click()
         node(By.pkg(context.packageName).text("Experience calendar"))
         back()
-        node(By.pkg(context.packageName).text(english.getString(R.string.settings_general)))
         scrollToText(english.getString(R.string.settings_general)).click()
-        node(By.pkg(context.packageName).text(english.getString(R.string.beta_start_view).uppercase(Locale.ENGLISH)))
-        node(By.pkg(context.packageName).text(english.getString(R.string.view_week))).click()
+        captureSettings("general", R.string.settings_keep_date)
+        chooseSetting(R.string.beta_start_view, "Week")
         awaitUi { settings.startView == "Week" }
-        scrollToText(english.getString(R.string.beta_event_days)).click()
+        chooseSetting(R.string.settings_agenda_days, "events")
         awaitUi { settings.agendaDisplay == "events" }
+        chooseSetting(R.string.settings_agenda_range, "continuous")
+        awaitUi { settings.agendaRange == "continuous" }
+        chooseSetting(R.string.settings_agenda_range, "day")
+        awaitUi { settings.agendaRange == "day" }
+        chooseSetting(R.string.settings_agenda_range, "week")
+        awaitUi { settings.agendaRange == "week" }
+        chooseSetting(R.string.settings_agenda_range, "month")
+        awaitUi { settings.agendaRange == "month" }
+        scrollToText(english.getString(R.string.settings_keep_date)).click()
+        awaitUi { !settings.keepSelectedDate }
+        scrollToText(english.getString(R.string.settings_reminders_toggle))
+        back()
+        scrollToText(english.getString(R.string.beta_settings_appearance)).click()
+        captureSettings("appearance", R.string.layout_preset_grid)
+        chooseSetting(R.string.view_week, "timeline3")
+        chooseSetting(R.string.view_day, "schedule")
+        scrollToText(english.getString(R.string.layout_preset_grid)).click()
+        awaitUi { settings.monthLayout == "full" }
+        assertEquals("timeline", settings.weekLayout)
+        assertEquals(3, settings.visibleWeekDays)
+        assertEquals("schedule", settings.dayLayout)
+        scrollToText(english.getString(R.string.layout_preset_agenda)).click()
+        awaitUi { settings.monthLayout == "split" }
+        assertEquals("timeline", settings.weekLayout)
+        assertEquals(3, settings.visibleWeekDays)
+        assertEquals("schedule", settings.dayLayout)
         scrollToText(english.getString(R.string.beta_collapse_calendar)).click()
         awaitUi { settings.collapseCalendarOnScroll }
         scrollToText(english.getString(R.string.beta_collapse_calendar)).click()
         awaitUi { !settings.collapseCalendarOnScroll }
-        scrollToText(english.getString(R.string.settings_reminders_toggle))
-        scrollToText(english.getString(R.string.settings_import))
-        scrollToText(english.getString(R.string.settings_export))
+        back()
+        scrollToText(english.getString(R.string.beta_settings_transfer)).click()
+        captureSettings("transfer", R.string.settings_import)
+        node(By.pkg(context.packageName).text(english.getString(R.string.settings_import)))
+        node(By.pkg(context.packageName).text(english.getString(R.string.settings_export)))
         back()
         scrollToText(english.getString(R.string.beta_settings_widget)).click()
+        captureSettings("widget", R.string.settings_widget_shared)
         setProgress(english.getString(R.string.beta_widget_days), 14f)
         assertEquals(14, settings.widgetDays)
         setProgress(english.getString(R.string.settings_widget_opacity), 65f)
@@ -261,7 +292,71 @@ class CalendarExperienceTest {
         scrollToText(english.getString(R.string.beta_widget_calendar_name)).click()
         assertTrue(settings.widgetShowCalendarName)
         back()
-        scrollToText(english.getString(R.string.about_source))
+        scrollToText(english.getString(R.string.beta_settings_about)).click()
+        captureSettings("about", R.string.about_source)
+        node(By.pkg(context.packageName).text(english.getString(R.string.about_source)))
+        node(By.pkg(context.packageName).text(requireNotNull(context.packageManager.getPackageInfo(context.packageName, 0).versionName)))
+    }
+
+    private fun captureSettings(name: String, content: Int) {
+        node(By.pkg(context.packageName).text(english.getString(content)))
+        SystemClock.sleep(300)
+        assertTrue(device.takeScreenshot(File(context.filesDir, "settings-en-$name.png")))
+    }
+
+    @Test
+    fun settingsDropdownTitlesAndChoicesRemainReachableInFrench() {
+        val language = if (Build.VERSION.SDK_INT >= 33) "fr-CA" else "en"
+        finish()
+        if (Build.VERSION.SDK_INT >= 33) {
+            context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(language)
+        }
+        launch()
+        val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
+            setLocale(Locale.forLanguageTag(language))
+        })
+        fun text(id: Int) = localized.getString(id)
+        node(By.pkg(context.packageName).desc(text(R.string.title_settings))).click()
+        node(By.pkg(context.packageName).text(text(R.string.beta_settings_appearance))).click()
+        listOf(R.string.view_week to "timeline7", R.string.view_day to "schedule", R.string.settings_theme to "dark").forEach { (label, choice) ->
+            val title = scrollToText(text(label))
+            val bounds = title.visibleBounds
+            assertTrue("Dropdown title must have visible width: ${text(label)} / $bounds", bounds.width() >= 24 * context.resources.displayMetrics.density)
+            title.click()
+            val option = node(By.pkg(context.packageName).res("settings_choice_$choice"))
+            assertTrue("Dropdown choice must be visible", option.visibleBounds.width() > 0 && option.visibleBounds.height() > 0)
+            SystemClock.sleep(300)
+            assertTrue(device.takeScreenshot(File(context.filesDir, "dropdown-$language-$choice-open.png")))
+            option.click()
+            device.waitForIdle()
+            scrollToText(text(label))
+            SystemClock.sleep(300)
+            assertTrue(device.takeScreenshot(File(context.filesDir, "dropdown-$language-$choice-selected.png")))
+        }
+        assertEquals("timeline", settings.weekLayout)
+        assertEquals(7, settings.visibleWeekDays)
+        assertEquals("schedule", settings.dayLayout)
+        assertEquals("dark", settings.themeMode)
+        node(By.pkg(context.packageName).desc(text(R.string.action_back))).click()
+        node(By.pkg(context.packageName).text(text(R.string.settings_general))).click()
+        listOf(R.string.beta_start_view to "last", R.string.settings_agenda_range to "continuous", R.string.settings_agenda_days to "compact").forEach { (label, choice) ->
+            val title = scrollToText(text(label))
+            assertTrue("Dropdown title must retain visible width", title.visibleBounds.width() >= 24 * context.resources.displayMetrics.density)
+            title.click()
+            node(By.pkg(context.packageName).res("settings_choice_$choice")).click()
+            device.waitForIdle()
+            SystemClock.sleep(300)
+            assertTrue(device.takeScreenshot(File(context.filesDir, "dropdown-$language-$choice-selected.png")))
+        }
+        assertEquals("last", settings.startView)
+        assertEquals("continuous", settings.agendaRange)
+        assertEquals("compact", settings.agendaDisplay)
+    }
+
+    private fun chooseSetting(row: Int, choice: String) {
+        scrollToText(english.getString(row)).click()
+        node(By.pkg(context.packageName).res("settings_choice_$choice")).click()
+        device.waitForIdle()
     }
 
     @Test
@@ -293,7 +388,8 @@ class CalendarExperienceTest {
         listOf("all", "compact", "events").forEach { display ->
             onMain { vm.changeAgendaDisplay(display) }
             val texts = allAgendaTexts()
-            assertTrue("Week must retain all seven day rows with the $display Month preference: $texts", (8..14).all { it.toString() in texts })
+            val dates = (0L..6L).map { Formats(english, Locale.ENGLISH).dayLong(monday.plusDays(it)) }
+            assertTrue("Week must retain all seven dated rows with the $display Month preference: $texts", dates.all { it in texts })
             assertTrue("Week must retain empty days with the $display Month preference.", english.getString(R.string.no_events) in texts)
             assertTrue("Week must include its first day's event: $texts", texts.any { it.contains("Experience Monday marker") })
             assertTrue("Week must include its last day's event: $texts", texts.any { it.contains("Experience Sunday marker") })
@@ -329,7 +425,8 @@ class CalendarExperienceTest {
     }
 
     @Test
-    fun dayTabReturnsToTodayFromAnotherDateAndWhenAlreadyInDayView() {
+    fun switchingToDayReturnsToTodayAndReselectingDayKeepsTheChosenDate() {
+        onMain { vm.changeKeepSelectedDate(false) }
         onMain { vm.select(LocalDate.of(2027, 2, 10)) }
         selectView(ViewMode.Day)
         awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == LocalDate.now() }
@@ -337,8 +434,8 @@ class CalendarExperienceTest {
         onMain { vm.step(1) }
         assertEquals(LocalDate.now().plusDays(1), vm.selectedDate)
         selectView(ViewMode.Day)
-        awaitUi { vm.selectedDate == LocalDate.now() }
-        node(By.pkg(context.packageName).text(marker))
+        awaitUi { vm.selectedDate == LocalDate.now().plusDays(1) }
+        assertTrue("Selecting the active view must preserve its chosen date.", node(day(vm.selectedDate)).let { it.isChecked || it.isSelected })
     }
 
     @Test
@@ -521,11 +618,13 @@ class CalendarExperienceTest {
 
     @Test
     fun dayLayoutsNeverShowTheFloatingTodayActionEvenAwayFromToday() {
+        onMain { vm.changeKeepSelectedDate(false) }
         val today = By.pkg(context.packageName).desc(english.getString(R.string.action_today))
         listOf("cards", "timeline", "schedule").forEach { layout ->
             onMain { vm.changeDayLayout(layout); vm.changeViewMode(ViewMode.Day); vm.select(LocalDate.now().plusDays(40)) }
             node(By.pkg(context.packageName).res("calendar_day_picker"))
-            assertFalse("Day $layout must use the Day view control to return to today.", device.hasObject(today))
+            assertFalse("Day $layout must not show the floating Today action.", device.hasObject(today))
+            selectView(ViewMode.Month)
             selectView(ViewMode.Day)
             awaitUi { vm.selectedDate == LocalDate.now() }
             assertFalse(device.hasObject(today))
@@ -533,7 +632,7 @@ class CalendarExperienceTest {
     }
 
     @Test
-    fun appearanceIconTilesRequireConfirmationAndPersistAcrossRecreation() {
+    fun appearanceIconTilesRequireConfirmationAndReopenOnTheCalendar() {
         val original = LauncherIcons.saved(context)
         try {
             node(By.pkg(context.packageName).desc(english.getString(R.string.title_settings))).click()
@@ -551,7 +650,7 @@ class CalendarExperienceTest {
             assertEquals(original, LauncherIcons.saved(context))
             node(selector).click()
             val previous = requireNotNull(activity)
-            node(By.pkg(context.packageName).text(english.getString(R.string.action_ok))).click()
+            node(By.pkg(context.packageName).text(english.getString(R.string.launcher_icon_apply))).click()
             awaitUi {
                 var restored = false
                 instrumentation.runOnMainSync {
@@ -564,9 +663,89 @@ class CalendarExperienceTest {
                 }
                 restored && LauncherIcons.saved(context) == target && LauncherIcons.enabled(context) == listOf(target)
             }
-            node(selector)
+            assertTrue("Applying the icon must finish the old screen.", previous.isFinishing || previous.isDestroyed)
+            assertTrue("Reopening must show the calendar.", vm.stack.isEmpty())
+            node(By.pkg(context.packageName).desc(english.getString(R.string.title_settings)))
             assertEquals(target, LauncherIcons.saved(context))
         } finally {
+            assertTrue(LauncherIcons.select(context, original))
+        }
+    }
+
+    @Test
+    fun iconApplySurvivesRotationWhileTheRealAliasSwitchIsDelayed() = delayedIconApply(true)
+
+    @Test
+    fun iconApplySurvivesLeavingAppearanceWhileTheRealAliasSwitchIsDelayed() = delayedIconApply(false)
+
+    private fun delayedIconApply(rotate: Boolean) {
+        val original = LauncherIcons.saved(context)
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val blocker = Thread {
+            synchronized(LauncherIcons) {
+                entered.countDown()
+                check(release.await(20, TimeUnit.SECONDS))
+            }
+        }
+        try {
+            node(By.pkg(context.packageName).desc(english.getString(R.string.title_settings))).click()
+            node(By.pkg(context.packageName).text(english.getString(R.string.beta_settings_appearance))).click()
+            val target = if (original == LauncherIcons.Style.Light) LauncherIcons.Style.Dark else LauncherIcons.Style.Light
+            val selector = By.pkg(context.packageName).desc(english.getString(R.string.launcher_icon_choice, english.getString(target.label)))
+            repeat(8) { if (!device.hasObject(selector)) node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.DOWN, 0.5f, 500) }
+            node(selector).click()
+            val before = requireNotNull(activity)
+            val retained = vm
+            blocker.start()
+            assertTrue(entered.await(3, TimeUnit.SECONDS))
+            node(By.pkg(context.packageName).text(english.getString(R.string.launcher_icon_apply))).click()
+            awaitUi { vm.launcherIconBusy }
+            if (rotate) {
+                instrumentation.runOnMainSync { before.recreate() }
+                awaitUi {
+                    var found = false
+                    instrumentation.runOnMainSync {
+                        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                            .filterIsInstance<MainActivity>().firstOrNull { it !== before }?.let {
+                                activity = it
+                                vm = ViewModelProvider(it)[SunlithViewModel::class.java]
+                                found = true
+                            }
+                    }
+                    found
+                }
+                assertTrue("Rotation must retain the operation's owner.", retained === vm)
+            } else {
+                device.pressBack()
+                node(By.pkg(context.packageName).text(english.getString(R.string.beta_settings_appearance)))
+            }
+            assertEquals("The real switch is still waiting on IO.", original, LauncherIcons.saved(context))
+            assertTrue(vm.launcherIconBusy)
+            release.countDown()
+            awaitUi {
+                var reopened = false
+                instrumentation.runOnMainSync {
+                    ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                        .filterIsInstance<MainActivity>().firstOrNull()?.let {
+                            activity = it
+                            vm = ViewModelProvider(it)[SunlithViewModel::class.java]
+                            reopened = vm !== retained && vm.stack.isEmpty()
+                        }
+                }
+                reopened && LauncherIcons.enabled(context) == listOf(target)
+            }
+            assertFalse(LauncherIcons.reopenPending(context))
+            val reopened = requireNotNull(activity)
+            SystemClock.sleep(400)
+            instrumentation.runOnMainSync {
+                assertTrue("The pending reopen must be consumed exactly once.",
+                    ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).contains(reopened))
+            }
+        } finally {
+            release.countDown()
+            if (blocker.isAlive) blocker.join(3_000)
+            LauncherIcons.consumeReopen(context)
             assertTrue(LauncherIcons.select(context, original))
         }
     }
@@ -634,8 +813,7 @@ class CalendarExperienceTest {
             onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.goToday() }
             val today = LocalDate.now()
             val todayAction = By.pkg(context.packageName).desc(english.getString(R.string.action_today))
-            val grid = node(By.pkg(context.packageName).res("calendar_grid"))
-            val bounds = grid.visibleBounds
+            val bounds = stableBounds(By.pkg(context.packageName).res("calendar_grid"))
             val top = bounds.top + bounds.height() / 5
             val bottom = bounds.bottom - bounds.height() / 5
             val early = java.time.temporal.ChronoUnit.DAYS.between(gridStart(vm.month, vm.weekStartsMonday), today) < 21
@@ -827,7 +1005,11 @@ class CalendarExperienceTest {
         val deadline = SystemClock.elapsedRealtime() + 10_000
         while (SystemClock.elapsedRealtime() < deadline) {
             refreshAccessibility()
-            if (condition()) return
+            try {
+                if (condition()) return
+            } catch (_: androidx.test.uiautomator.StaleObjectException) {
+                // Configuration changes can replace a node between lookup and bounds access.
+            }
             SystemClock.sleep(100)
         }
         captureFailure()

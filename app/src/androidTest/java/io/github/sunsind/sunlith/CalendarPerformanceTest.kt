@@ -249,7 +249,12 @@ class CalendarPerformanceTest {
 
     private fun node(selector: BySelector): UiObject2 {
         instrumentation.uiAutomation.serviceInfo = instrumentation.uiAutomation.serviceInfo
-        return requireNotNull(device.wait(Until.findObject(selector), 15_000)) { "Missing dense-calendar UI: $selector" }
+        val found = device.wait(Until.findObject(selector), 15_000)
+        if (found == null) {
+            device.takeScreenshot(java.io.File(context.filesDir, "dense-calendar-failure.png"))
+            device.dumpWindowHierarchy(java.io.File(context.filesDir, "dense-calendar-failure.xml"))
+        }
+        return requireNotNull(found) { "Missing dense-calendar UI: $selector" }
     }
 
     private fun onMain(action: () -> Unit) = instrumentation.runOnMainSync(action)
