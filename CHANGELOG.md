@@ -1,5 +1,31 @@
 # Changes
 
+## 0.6.0
+
+### Calendar
+
+- Fit view controls and optional navigation arrows into the toolbar, with a menu on narrow screens.
+- Add vertical lines and solid event colors to the full month grid.
+- Preview full event titles and times by holding a date or tapping its extra-event count.
+- Open a day at its relevant event with a brief highlight; Back returns to the parent calendar.
+- Show both start and end times in week blocks and draw the current-time line across the week.
+- Keep weekday labels consistent and hide the return-to-today shortcut in Day view.
+- Use a compact up-arrow shortcut in Month and Week, easier swipes, and a simple fade between screens.
+
+### Settings and setup
+
+- Offer Agenda and Grid starting layouts with independent view choices.
+- Simplify theme and wallpaper-color controls, consolidate settings, and keep About at the bottom.
+- Keep Light and Dark icon choices, make the calendar page fill the launcher shape without a separate surround, and confirm before applying a style.
+- Fix layout-chooser text contrast on dark backgrounds.
+- Share a computer connection file directly through Android, retain scoped calendar permission, and add Open calendar.
+- Add native widget configuration through supported launchers, without an extra widget button.
+
+### Documentation
+
+- Explain the three release assets and keep testing records in the testing document.
+- Clarify one-time computer setup and later use over Wi-Fi or Tailscale.
+
 ## 0.5.0
 
 - Replace the launcher artwork with a vector sun/calendar icon and selectable Light, Dark and Neutral styles.

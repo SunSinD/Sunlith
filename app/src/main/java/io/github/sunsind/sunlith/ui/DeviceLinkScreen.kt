@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -32,6 +33,7 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,12 +54,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.device.DeviceLink
+import io.github.sunsind.sunlith.device.DeviceLinkAddressKind
 import io.github.sunsind.sunlith.device.DeviceLinkChange
 import io.github.sunsind.sunlith.device.DeviceLinkChangeAction
 import io.github.sunsind.sunlith.device.DeviceLinkChangeField
 import io.github.sunsind.sunlith.device.DeviceLinkDiagnostics
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -76,12 +81,32 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
     var paired by remember { mutableStateOf(false) }
     var ids by rememberSaveable { mutableStateOf(emptySet<Long>()) }
     var hosts by remember { mutableStateOf(emptyList<String>()) }
+    var addressKinds by remember { mutableStateOf(emptyMap<String, DeviceLinkAddressKind>()) }
     var host by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var refresh by remember { mutableStateOf(0) }
     var unpair by remember { mutableStateOf(false) }
     var sharedUri by remember { mutableStateOf<Uri?>(null) }
     var exportRequest by remember { mutableStateOf<Pair<Set<Long>, String>?>(null) }
+    val pairingShareDirectory = remember(context.applicationContext) { File(context.applicationContext.cacheDir, PAIRING_SHARE_DIR) }
+    fun providerUri(file: File): Uri? = try {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file, PAIRING_SHARE_NAME)
+    } catch (_: Exception) { null }
+    fun sharePairingUri(uri: Uri, useSelectedAddressHint: Boolean = false) {
+        try {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = ClipData.newRawUri("Sunlith pairing", uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(send, context.getString(R.string.connection_setup_share_title)))
+            vm.message(context.getString(if (useSelectedAddressHint && addressKinds[host] == DeviceLinkAddressKind.TAILSCALE)
+                R.string.connection_setup_share_hint else R.string.connection_setup_share_local_hint))
+        } catch (_: ActivityNotFoundException) {
+            vm.message(context.getString(R.string.device_link_no_share))
+        }
+    }
     val back = { if (page == "connection") vm.back() else page = "connection" }
     BackHandler(onBack = back)
 
@@ -93,12 +118,21 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
 
     LaunchedEffect(refresh) {
         val data = withContext(Dispatchers.IO) {
-            Triple(DeviceLink.isPaired(context), DeviceLink.pairedCalendarIds(context), DeviceLink.addresses(context))
+            Triple(DeviceLink.isPaired(context), DeviceLink.pairedCalendarIds(context), DeviceLink.addressChoices(context))
         }
         paired = data.first
         if (paired) ids = data.second
-        hosts = data.third
+        hosts = data.third.map { it.host }
+        addressKinds = data.third.associate { it.host to it.kind }
+        // hosts is already ordered by DeviceLinkNetwork: Tailscale VPN first, then other VPN, then Wi-Fi.
         if (host !in hosts) host = hosts.firstOrNull().orEmpty()
+        // Re-offer the same pairing file after a restart without rotating its token; absent cache -> no button.
+        if (paired && sharedUri == null) {
+            sharedUri = withContext(Dispatchers.IO) {
+                DeviceLink.cachedPairingShare(context)?.let(::providerUri)
+            }
+        }
+        if (!paired) sharedUri = null
     }
     LaunchedEffect(connection.error) {
         connection.error?.let { vm.message(it) }
@@ -137,6 +171,55 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                     busy = false
                 }
             }
+        }
+    }
+
+    // One tap: probe FileProvider BEFORE createPairing() (which rotates the token), then share from private cache.
+    // No provider -> fall back to the save-file picker untouched, so no pairing is created for a cancelled picker.
+    fun connectComputer() {
+        if (busy || ids.isEmpty() || host.isBlank()) return
+        scope.launch {
+            busy = true
+            var created = false
+            val pairingShareFile = File(pairingShareDirectory, "sunlith-pairing-${java.util.UUID.randomUUID()}.json")
+            try {
+                val uri = withContext(Dispatchers.IO) {
+                    val dir = pairingShareDirectory
+                    dir.mkdirs()
+                    val probe = File(dir, ".probe")
+                    val ready = try {
+                        probe.writeBytes(ByteArray(0))
+                        providerUri(probe) != null
+                    } catch (_: Exception) { false } finally { probe.delete() }
+                    if (!ready) return@withContext null
+                    val config = DeviceLink.createPairing(context, ids.toSet(), host)
+                    created = true
+                    pairingShareFile.writeText(config, Charsets.UTF_8)
+                    providerUri(pairingShareFile)
+                }
+                if (uri == null && !created) {
+                    exportRequest = ids.toSet() to host
+                    try { fileLauncher.launch(PAIRING_SHARE_NAME) }
+                    catch (_: ActivityNotFoundException) { exportRequest = null; vm.message(context.getString(R.string.msg_no_file_picker)) }
+                } else if (uri == null) {
+                    withContext(Dispatchers.IO) { DeviceLink.revoke(context) }
+                    paired = false
+                    vm.message(context.getString(R.string.device_link_export_error))
+                } else {
+                    paired = true
+                    sharedUri = uri
+                    sharePairingUri(uri, useSelectedAddressHint = true)
+                }
+            } catch (c: CancellationException) {
+                if (created) withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                    DeviceLink.revoke(context)
+                }
+                throw c
+            } catch (_: Exception) {
+                if (created) withContext(Dispatchers.IO) { DeviceLink.revoke(context) }
+                paired = false
+                vm.message(context.getString(R.string.device_link_export_error))
+            } finally { busy = false }
         }
     }
 
@@ -179,37 +262,47 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                     }
                     if (paired) {
                         Text(stringResource(if (connection.running) R.string.device_link_on else R.string.device_link_off), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.device_link_running_help), color = p.muted, style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onClick = { context.openAppSettings() }) { Text(stringResource(R.string.device_link_background)) }
-                        Button(onClick = {
+                        Text(stringResource(R.string.connection_setup_paired_body), color = p.muted, style = MaterialTheme.typography.bodyMedium)
+                        val startOrStop: () -> Unit = {
                             if (connection.running) DeviceLink.stop(context)
                             else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             } else DeviceLink.start(context)
-                        }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !busy) {
-                            Text(stringResource(if (connection.running) R.string.device_link_stop else R.string.device_link_start))
+                        }
+                        if (connection.running) {
+                            Button(onClick = vm::openCalendar, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !busy) {
+                                Text(stringResource(R.string.connection_setup_open_calendar))
+                            }
+                            TextButton(onClick = startOrStop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !busy) {
+                                Text(stringResource(R.string.device_link_stop))
+                            }
+                        } else {
+                            Button(onClick = startOrStop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !busy) {
+                                Text(stringResource(R.string.device_link_start))
+                            }
+                            TextButton(onClick = vm::openCalendar, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !busy) {
+                                Text(stringResource(R.string.connection_setup_open_calendar))
+                            }
                         }
                         sharedUri?.let { uri ->
-                            TextButton(onClick = {
-                                try {
-                                    val send = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/json"
-                                        putExtra(Intent.EXTRA_STREAM, uri)
-                                        clipData = ClipData.newRawUri("Sunlith pairing", uri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(Intent.createChooser(send, context.getString(R.string.device_link_share)))
-                                } catch (_: ActivityNotFoundException) {
-                                    vm.message(context.getString(R.string.device_link_no_share))
-                                }
-                            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.device_link_share)) }
+                            TextButton(onClick = { sharePairingUri(uri) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Text(stringResource(R.string.connection_setup_share_again))
+                            }
                         }
+                        TextButton(onClick = { context.openAppSettings() }) { Text(stringResource(R.string.device_link_background)) }
                     } else {
-                        Text(stringResource(R.string.device_link_consent), color = p.muted, style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.connection_setup_step1_title), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.connection_setup_step1_body), color = p.muted, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
-            item { SectionTitle(stringResource(R.string.device_link_access)) }
+            if (!paired) {
+                item { SectionTitle(stringResource(R.string.connection_setup_step2_title)) }
+                item { Text(stringResource(R.string.connection_setup_step2_body), Modifier.padding(horizontal = 16.dp), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
+                item { Text(stringResource(R.string.device_link_consent), Modifier.padding(horizontal = 16.dp), color = p.muted, style = MaterialTheme.typography.bodySmall) }
+            } else {
+                item { SectionTitle(stringResource(R.string.device_link_access)) }
+            }
             items(vm.calendars.filter { !paired || it.id in ids }, key = { it.id }) { calendar ->
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 56.dp)
@@ -238,24 +331,43 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                         Text(stringResource(R.string.action_create_local))
                     }
                 }
-                item { SectionTitle(stringResource(R.string.device_link_address)) }
+                item { SectionTitle(stringResource(R.string.connection_setup_step3_title)) }
+                item { Text(stringResource(if (addressKinds[host] == DeviceLinkAddressKind.TAILSCALE)
+                    R.string.connection_setup_step3_body else R.string.connection_setup_step3_local_body), Modifier.padding(horizontal = 16.dp), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
                 if (hosts.isEmpty()) item {
                     Text(stringResource(R.string.device_link_no_network), Modifier.padding(16.dp), color = p.muted)
-                }
-                items(hosts, key = { "host-$it" }) { address ->
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(address == host, enabled = !busy, role = Role.RadioButton) { host = address }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(address == host, onClick = null, enabled = !busy)
-                        Spacer(Modifier.width(12.dp))
-                        Text(address)
+                } else if (hosts.size == 1) item {
+                    // Default is already the best address; show it in words instead of a one-item radio list.
+                    Text(stringResource(R.string.connection_setup_address_one, hosts.first(), stringResource(addressKindRes(addressKinds[hosts.first()]))),
+                        Modifier.padding(horizontal = 16.dp), color = p.muted, style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    // Several reachable addresses: keep the user's choice, best (Tailscale) first and pre-selected.
+                    item { Text(stringResource(R.string.device_link_address), Modifier.padding(horizontal = 16.dp), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
+                    item {
+                        Column(Modifier.selectableGroup()) {
+                            hosts.forEach { address ->
+                                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(address == host, enabled = !busy, role = Role.RadioButton) { host = address }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(address == host, onClick = null, enabled = !busy, colors = RadioButtonDefaults.colors(selectedColor = p.accent, unselectedColor = p.faint))
+                                    Spacer(Modifier.width(12.dp))
+                                    Column {
+                                        Text(address)
+                                        Text(stringResource(addressKindRes(addressKinds[address])), color = p.muted, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 item {
-                    Button(onClick = {
-                        exportRequest = ids.toSet() to host
-                        try { fileLauncher.launch("sunlith-pairing.json") }
-                        catch (_: ActivityNotFoundException) { exportRequest = null; vm.message(context.getString(R.string.msg_no_file_picker)) }
-                    }, enabled = !busy && ids.isNotEmpty() && ids.any { id -> vm.calendars.any { it.id == id && it.writable } } && host.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(16.dp).heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.device_link_export))
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { connectComputer() },
+                            enabled = !busy && ids.isNotEmpty() && ids.any { id -> vm.calendars.any { it.id == id && it.writable } } && host.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.connection_setup_connect_computer))
+                        }
+                        TextButton(onClick = vm::openCalendar, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.connection_setup_open_calendar))
+                        }
                     }
                 }
             } else item {
@@ -291,6 +403,16 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
         }) { Text(stringResource(R.string.device_link_unpair)) } },
         dismissButton = { TextButton(onClick = { unpair = false }) { Text(stringResource(R.string.action_cancel)) } },
     )
+}
+
+private const val PAIRING_SHARE_DIR = "pairing-share"
+private const val PAIRING_SHARE_NAME = "sunlith-pairing.json"
+
+/** Tailscale IPv4 range 100.64.0.0/10, mirroring DeviceLinkNetwork.isTailscale (not public API). */
+private fun addressKindRes(kind: DeviceLinkAddressKind?): Int = when (kind) {
+    DeviceLinkAddressKind.TAILSCALE -> R.string.connection_setup_address_tailscale
+    DeviceLinkAddressKind.VPN -> R.string.connection_setup_address_other_vpn
+    else -> R.string.connection_setup_address_wifi
 }
 
 private fun connectionDate(context: android.content.Context, millis: Long): String = DateUtils.formatDateTime(

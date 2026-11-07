@@ -16,9 +16,19 @@ internal object DeviceLinkNetwork {
     private const val CACHE_MS = 5_000L
     @Volatile private var cache: Pair<Long, Set<InetAddress>>? = null
 
-    fun addresses(context: Context): List<String> = candidates(context)
+    fun addresses(context: Context): List<String> = addressChoices(context).map { it.host }
+
+    fun addressChoices(context: Context): List<DeviceLinkAddress> = candidates(context)
         .sortedWith(compareBy<Candidate> { !(it.vpn && isTailscale(it.address)) }.thenBy { !it.vpn })
-        .mapNotNull { it.address.hostAddress }.distinct()
+        .mapNotNull { candidate ->
+            candidate.address.hostAddress?.let { host ->
+                DeviceLinkAddress(host, when {
+                    candidate.vpn && isTailscale(candidate.address) -> DeviceLinkAddressKind.TAILSCALE
+                    candidate.vpn -> DeviceLinkAddressKind.VPN
+                    else -> DeviceLinkAddressKind.LOCAL_NETWORK
+                })
+            }
+        }.distinctBy { it.host }
 
     fun isPrivate(address: InetAddress): Boolean {
         if (address !is Inet4Address) return false

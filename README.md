@@ -7,8 +7,8 @@ Plan on your phone, or ask your computer to add, edit and remove events. Sunlith
 ## Make it yours
 
 - Month, week and day views, with a scrolling schedule and time-grid layouts.
-- Three starting styles, with separate settings for each view.
-- Material You colors, light and dark themes, three app icon styles, and English and French.
+- Agenda and Grid layouts, with separate settings for each view.
+- Wallpaper colors, light and dark themes and icons, and English and French.
 - Search, repeating events, multiple reminders, and calendar import and export.
 - A resizable agenda widget with day dividers and adjustable transparency.
 

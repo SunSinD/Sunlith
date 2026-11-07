@@ -100,15 +100,16 @@ fun SunlithApp(vm: SunlithViewModel) {
                 vm.needsNotificationStep -> NotificationStep(vm)
                 else -> {
                     LaunchedEffect(vm.stack.lastOrNull()) { vm.openRequestedComputerSetup() }
-                    BackHandler(enabled = vm.stack.isNotEmpty()) { vm.back() }
+                    BackHandler(enabled = vm.stack.isNotEmpty() || vm.hasDayParent) { vm.back() }
                     val covered = vm.stack.isNotEmpty()
                     val motion = rememberMotion(vm.navigationAnimation)
                     CalendarScreen(vm, if (covered) Modifier.clearAndSetSemantics { } else Modifier)
                     AnimatedContent(
+                        modifier = Modifier.fillMaxSize(),
                         targetState = vm.stack.lastOrNull(),
                         transitionSpec = {
-                            if (motion) fadeIn(tween(160)) togetherWith fadeOut(tween(120))
-                            else EnterTransition.None togetherWith ExitTransition.None
+                            (if (motion) fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                            else EnterTransition.None togetherWith ExitTransition.None).using(null)
                         },
                         label = "screens",
                     ) { screen ->
@@ -116,6 +117,7 @@ fun SunlithApp(vm: SunlithViewModel) {
                             null -> Unit
                             Screen.Search -> SearchScreen(vm)
                             Screen.Settings -> settingsState.SaveableStateProvider("settings") { SettingsScreen(vm) }
+                            Screen.WidgetSettings -> SettingsScreen(vm, initialPage = "widget")
                             Screen.Calendars -> CalendarsScreen(vm)
                             Screen.DeviceLink -> DeviceLinkScreen(vm)
                             Screen.Editor -> EventEditorScreen(vm)

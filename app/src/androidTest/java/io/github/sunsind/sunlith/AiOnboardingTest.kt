@@ -84,7 +84,7 @@ class AiOnboardingTest {
         assertTrue(skip.visibleBounds.width() > 0 && skip.visibleBounds.height() > 0)
         skip.click()
         node(R.string.layout_setup_title)
-        assertTrue("The default must expose its selected state to accessibility.", selected(preset(R.string.layout_preset_sunlith)))
+        assertTrue("The default must expose its selected state to accessibility.", selected(preset(R.string.layout_preset_agenda)))
         val proceed = node(R.string.layout_continue)
         assertTrue(proceed.isEnabled)
         assertTrue(proceed.visibleBounds.height() > 0)
@@ -106,16 +106,17 @@ class AiOnboardingTest {
     fun everyPresetIsSelectableAndPlannerChoiceSurvivesRecreationBeforeConfirmation() {
         node(R.string.action_without_ai).click()
         node(R.string.layout_setup_title)
-        listOf(R.string.layout_preset_schedule, R.string.layout_preset_sunlith, R.string.layout_preset_planner).forEach { id ->
+        listOf(R.string.layout_preset_agenda, R.string.layout_preset_grid).forEach { id ->
             scrollToPreset(id).click()
             device.waitForIdle()
             instrumentation.uiAutomation.serviceInfo = instrumentation.uiAutomation.serviceInfo
             assertTrue("Selected layout must expose its selected state.", selected(preset(id)))
         }
+        assertFalse("The duplicate Schedule preset must be absent.", device.hasObject(By.pkg(context.packageName).textStartsWith(english.getString(R.string.layout_preset_schedule))))
         assertFalse(uiPrefs().getBoolean("layout_setup_done", false))
         recreate()
         node(R.string.layout_setup_title)
-        assertTrue("The unconfirmed selection must survive activity recreation.", selected(scrollToPreset(R.string.layout_preset_planner)))
+        assertTrue("The unconfirmed selection must survive activity recreation.", selected(scrollToPreset(R.string.layout_preset_grid)))
         assertFalse(uiPrefs().getBoolean("layout_setup_done", false))
         node(R.string.layout_continue).click()
         awaitCalendar()
@@ -136,12 +137,12 @@ class AiOnboardingTest {
         recreate()
         node(R.string.layout_setup_title)
         assertTrue(uiPrefs().getBoolean("computer_setup_requested", false))
-        scrollToPreset(R.string.layout_preset_schedule).click()
+        scrollToPreset(R.string.layout_preset_grid).click()
         node(R.string.layout_continue).click()
         node(R.string.device_link_title)
         node(R.string.device_link_consent)
         assertFalse(DeviceLink.isPaired(context))
-        assertEquals("schedule", SettingsStore(context).layoutPreset)
+        assertEquals("planner", SettingsStore(context).layoutPreset)
         assertFalse(uiPrefs().getBoolean("computer_setup_requested", false))
         assertFalse(device.hasObject(By.pkg(context.packageName).text("Codex")))
         device.pressBack()

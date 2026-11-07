@@ -34,7 +34,9 @@ It also checks that the agenda remains reachable in landscape at 200% font size.
 
 `SettingsPreferencesTest` checks defaults, limits, and persisted values in isolated preferences. `WidgetExperienceTest` uses Android's real widget host to check empty days, the date window, optional calendar names, background opacity, native dividers, multi-day events, and opening a draft from an empty date. `CalendarHandoffUiTest` checks Android event-insert intents and calendar-file sharing, editable drafts, import previews, rejection of unsupported input, and deferral through onboarding/recreation/an existing draft. The content provider used for shared-file fixtures exists only in the test APK.
 
-`AiOnboardingTest` checks the computer-focused introduction, the layout chooser, recreation, the skip route, deferred Computer connection and existing-user migration. The app no longer has an assistant-guide picker. `CalendarCustomizationTest` checks preset views, date selection, timelines and dynamic/neutral colors.
+`AiOnboardingTest` checks the computer-focused introduction, the Agenda/Grid chooser, recreation, the skip route, deferred Computer connection and existing-user migration. The app no longer has an assistant-guide picker. `CalendarCustomizationTest` checks preset views, date selection, timelines, provider event colors, wallpaper colors, event focus across loading and recreation, full-title previews, and localized toolbar bounds.
+
+`CalendarRefinementTest` checks horizontal and curved gestures, cancellation, disabled navigation, queued arrows, Day/Back behavior, and live changes to Android's motion preference. `LauncherIconTest` checks launcher aliases, migration, persistence, interrupted switches, document-picker continuity, and actual adaptive artwork rendering. `ComputerConnectionUiTest`, `DeviceLinkTlsTest` and `DeviceLinkToolsTest` cover direct sharing, cached-file and credential lifetime, scoped calendar access, protocol handling, and pinned TLS. The external desktop fixture runs separately with explicit opt-in.
 
 `ReminderNotificationsTest` additionally checks actual posted notification content, actions, occurrence deduplication, disabled reminders, and delivery through a scheduled Android alarm. A separate test inserts an isolated due provider alert for a `MINUTES_DEFAULT` reminder, sends an explicit calendar-reminder broadcast, and verifies notification delivery without changing the provider alert state. That test verifies broadcast handling, not how a real account chooses its default reminder time. Tests request notification permission on API 33 and newer. For one specific emulator, use `adb -s <serial> shell am instrument ...` or set `ANDROID_SERIAL` before a Gradle connected-test command.
 
@@ -327,4 +329,120 @@ Final instrumentation APK SHA-256:
 
 ```text
 095b6ec24b046524d69af0c78f91d72461fa90d2b213951a5917252b7511d681
+```
+
+## Version 0.6.0 verification
+
+Version code `11` uses the same signing certificate as v0.5.0. These results use the
+final packaged APK and final instrumentation APK, installed directly with ADB on
+one emulator at a time. Installed bytes matched the packaged files on both APIs.
+
+| Check | Result |
+| --- | --- |
+| Android JVM tests | 26 passed |
+| Android lint | 0 errors, 111 warnings, 7 hints |
+| Full Android 11 / API 30 suite | 130 passed, 2 skipped, 0 failures in 784.245 seconds |
+| Full Android 16 / API 36 suite | 132 passed, 2 skipped, 0 failures in 845.856 seconds |
+| Focused API 36 regressions | 15 passed in 84.854 seconds |
+| Narrow toolbar, English / fr-CA / Arabic RTL | 360dp passed in 10.329 seconds; 320dp passed in 9.113 seconds |
+| Fold-sized API 36, 200% text | All 5 named cases from v0.4.0 passed in 33.496 seconds at 1768x2208, density 320 |
+| Separate API 36 notification permission recovery | 1 passed in 7.883 seconds after revoking permission and clearing permission flags |
+| Actual desktop SDK to Android calendar provider | All eight tools passed through pinned HTTPS and stdio MCP in 2.316 seconds; Android fixture passed in 24.831 seconds |
+| Desktop syntax and tests | 44 passed, 1 opt-in Android fixture skipped |
+| Desktop dependency audit | 0 vulnerabilities |
+| Release packaging | Archive source equality, local links, signing certificate and installed APK hashes verified |
+
+API 30 skipped wallpaper-based Material You colors (requires API 31+) and the
+external-client fixture. French per-app locale and notification-recovery tests
+are API 33+ and excluded there. API 36 skipped the external-client fixture and
+permission-recovery cases in the full run; both passed separately afterward.
+Custom demo, widget and performance status messages are excluded from counts.
+Neither final full run encountered a System UI ANR.
+
+Coverage includes date drilldown and Back, focus in all three Day layouts,
+focus consumption across recreation, preserving the hour during day swipes,
+diagonal/cancelled/repeated swipes, full-title month previews, provider colors,
+start/end times and overlap targets, theme controls, icon switching, scoped
+connection-file sharing and revocation, widget reconfiguration and preference
+refresh. The distant Schedule regression uses many all-day entries before a
+timed event and verifies that programmatic focus does not repeatedly load more
+dates. Empty-date navigation advances to the next event when empty dates are
+hidden. The French settings test also handles an already-selected radio button.
+
+Earlier candidates exposed a Schedule focus/continuous-loading interaction and
+two test-selector problems (a date tap hit the extra-event preview; a selected
+radio lacked a redundant click action). Those were corrected before both final
+full runs. Earlier failed candidates and an API 36 run obstructed by a System UI
+ANR are retained locally as investigation evidence and are not counted as passes.
+
+Screenshot inspection confirms complete dates at 320dp and 360dp, the two-line
+French all-day label, readable normal-size French tabs and mirrored RTL Back.
+Week titles still ellipsize inside narrow columns. Full-month titles remain
+bounded by their cells, including at 200% text; holding the date or using its
+extra-event count opens the full-title sheet. Short timeline blocks may devote
+their available height to the time range; opening the event shows its full title.
+These are layout limits, not evidence that every title fits in every overview.
+
+The adaptive icon tests render the actual Android drawable with circle and
+squircle masks. The calendar paper fills the mask: cream for Light and charcoal
+for Dark, without the previous separate white tile and shadow. A truly
+transparent adaptive layer rendered black on the tested Android implementation;
+legacy icons were wrapped in white. See [the icon research](RESEARCH-REFINEMENT.md).
+
+The dense-calendar fixture inserts 1,460 reminder-free events across 365 days.
+These elapsed times include provider work, rendering and input on the emulators:
+
+| Operation | API 30 | API 36 |
+| --- | --- | --- |
+| Initial Month agenda | 1,402ms | 1,701ms |
+| Page forward | 226ms | 160ms |
+| Page backward | 230ms | 148ms |
+| Select distant month | 378ms | 239ms |
+| Cold description search | 1,681ms | 841ms |
+| Warm title search | 1,223ms | 960ms |
+
+Maximum lateness of the 25ms main-thread heartbeat was 239ms on API 30 and 187ms
+on API 36. This is a coarse responsiveness sample, not a frame-jank benchmark or
+a guarantee for arbitrarily dense calendars. Loaded-event counts were
+732, 1,088, 1,204 and 264; searches returned 10 description matches and 4 title
+matches.
+
+The external desktop fixture exercised all eight tools against isolated real
+provider calendars. Private desktop files, Android exports, completion sentinel
+and ADB forwarding were removed. Both emulators were stopped after restoring
+display settings. No personal calendar or phone pairing was accessed. A
+158-file fingerprint was unchanged throughout frozen runtime verification.
+
+Opus 5.5 High, GPT 6.1 Sol High, Muse Wonder and Gemini 4 Argon independently
+reviewed the final source, artifacts and runtime evidence after these runs.
+All four reported no release blockers within their respective scopes: calendar
+behavior and rendered layouts; lifecycle and regressions; connection, icons and
+packaging; settings, accessibility and localization. These were read-only reviews,
+not additional test executions. A minor degraded-path limitation remains: if the
+FileProvider share route is unavailable and the save-file fallback is used,
+recreating that screen loses its Share again shortcut, although the saved file
+and pairing remain valid.
+
+Real-device Taildrop delivery, manufacturer battery restrictions, launcher
+shortcut refresh behavior and physical TalkBack interaction remain unverified.
+Tailscale supplies network reachability; explicit app authorization still uses
+chosen calendars, a bearer token and pinned TLS. Emulator results do not replace
+those physical-device checks or prove the absence of all bugs.
+
+Version 0.6.0 APK SHA-256:
+
+```text
+0469289ab9f6e545afae7a603379b61f7b6fc937ebd604b17bb8c24eeab02836
+```
+
+Final instrumentation APK SHA-256:
+
+```text
+3694b91eb10eabad9c8cf26aff25f892341a7cc32613e0574f1be8406b0193ec
+```
+
+Signing certificate SHA-256:
+
+```text
+059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039
 ```

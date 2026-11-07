@@ -6,6 +6,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -14,6 +17,7 @@ import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import androidx.core.content.ContextCompat
 import io.github.sunsind.sunlith.system.LauncherIcons
 import io.github.sunsind.sunlith.system.LauncherIcons.Style
 import io.github.sunsind.sunlith.widget.AgendaWidgetReceiver
@@ -49,6 +53,26 @@ class LauncherIconTest {
     }
 
     @Test
+    fun adaptiveArtworkUsesThePageInsteadOfABlackOrWhiteSurround() {
+        LauncherIcons.availableStyles.forEach { style ->
+            val drawable = requireNotNull(ContextCompat.getDrawable(context, style.icon))
+            val bitmap = Bitmap.createBitmap(216, 216, Bitmap.Config.ARGB_8888)
+            drawable.setBounds(0, 0, bitmap.width, bitmap.height)
+            drawable.draw(Canvas(bitmap))
+            val paper = Color.parseColor(if (style == Style.Light) "#FDF8EA" else "#282623")
+            assertEquals("The page must reach the top of the launcher mask.", paper, bitmap.getPixel(108, 20))
+            for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+                val pixel = bitmap.getPixel(x, y)
+                assertFalse("$style must not expose Android's black base or a white wrapper.", pixel == Color.BLACK || pixel == Color.WHITE)
+            }
+            File(context.filesDir, "launcher-${style.key}.png").outputStream().use {
+                assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+            }
+            bitmap.recycle()
+        }
+    }
+
+    @Test
     fun manifestKeepsLightAsTheOnlyDefaultLauncherEntry() {
         Style.entries.forEach { style ->
             val info = pm.getActivityInfo(LauncherIcons.component(context, style), PackageManager.MATCH_DISABLED_COMPONENTS)
@@ -62,7 +86,7 @@ class LauncherIconTest {
 
     @Test
     fun everyStyleLeavesExactlyOneLaunchableEntryAndIsSavedToDisk() {
-        (Style.entries + Style.entries.first()).forEach { style ->
+        (LauncherIcons.availableStyles + LauncherIcons.availableStyles.first()).forEach { style ->
             assertTrue(LauncherIcons.select(context, style))
             assertLauncherIs(style)
             assertEquals(style, LauncherIcons.saved(context))
@@ -77,7 +101,7 @@ class LauncherIconTest {
         assertTrue(LauncherIcons.select(context, Style.Light))
         context.startActivity(launchIntent())
         var activity = waitForResumed(null)
-        listOf(Style.Dark, Style.Neutral, Style.Light, Style.Dark).forEach { style ->
+        listOf(Style.Dark, Style.Light, Style.Dark).forEach { style ->
             assertTrue(LauncherIcons.select(context, style))
             instrumentation.waitForIdleSync()
             SystemClock.sleep(1_000)
@@ -120,6 +144,18 @@ class LauncherIconTest {
     }
 
     @Test
+    fun legacyNeutralChoiceMigratesToOneLightLauncherEntry() {
+        context.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit().putString("launcher_icon", "neutral").commit()
+        pm.setComponentEnabledSetting(LauncherIcons.component(context, Style.Neutral), PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+        LauncherIcons.reconcile(context)
+        assertEquals(Style.Light, LauncherIcons.saved(context))
+        assertLauncherIs(Style.Light)
+        assertEquals(listOf(Style.Light, Style.Dark), LauncherIcons.availableStyles)
+        assertTrue(LauncherIcons.select(context, Style.Neutral))
+        assertLauncherIs(Style.Light)
+    }
+
+    @Test
     fun relaunchingFromTheIconPreservesAnOpenDocumentPicker() {
         val device = UiDevice.getInstance(instrumentation)
         context.startActivity(launchIntent())
@@ -139,7 +175,7 @@ class LauncherIconTest {
         assertTrue(LauncherIcons.select(context, Style.Light))
         var calls = 0
         assertThrows(IllegalStateException::class.java) {
-            LauncherIcons.switchSequentially(context, Style.Neutral) { component, state ->
+            LauncherIcons.switchSequentially(context, Style.Dark) { component, state ->
                 if (++calls == 2) throw IllegalStateException("Simulated PackageManager failure")
                 pm.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
             }

@@ -1,6 +1,7 @@
 package io.github.sunsind.sunlith
 
 import android.Manifest
+import android.app.Instrumentation
 import android.app.LocaleManager
 import android.app.Notification
 import android.app.NotificationManager
@@ -9,7 +10,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.LocaleList
 import android.os.SystemClock
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -23,6 +23,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import io.github.sunsind.sunlith.device.DeviceLink
+import io.github.sunsind.sunlith.device.DeviceLinkStore
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.ui.Screen
 import io.github.sunsind.sunlith.ui.SunlithViewModel
@@ -82,7 +83,7 @@ class ComputerConnectionUiTest {
     }
 
     @Test
-    fun settingsExplainsAccessAndCancellingTheFilePickerDoesNotPair(): Unit = with(fixture) {
+    fun explicitShareConsentPairsAndCancellingTheChooserKeepsAccessAndDisplayChoices(): Unit = with(fixture) {
         launch()
         instrumentation.runOnMainSync { vm.open(Screen.Settings) }
         findText(R.string.device_link_title).click()
@@ -91,24 +92,100 @@ class ComputerConnectionUiTest {
         assertFalse(DeviceLink.state.value.running)
         assertEquals(setOf(displayCalendarId), settings.selectedCalendarIds)
         requireNotNull(device.wait(Until.findObject(By.pkg(context.packageName).text("Computer test shared")), 5_000)).click()
-        requireNotNull(device.findObject(By.pkg(context.packageName).text("Computer test display"))).click()
         assertEquals("Choosing access must not change the app display filter.", setOf(displayCalendarId), settings.selectedCalendarIds)
-        assertTrue("The emulator must expose a usable address for the SAF pairing test.", DeviceLink.addresses(context).isNotEmpty())
-        val export = findText(R.string.device_link_export)
-        Log.i("ComputerConnectionUi", "Pairing export: bounds=${export.visibleBounds}, enabled=${export.isEnabled}, clickable=${export.isClickable}")
-        device.takeScreenshot(File(context.getExternalFilesDir(null), "computer-connection-before-picker.png"))
-        device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "computer-connection-before-picker.xml"))
-        export.click()
-        val pickerVisible = device.wait(Until.hasObject(By.pkg("com.google.android.documentsui")), 5_000) || device.wait(Until.hasObject(By.pkg("com.android.documentsui")), 5_000)
-        device.takeScreenshot(File(context.getExternalFilesDir(null), "computer-connection-picker.png"))
-        device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "computer-connection-picker.xml"))
-        assertTrue("Saving pairing must use Android's document picker.", pickerVisible)
-        device.pressBack()
-        findText(R.string.device_link_title)
-        assertFalse("Cancelling consent must not generate credentials.", DeviceLink.isPaired(context))
+        assertTrue("The emulator must expose a usable private address.", DeviceLink.addresses(context).isNotEmpty())
+        val chooser = java.util.concurrent.atomic.AtomicReference<Intent?>()
+        val monitor = object : Instrumentation.ActivityMonitor() {
+            override fun onStartActivity(intent: Intent): Instrumentation.ActivityResult? {
+                if (intent.action == Intent.ACTION_CHOOSER) chooser.set(intent)
+                return null
+            }
+        }
+        instrumentation.addMonitor(monitor)
+        try {
+            findText(R.string.connection_setup_connect_computer).click()
+            await("Connect computer must offer Android's share chooser") { chooser.get() != null }
+            val send = if (Build.VERSION.SDK_INT >= 33) requireNotNull(chooser.get()).getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                else @Suppress("DEPRECATION") requireNotNull(chooser.get()).getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+            requireNotNull(send)
+            assertEquals(Intent.ACTION_SEND, send.action)
+            assertEquals("application/json", send.type)
+            val uri = if (Build.VERSION.SDK_INT >= 33) send.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+                else @Suppress("DEPRECATION") send.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+            requireNotNull(uri)
+            assertEquals("content", uri.scheme)
+            assertEquals("${context.packageName}.fileprovider", uri.authority)
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null).use { cursor ->
+                requireNotNull(cursor)
+                assertTrue(cursor.moveToFirst())
+                assertEquals("sunlith-pairing.json", cursor.getString(0))
+            }
+            assertEquals(uri, send.clipData?.getItemAt(0)?.uri)
+            assertTrue(send.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+            assertTrue("Consent creates a pairing before the chooser opens.", DeviceLink.isPaired(context))
+            await("The Android chooser must be visible") { device.currentPackageName != context.packageName }
+            device.pressBack()
+            findText(R.string.connection_setup_share_again)
+        } finally {
+            instrumentation.removeMonitor(monitor)
+        }
+        assertTrue("Cancelling sharing keeps the pairing available for Share again.", DeviceLink.isPaired(context))
+        assertEquals(setOf(linkedCalendarId), DeviceLink.pairedCalendarIds(context))
         assertFalse(DeviceLink.state.value.running)
         assertFalse(hasConnectionNotification())
         assertEquals(setOf(displayCalendarId), settings.selectedCalendarIds)
+        assertEquals(setOf(displayCalendarId), vm.activeIds)
+        val cached = requireNotNull(DeviceLink.cachedPairingShare(context))
+        val previous = requireNotNull(activity)
+        instrumentation.runOnMainSync { previous.recreate() }
+        await("Pairing screen did not recreate") {
+            var restored = false
+            instrumentation.runOnMainSync {
+                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().firstOrNull { it !== previous }?.let {
+                    activity = it
+                    vm = ViewModelProvider(it)[SunlithViewModel::class.java]
+                    restored = true
+                }
+            }
+            restored
+        }
+        findText(R.string.connection_setup_share_again)
+        assertTrue("Recreation must reuse the current private pairing file.", cached == DeviceLink.cachedPairingShare(context))
+        findText(R.string.connection_setup_open_calendar).click()
+        await("Open calendar must exit setup") { vm.stack.isEmpty() }
+        assertTrue(DeviceLink.isPaired(context))
+        assertEquals(setOf(displayCalendarId), vm.activeIds)
+    }
+
+    @Test
+    fun cachedSharesRejectStaleAndUntrustedFilesAcrossReplacementAndRevocation(): Unit = with(fixture) {
+        val directory = File(context.cacheDir, "pairing-share").apply { mkdirs() }
+        val firstConfig = DeviceLink.createPairing(context, setOf(linkedCalendarId), "127.0.0.1")
+        val first = File(directory, "first-${UUID.randomUUID()}.json").apply { writeText(firstConfig) }
+        assertTrue(DeviceLink.cachedPairingShare(context) == first)
+        DeviceLinkStore.dropCache()
+        assertTrue("A saved share must still be usable after the pairing store reloads.", DeviceLink.cachedPairingShare(context) == first)
+        val replacement = DeviceLink.createPairing(context, setOf(displayCalendarId), "127.0.0.1")
+        assertFalse("Replacing access must delete old share files.", first.exists())
+        assertNull(DeviceLink.cachedPairingShare(context))
+        File(directory, "stale.json").writeText(firstConfig)
+        File(directory, "broken.json").writeText("{")
+        File(directory, "wrong-type.txt").writeText(replacement)
+        val outside = File(context.cacheDir, "outside-pairing-${UUID.randomUUID()}.json").apply { writeText(replacement) }
+        try {
+            assertNull("Only current JSON credentials inside the private share directory may be offered.", DeviceLink.cachedPairingShare(context))
+            val current = File(directory, "current-${UUID.randomUUID()}.json").apply { writeText(replacement) }
+            assertTrue(DeviceLink.cachedPairingShare(context) == current)
+            DeviceLink.revoke(context)
+            assertFalse(current.exists())
+            assertTrue(directory.listFiles().orEmpty().none { it.isFile })
+            assertNull(DeviceLink.cachedPairingShare(context))
+            current.writeText(replacement)
+            DeviceLinkStore.dropCache()
+            assertNull("A restored file cannot revive revoked access.", DeviceLink.cachedPairingShare(context))
+        } finally {
+            outside.delete()
+        }
     }
 
     @Test

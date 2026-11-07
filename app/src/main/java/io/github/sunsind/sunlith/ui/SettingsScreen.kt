@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -22,23 +23,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
@@ -48,10 +52,8 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -105,11 +107,12 @@ fun Context.openAppSettings() {
 }
 
 @Composable
-fun SettingsScreen(vm: SunlithViewModel) {
+fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
     val p = LocalPalette.current
     val context = LocalContext.current
-    var page by rememberSaveable { mutableStateOf("root") }
-    val back = { if (page == "root") vm.back() else page = "root" }
+    var page by rememberSaveable(initialPage) { mutableStateOf(initialPage) }
+    if (page == "widget") DisposableEffect(vm) { onDispose { vm.commitOpacity() } }
+    val back = { if (page == "root" || page == initialPage) vm.back() else page = "root" }
     BackHandler(onBack = back)
     var help by rememberSaveable { mutableStateOf<Int?>(null) }
     var exportChooser by rememberSaveable { mutableStateOf(false) }
@@ -129,151 +132,107 @@ fun SettingsScreen(vm: SunlithViewModel) {
 
     val title = when (page) {
         "appearance" -> R.string.beta_settings_appearance
-        "calendars" -> R.string.title_calendars
-        "navigation" -> R.string.custom_navigation
-        "agenda" -> R.string.custom_agenda
-        "month" -> R.string.custom_month_layout
-        "week" -> R.string.custom_week_layout
-        "day" -> R.string.custom_day_layout
-        "startup" -> R.string.beta_start_view
+        "general" -> R.string.settings_general
         "widget" -> R.string.beta_settings_widget
-        "reminders" -> R.string.beta_settings_reminders
-        "transfer" -> R.string.beta_settings_transfer
-        "about" -> R.string.beta_settings_about
         else -> R.string.title_settings
     }
     Scaffold(containerColor = p.background, topBar = { ScreenTopBar(stringResource(title), onNavigate = back) }) { pad ->
         key(page) {
-            Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 32.dp)) {
+            Column(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
                 when (page) {
                     "root" -> {
                         ClickRow(stringResource(R.string.device_link_title), stringResource(R.string.custom_computer_access_desc)) { vm.open(Screen.DeviceLink) }
                         HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                        ClickRow(stringResource(R.string.title_calendars), stringResource(R.string.custom_calendars_summary)) { page = "calendars" }
-                        listOf(
-                            "appearance" to R.string.beta_settings_appearance,
-                            "navigation" to R.string.custom_navigation,
-                            "agenda" to R.string.custom_agenda,
-                            "month" to R.string.custom_month_layout,
-                            "week" to R.string.custom_week_layout,
-                            "day" to R.string.custom_day_layout,
-                            "startup" to R.string.beta_start_view,
-                        ).forEach { (target, label) ->
-                            ClickRow(stringResource(label), null) { page = target }
-                        }
+                        ClickRow(stringResource(R.string.title_calendars), pluralStringResource(R.plurals.calendars_shown, vm.activeIds.size, vm.activeIds.size)) { vm.open(Screen.Calendars) }
+                        ClickRow(stringResource(R.string.beta_settings_appearance), null) { page = "appearance" }
+                        ClickRow(stringResource(R.string.settings_general), null) { page = "general" }
                         HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                        listOf(
-                            "widget" to R.string.beta_settings_widget,
-                            "reminders" to R.string.beta_settings_reminders,
-                            "transfer" to R.string.beta_settings_transfer,
-                        ).forEach { (target, label) ->
-                            ClickRow(stringResource(label), null) { page = target }
-                        }
+                        ClickRow(stringResource(R.string.beta_settings_widget), null) { page = "widget" }
                         HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                        ClickRow(stringResource(R.string.beta_settings_about), null) { page = "about" }
+                        ClickRow(stringResource(R.string.about_version, version), null, onClick = null)
+                        ClickRow(stringResource(R.string.about_source), SOURCE_URL.removePrefix("https://")) { context.openUrl(SOURCE_URL, vm) }
                     }
                     "appearance" -> {
-                        ToggleRow(stringResource(R.string.beta_follow_system), null, vm.themeMode == "system") { follow ->
-                            vm.setTheme(if (follow) "system" else if (p.dark) "dark" else "light")
-                        }
-                        if (vm.themeMode != "system") {
-                            ToggleRow(stringResource(R.string.beta_dark_theme), null, vm.themeMode == "dark") { vm.setTheme(if (it) "dark" else "light") }
-                        }
-                        SectionTitle(stringResource(R.string.custom_colors))
-                        ChoiceRow(stringResource(R.string.custom_material_you), vm.materialYou) { vm.changeMaterialYou(true) }
-                        ChoiceRow(stringResource(R.string.custom_neutral), !vm.materialYou) { vm.changeMaterialYou(false) }
-                        SettingsNote(stringResource(if (Build.VERSION.SDK_INT >= 31) R.string.custom_material_you_desc else R.string.custom_material_you_fallback))
-                        LauncherIconSection(vm)
                         SectionTitle(stringResource(R.string.custom_presets))
-                        SettingsNote(stringResource(R.string.custom_presets_desc))
                         if (vm.layoutPreset == "custom") SettingsNote(stringResource(R.string.custom_preset_active))
                         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                             LayoutPresetChoices(vm.layoutPreset, vm::applyLayoutPreset)
                         }
+                        LauncherIconSection(vm)
+                        SectionTitle(stringResource(R.string.settings_theme))
+                        Column(Modifier.selectableGroup()) {
+                            listOf(
+                                "system" to R.string.theme_system,
+                                "light" to R.string.theme_light,
+                                "dark" to R.string.theme_dark,
+                            ).forEach { (value, label) ->
+                                ChoiceRow(stringResource(label), vm.themeMode == value) { vm.setTheme(value) }
+                            }
+                        }
+                        SectionTitle(stringResource(R.string.custom_colors))
+                        ToggleRow(
+                            stringResource(R.string.settings_wallpaper_colors),
+                            if (Build.VERSION.SDK_INT < 31) stringResource(R.string.custom_material_you_fallback) else null,
+                            vm.materialYou,
+                            vm::changeMaterialYou,
+                        )
                     }
-                    "calendars" -> {
-                        SectionTitle(stringResource(R.string.custom_displayed_calendars))
-                        SettingsNote(stringResource(R.string.custom_displayed_calendars_desc))
-                        ClickRow(stringResource(R.string.settings_choose_calendars), pluralStringResource(R.plurals.calendars_shown, vm.activeIds.size, vm.activeIds.size)) { vm.open(Screen.Calendars) }
-                        if (!vm.hasSunlithCalendar) ClickRow(stringResource(R.string.action_create_local), null) { vm.createLocalCalendar() }
-                    }
-                    "navigation" -> {
-                        ToggleRow(stringResource(R.string.custom_navigation_arrows), stringResource(R.string.custom_navigation_arrows_desc), vm.showNavigationArrows, vm::changeShowNavigationArrows)
-                        ToggleRow(stringResource(R.string.custom_swipe_navigation), stringResource(R.string.custom_swipe_navigation_desc), vm.swipeNavigation, vm::changeSwipeNavigation)
+                    "general" -> {
+                        SectionTitle(stringResource(R.string.beta_start_view))
+                        Column(Modifier.selectableGroup()) {
+                            listOf("Month" to R.string.view_month, "Week" to R.string.view_week, "Day" to R.string.view_day, "last" to R.string.beta_last_view).forEach { (value, label) ->
+                                ChoiceRow(stringResource(label), vm.startView == value) { vm.changeStartView(value) }
+                            }
+                        }
+                        SectionTitle(stringResource(R.string.custom_navigation))
+                        ToggleRow(stringResource(R.string.custom_navigation_arrows), null, vm.showNavigationArrows, vm::changeShowNavigationArrows)
+                        ToggleRow(stringResource(R.string.custom_swipe_navigation), null, vm.swipeNavigation, vm::changeSwipeNavigation)
                         ToggleRow(stringResource(R.string.beta_navigation_animation), null, vm.navigationAnimation, vm::changeNavigationAnimation)
-                    }
-                    "month" -> {
+
                         SectionTitle(stringResource(R.string.custom_month_layout))
-                        listOf("split" to R.string.custom_month_split, "full" to R.string.custom_month_full).forEach { (value, label) ->
-                            ChoiceRow(stringResource(label), vm.monthLayout == value) { vm.changeMonthLayout(value) }
+                        Column(Modifier.selectableGroup()) {
+                            listOf("split" to R.string.custom_month_split, "full" to R.string.custom_month_full).forEach { (value, label) ->
+                                ChoiceRow(stringResource(label), vm.monthLayout == value) { vm.changeMonthLayout(value) }
+                            }
                         }
-                        SettingsNote(stringResource(R.string.custom_month_layout_desc))
                         if (vm.monthLayout == "split") ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
-                    }
-                    "week" -> {
+
                         SectionTitle(stringResource(R.string.custom_week_layout))
-                        listOf("list" to R.string.custom_list, "timeline" to R.string.custom_timeline).forEach { (value, label) ->
-                            ChoiceRow(stringResource(label), vm.weekLayout == value) { vm.changeWeekLayout(value) }
+                        Column(Modifier.selectableGroup()) {
+                            listOf("list" to R.string.custom_list, "timeline" to R.string.custom_timeline).forEach { (value, label) ->
+                                ChoiceRow(stringResource(label), vm.weekLayout == value) { vm.changeWeekLayout(value) }
+                            }
                         }
-                        SettingsNote(stringResource(R.string.custom_week_layout_desc))
                         if (vm.weekLayout == "timeline") {
                             SectionTitle(stringResource(R.string.custom_visible_week_days))
-                            listOf(3 to R.string.custom_three_days, 7 to R.string.custom_seven_days).forEach { (value, label) ->
-                                ChoiceRow(stringResource(label), vm.visibleWeekDays == value) { vm.changeVisibleWeekDays(value) }
+                            Column(Modifier.selectableGroup()) {
+                                listOf(3 to R.string.custom_three_days, 7 to R.string.custom_seven_days).forEach { (value, label) ->
+                                    ChoiceRow(stringResource(label), vm.visibleWeekDays == value) { vm.changeVisibleWeekDays(value) }
+                                }
                             }
                         }
                         ToggleRow(stringResource(R.string.settings_monday), null, vm.weekStartsMonday, vm::setMondayFirst)
-                    }
-                    "day" -> {
+
                         SectionTitle(stringResource(R.string.custom_day_layout))
-                        listOf("cards" to R.string.custom_cards, "timeline" to R.string.custom_timeline, "schedule" to R.string.custom_schedule).forEach { (value, label) ->
-                            ChoiceRow(stringResource(label), vm.dayLayout == value) { vm.changeDayLayout(value) }
+                        Column(Modifier.selectableGroup()) {
+                            listOf("cards" to R.string.custom_cards, "timeline" to R.string.custom_timeline, "schedule" to R.string.custom_schedule).forEach { (value, label) ->
+                                ChoiceRow(stringResource(label), vm.dayLayout == value) { vm.changeDayLayout(value) }
+                            }
                         }
-                        SettingsNote(stringResource(R.string.custom_day_layout_desc))
-                    }
-                    "startup" -> {
-                        SectionTitle(stringResource(R.string.beta_start_view))
-                        listOf("Month" to R.string.view_month, "Week" to R.string.view_week, "Day" to R.string.view_day, "last" to R.string.beta_last_view).forEach { (value, label) ->
-                            ChoiceRow(stringResource(label), vm.startView == value) { vm.changeStartView(value) }
-                        }
-                    }
-                    "agenda" -> {
+
                         SectionTitle(stringResource(R.string.custom_agenda_range))
-                        listOf("continuous" to R.string.custom_continuous, "month" to R.string.view_month, "week" to R.string.view_week, "day" to R.string.view_day).forEach { (value, label) ->
-                            ChoiceRow(stringResource(label), vm.agendaRange == value) { vm.changeAgendaRange(value) }
+                        Column(Modifier.selectableGroup()) {
+                            listOf("continuous" to R.string.custom_continuous, "month" to R.string.view_month, "week" to R.string.view_week, "day" to R.string.view_day).forEach { (value, label) ->
+                                ChoiceRow(stringResource(label), vm.agendaRange == value) { vm.changeAgendaRange(value) }
+                            }
                         }
-                        SettingsNote(stringResource(R.string.custom_agenda_range_desc))
                         SectionTitle(stringResource(R.string.beta_agenda_display))
-                        listOf("all" to R.string.beta_all_days, "compact" to R.string.beta_compact_days, "events" to R.string.beta_event_days).forEach { (value, label) ->
-                            ChoiceRow(stringResource(label), vm.agendaDisplay == value) { vm.changeAgendaDisplay(value) }
+                        Column(Modifier.selectableGroup()) {
+                            listOf("all" to R.string.beta_all_days, "compact" to R.string.beta_compact_days, "events" to R.string.beta_event_days).forEach { (value, label) ->
+                                ChoiceRow(stringResource(label), vm.agendaDisplay == value) { vm.changeAgendaDisplay(value) }
+                            }
                         }
-                    }
-                    "widget" -> {
-                        SectionTitle(stringResource(R.string.beta_widget_days))
-                        var days by remember(vm.widgetDays) { mutableStateOf(vm.widgetDays.toFloat()) }
-                        val daysValue = pluralStringResource(R.plurals.beta_widget_days_value, Math.round(days), Math.round(days))
-                        Text(daysValue, Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyLarge)
-                        val daysLabel = stringResource(R.string.beta_widget_days)
-                        Slider(
-                            value = days, onValueChange = { days = Math.round(it).toFloat() },
-                            onValueChangeFinished = { vm.changeWidgetDays(Math.round(days)) },
-                            valueRange = 1f..31f, steps = 29,
-                            modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp).semantics { contentDescription = daysLabel; stateDescription = daysValue },
-                            colors = sliderColors(),
-                        )
-                        ToggleRow(stringResource(R.string.beta_widget_empty_days), null, vm.widgetShowEmptyDays, vm::changeWidgetShowEmptyDays)
-                        ToggleRow(stringResource(R.string.beta_widget_calendar_name), null, vm.widgetShowCalendarName, vm::changeWidgetShowCalendarName)
-                        SectionTitle(stringResource(R.string.settings_widget_opacity))
-                        Text("${vm.widgetOpacity}%", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyLarge)
-                        val opacityLabel = stringResource(R.string.settings_widget_opacity)
-                        Slider(
-                            value = vm.widgetOpacity.toFloat(), onValueChange = { vm.previewOpacity(Math.round(it)) },
-                            onValueChangeFinished = vm::commitOpacity, valueRange = 0f..100f, steps = 19,
-                            modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp).semantics { contentDescription = opacityLabel; stateDescription = "${vm.widgetOpacity}%" },
-                            colors = sliderColors(),
-                        )
-                    }
-                    "reminders" -> {
+                        SectionTitle(stringResource(R.string.beta_settings_reminders))
                         ToggleRow(
                             stringResource(R.string.settings_reminders_toggle),
                             if (vm.remindersEnabled && !vm.notificationsGranted) stringResource(R.string.settings_reminders_blocked) else null,
@@ -285,8 +244,7 @@ fun SettingsScreen(vm: SunlithViewModel) {
                             } else vm.setReminders(true)
                         }
                         ClickRow(stringResource(R.string.beta_notification_settings), null) { context.openAppSettings() }
-                    }
-                    "transfer" -> {
+                        SectionTitle(stringResource(R.string.beta_settings_transfer))
                         ClickRow(stringResource(R.string.settings_import), null) {
                             try { importLauncher.launch(IcsTypes) } catch (_: ActivityNotFoundException) { vm.message(context.getString(R.string.msg_no_file_picker)) }
                         }
@@ -296,10 +254,33 @@ fun SettingsScreen(vm: SunlithViewModel) {
                         }
                         ClickRow(stringResource(R.string.help_migration_title), null) { help = R.string.help_migration_title }
                     }
-                    "about" -> {
-                        ClickRow(stringResource(R.string.about_version, version), null, onClick = null)
-                        ClickRow(stringResource(R.string.about_source), SOURCE_URL.removePrefix("https://")) { context.openUrl(SOURCE_URL, vm) }
+                    "widget" -> {
+                        SettingsNote(stringResource(R.string.settings_widget_shared))
+                        SectionTitle(stringResource(R.string.beta_widget_days))
+                        var days by remember(vm.widgetDays) { mutableStateOf(vm.widgetDays.toFloat()) }
+                        val daysValue = pluralStringResource(R.plurals.beta_widget_days_value, Math.round(days), Math.round(days))
+                        Text(daysValue, Modifier.padding(horizontal = 16.dp), color = p.ink, style = MaterialTheme.typography.bodyLarge)
+                        val daysLabel = stringResource(R.string.beta_widget_days)
+                        Slider(
+                            value = days, onValueChange = { days = Math.round(it).toFloat() },
+                            onValueChangeFinished = { vm.changeWidgetDays(Math.round(days)) },
+                            valueRange = 1f..31f, steps = 29,
+                            modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp).semantics { contentDescription = daysLabel; stateDescription = daysValue },
+                            colors = sliderColors(),
+                        )
+                        ToggleRow(stringResource(R.string.beta_widget_empty_days), null, vm.widgetShowEmptyDays, vm::changeWidgetShowEmptyDays)
+                        ToggleRow(stringResource(R.string.beta_widget_calendar_name), null, vm.widgetShowCalendarName, vm::changeWidgetShowCalendarName)
+                        SectionTitle(stringResource(R.string.settings_widget_opacity))
+                        Text("${vm.widgetOpacity}%", Modifier.padding(horizontal = 16.dp), color = p.ink, style = MaterialTheme.typography.bodyLarge)
+                        val opacityLabel = stringResource(R.string.settings_widget_opacity)
+                        Slider(
+                            value = vm.widgetOpacity.toFloat(), onValueChange = { vm.previewOpacity(Math.round(it)) },
+                            onValueChangeFinished = vm::commitOpacity, valueRange = 0f..100f, steps = 19,
+                            modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp).semantics { contentDescription = opacityLabel; stateDescription = "${vm.widgetOpacity}%" },
+                            colors = sliderColors(),
+                        )
                     }
+
                 }
             }
         }
@@ -330,13 +311,19 @@ private fun LauncherIconSection(vm: SunlithViewModel) {
     val p = LocalPalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val activity = LocalActivity.current
     var selected by remember { mutableStateOf(LauncherIcons.saved(context)) }
+    var pendingStyle by rememberSaveable { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val failed = stringResource(R.string.launcher_icon_failed)
-    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { LauncherIcons.reconcile(context) } }
+    val styles = remember { listOf(LauncherIcons.Style.Light, LauncherIcons.Style.Dark) }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { LauncherIcons.reconcile(context) }
+        selected = LauncherIcons.saved(context)
+    }
     SectionTitle(stringResource(R.string.launcher_icon_title))
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        LauncherIcons.Style.entries.forEach { style ->
+        styles.forEach { style ->
             val chosen = selected == style
             val iconLabel = stringResource(R.string.launcher_icon_choice, stringResource(style.label))
             val shape = RoundedCornerShape(14.dp)
@@ -344,12 +331,8 @@ private fun LauncherIconSection(vm: SunlithViewModel) {
                 Modifier.weight(1f).clip(shape).border(if (chosen) 2.dp else 1.dp, if (chosen) p.accent else p.line, shape)
                     .semantics { contentDescription = iconLabel }
                     .selectable(chosen, enabled = !busy, role = Role.RadioButton) {
-                        if (!chosen) {
-                            busy = true
-                            scope.launch {
-                                if (withContext(Dispatchers.IO) { LauncherIcons.select(context, style) }) selected = style else vm.message(failed)
-                                busy = false
-                            }
+                        if (!chosen && !busy) {
+                            pendingStyle = style.key
                         }
                     }
                     .padding(vertical = 12.dp, horizontal = 4.dp),
@@ -361,7 +344,36 @@ private fun LauncherIconSection(vm: SunlithViewModel) {
             }
         }
     }
-    SettingsNote(stringResource(R.string.launcher_icon_desc))
+    val target = styles.firstOrNull { it.key == pendingStyle }
+    if (target != null) {
+        AlertDialog(
+            onDismissRequest = { if (!busy) pendingStyle = null },
+            containerColor = p.surface,
+            title = { Text(stringResource(R.string.launcher_icon_notice_title), color = p.ink) },
+            text = { Text(stringResource(R.string.launcher_icon_notice_body), color = p.ink, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        val chosenStyle = target
+                        pendingStyle = null
+                        busy = true
+                        scope.launch {
+                            val applied = withContext(Dispatchers.IO) { LauncherIcons.select(context, chosenStyle) }
+                            busy = false
+                            if (applied) {
+                                selected = chosenStyle
+                                activity?.recreate()
+                            } else vm.message(failed)
+                        }
+                    },
+                ) { Text(stringResource(R.string.action_ok)) }
+            },
+            dismissButton = {
+                TextButton(enabled = !busy, onClick = { pendingStyle = null }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
+    }
 }
 
 @Composable
@@ -389,7 +401,7 @@ private fun ClickRow(title: String, subtitle: String?, onClick: (() -> Unit)?) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = p.ink)
             subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = p.muted) }
         }
-        if (onClick != null) Icon(Icons.Outlined.ChevronRight, null, Modifier.padding(start = 12.dp).size(20.dp), tint = p.muted)
+        if (onClick != null) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.padding(start = 12.dp).size(20.dp), tint = p.muted)
     }
 }
 
@@ -397,7 +409,7 @@ private fun ClickRow(title: String, subtitle: String?, onClick: (() -> Unit)?) {
 private fun ChoiceRow(title: String, selected: Boolean, onSelect: () -> Unit) {
     val p = LocalPalette.current
     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).selectable(selected, role = Role.RadioButton, onClick = onSelect).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Text(title, Modifier.weight(1f), color = p.ink, style = MaterialTheme.typography.bodyLarge)
         RadioButton(selected, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = p.accent, unselectedColor = p.faint))
     }
 }
@@ -512,18 +524,20 @@ private fun ImportDialog(vm: SunlithViewModel) {
                                 Text(stringResource(R.string.editor_no_writable), color = p.muted)
                                 TextButton(onClick = { vm.createLocalCalendar { vm.chooseImportCalendar(it) } }) { Text(stringResource(R.string.action_create_local)) }
                             }
-                            writable.forEach { cal ->
-                                Row(
-                                    Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(state.calendarId == cal.id, role = Role.RadioButton) { vm.chooseImportCalendar(cal.id) },
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(selected = state.calendarId == cal.id, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = p.accent, unselectedColor = p.faint))
-                                    Spacer(Modifier.width(8.dp))
-                                    ColorDot(cal.color)
-                                    Spacer(Modifier.width(10.dp))
-                                    Column {
-                                        Text(cal.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                        if (cal.account.isNotBlank() && cal.account != cal.name) Text(cal.account, color = p.muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Column(Modifier.selectableGroup()) {
+                                writable.forEach { cal ->
+                                    Row(
+                                        Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(state.calendarId == cal.id, role = Role.RadioButton) { vm.chooseImportCalendar(cal.id) },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(selected = state.calendarId == cal.id, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = p.accent, unselectedColor = p.faint))
+                                        Spacer(Modifier.width(8.dp))
+                                        ColorDot(cal.color)
+                                        Spacer(Modifier.width(10.dp))
+                                        Column {
+                                            Text(cal.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                            if (cal.account.isNotBlank() && cal.account != cal.name) Text(cal.account, color = p.muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
                                     }
                                 }
                             }

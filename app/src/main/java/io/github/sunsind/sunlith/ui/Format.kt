@@ -31,6 +31,8 @@ class Formats(private val context: Context, val locale: Locale) {
     private val dayShort = pattern("EEEdMMM")
     private val dayShortYear = pattern("EEEdMMMy")
     private val dayMonth = pattern("dMMM")
+    private val numericDayMonth = pattern("Md")
+    private val shortMonth = pattern("MMM")
     private val monthYear = pattern("MMMMy")
     private val monthOnly = pattern("LLLL")
 
@@ -43,6 +45,8 @@ class Formats(private val context: Context, val locale: Locale) {
     fun dayShort(d: LocalDate): String = (if (d.year == LocalDate.now().year) dayShort else dayShortYear).format(d).cap()
     fun dayShortWithYear(d: LocalDate): String = dayShortYear.format(d).cap()
     fun dayMonth(d: LocalDate): String = dayMonth.format(d)
+    fun numericDayMonth(d: LocalDate): String = numericDayMonth.format(d)
+    fun shortMonth(m: YearMonth): String = shortMonth.format(m.atDay(1)).cap()
     fun monthName(m: YearMonth): String = monthOnly.format(m.atDay(1)).cap()
     fun monthYear(m: YearMonth): String = monthYear.format(m.atDay(1)).cap()
     fun weekdayShort(d: DayOfWeek): String = d.getDisplayName(TextStyle.SHORT, locale).trimEnd('.').cap()

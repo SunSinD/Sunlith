@@ -8,12 +8,16 @@ import android.os.Build
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import io.github.sunsind.sunlith.data.CalendarRepository
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 data class DeviceLinkState(val running: Boolean = false, val error: String? = null)
+
+enum class DeviceLinkAddressKind { TAILSCALE, VPN, LOCAL_NETWORK }
+data class DeviceLinkAddress(val host: String, val kind: DeviceLinkAddressKind)
 
 /**
  * [pairedAtMillis] is null when not paired or for pairings made before this was saved. [lastSuccessMillis] is the last time
@@ -64,6 +68,9 @@ object DeviceLink {
 
     fun addresses(context: Context): List<String> = DeviceLinkNetwork.addresses(context.applicationContext)
 
+    fun addressChoices(context: Context): List<DeviceLinkAddress> = DeviceLinkNetwork.addressChoices(context.applicationContext)
+
+    @Synchronized
     fun createPairing(context: Context, calendarIds: Set<Long>, host: String): String {
         val app = context.applicationContext
         check(Looper.myLooper() != Looper.getMainLooper()) { "Pairing must run off the main thread." }
@@ -72,6 +79,7 @@ object DeviceLink {
         val existing = CalendarRepository(app).calendars().mapTo(mutableSetOf()) { it.id }
         require(calendarIds.all { it in existing }) { "One of the selected calendars is no longer available." }
         val fingerprint = DeviceLinkTls.fingerprint()
+        clearPairingShares(app)
         val token = DeviceLinkStore.pair(app, calendarIds)
         activityChanged()
         return String(DeviceLinkJson.write(linkedMapOf(
@@ -83,9 +91,11 @@ object DeviceLink {
     }
 
     /** Removes the pairing, pairing time and last success time. The change history stays until [clearHistory]. */
+    @Synchronized
     fun revoke(context: Context) {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Revoking must run off the main thread." }
         DeviceLinkStore.clear(context.applicationContext)
+        clearPairingShares(context)
         activityChanged()
         stop(context)
     }
@@ -93,6 +103,20 @@ object DeviceLink {
     fun isPaired(context: Context): Boolean = DeviceLinkStore.pairing(context.applicationContext) != null
 
     fun pairedCalendarIds(context: Context): Set<Long> = DeviceLinkStore.pairing(context.applicationContext)?.calendarIds.orEmpty()
+
+    @Synchronized
+    fun cachedPairingShare(context: Context): File? = File(context.cacheDir, "pairing-share").listFiles()
+        ?.firstOrNull { file ->
+            if (!file.isFile || !file.name.endsWith(".json")) false
+            else runCatching {
+                val token = org.json.JSONObject(file.readText()).getString("token")
+                DeviceLinkStore.authorize(context, token) != null
+            }.getOrDefault(false)
+        }
+
+    private fun clearPairingShares(context: Context) {
+        File(context.cacheDir, "pairing-share").listFiles()?.filter { it.isFile }?.forEach { it.delete() }
+    }
 
     internal fun update(value: DeviceLinkState) { mutableState.value = value }
 

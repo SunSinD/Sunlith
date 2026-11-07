@@ -145,6 +145,23 @@ class SettingsPreferencesTest {
     }
 
     @Test
+    fun retiredSchedulePresetKeepsItsExistingLayoutsAsCustom() {
+        isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit()
+            .putString("layout_preset", "schedule")
+            .putString("month_layout", "split")
+            .putString("week_layout", "list")
+            .putString("day_layout", "schedule")
+            .putInt("visible_week_days", 3)
+            .commit()
+        val restored = SettingsStore(isolated)
+        assertEquals("custom", restored.layoutPreset)
+        assertEquals("split", restored.monthLayout)
+        assertEquals("list", restored.weekLayout)
+        assertEquals("schedule", restored.dayLayout)
+        assertEquals(3, restored.visibleWeekDays)
+    }
+
+    @Test
     fun rejectedLayoutChoicesPreserveTheLastValidSelection() {
         val settings = SettingsStore(isolated).apply {
             agendaRange = "day"

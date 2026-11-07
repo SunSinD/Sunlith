@@ -1,0 +1,8 @@
+<resources>
+    <string name="calendar_preview_events">Aperçu des événements</string>
+    <plurals name="calendar_more_events">
+        <item quantity="one">%d autre événement</item>
+        <item quantity="many">%d autres événements</item>
+        <item quantity="other">%d autres événements</item>
+    </plurals>
+</resources>

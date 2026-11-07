@@ -3,6 +3,7 @@ package io.github.sunsind.sunlith.ui
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -136,7 +137,7 @@ fun SunlithTheme(themeMode: String, materialYou: Boolean = true, content: @Compo
         titleMedium = base.titleMedium.copy(fontWeight = FontWeight.Medium),
         labelLarge = base.labelLarge.copy(fontWeight = FontWeight.Medium),
     )
-    CompositionLocalProvider(LocalPalette provides palette) {
+    CompositionLocalProvider(LocalPalette provides palette, LocalContentColor provides palette.ink) {
         MaterialTheme(colorScheme = scheme, typography = type, content = content)
     }
 }
