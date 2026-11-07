@@ -2,6 +2,82 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.2 final distribution verification, 2026-11-07
+
+The exact packaged app/test pair is nondebuggable and R8-minified, version
+0.6.2/code 13. Both APKs retain the published signing certificate. The distribution
+build preserves 230 classes and 681 exact instrumentation API members, with method
+optimization and obfuscation enabled. Plain release remains unconstrained.
+
+| Check | Passed | Failed | Skipped | Seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Full API 36 | 159 | 0 | 2 | 996.411 |
+| Full API 30 | 157 | 0 | 2 | 1035.840 |
+| Targeted API 36 | 25 | 0 | 0 | 471.969 |
+| Targeted API 30 | 25 | 0 | 0 | 460.449 |
+| Settings at 320dp/200% text | 2 | 0 | 0 | 305.624 |
+| Settings at 360dp/200% text | 2 | 0 | 0 | 182.743 |
+| Large-text Cards and timeline overlaps | 3 | 0 | 0 | 101.326 |
+| Notification recovery | 1 | 0 | 0 | 4.503 |
+| 24-hour axis capture | 1 | 0 | 0 | 46.360 |
+| External Android provider fixture | 1 | 0 | 0 | 4.967 |
+| JVM | 26 | 0 | 0 | |
+
+Lint has zero errors, 136 warnings and seven hints. Desktop tests passed 44 cases
+with one opt-in skip, syntax checks passed, and the audit reported no vulnerabilities.
+All eight external tools passed against this exact APK. Full runner discovery and
+terminal counts agree; API-specific exclusions and opt-in skips are recorded in the
+summary. All 117 Android source, resource, test and build inputs matched before and
+after final runs and matched the packaged pair's installed byte hashes on both APIs.
+
+An actual update from the published 0.6.1 APK, without clearing data, retained an
+isolated calendar, event and private sentinel, changed legacy Cards to Timeline,
+and preserved independent Month/Week choices. Tests cover subsequent explicit
+Events only selection and recreation, existing Timeline/Schedule preferences,
+direct Grid opening for empty/ordinary/crowded dates, no overflow count or preview,
+both midnight endpoints, separate same-start card taps/durations, distinct instants,
+and the earlier focus, paging, icon-reopen, widget and connection regressions.
+
+The screenshot index records 356 fresh final PNGs, including English/French Settings
+pages and choices, scroll positions, 320/360dp at 200% text, actual Light/Dark launcher
+icons, vector/monochrome/onboarding artwork, direct Grid/Day, simultaneous Cards,
+timeline overlaps, RTL and both ends of the hour rail. Connection title and button
+clipping found at large French text sizes was fixed before the final freeze by
+moving Refresh out of the header and stacking secondary buttons at large font sizes.
+
+Earlier failed gallery sequences, corrected automation selectors and the empty
+timeline's misleading UiAutomator scroll return value are retained in the summary.
+The latter was replaced by assertions on actual rendered rail movement. The gallery
+runs with and without optional captures; its final selections and assertions remain.
+An adb transport failure occurred after the API 30 suite had completed successfully;
+host recovery, installed hashes and cleanup were verified afterward.
+
+The final Grid frame fixture used 24 all-day events, two warm-up swipes and six
+measured alternating swipes. API 36 recorded 239 frames, including 112 landing
+frames with P50 17.60ms, P95 18.64ms and max 19.31ms. This single fixture does not
+establish steady 60 FPS, performance across every layout, or physical-phone motion.
+Older comparison campaigns below belong to their stated APKs.
+
+App SHA-256 (`2,608,766` bytes):
+
+```text
+294a4023dd44664bc59727ef0302d205a3cc5e3211486ad9bbeb69a6f6da1442
+```
+
+Test SHA-256 (`563,321` bytes):
+
+```text
+78ad6fa94c11dae4e0aea697fd29c84d820ae67044ba53fa621b5c48fea7e13d
+```
+
+Both certificates: `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039`.
+Evidence: `.toolchain/v0.6.2-final-verification-summary.json`,
+`v0.6.2-final-r8-full-emulator-5556.log`, `v0.6.2-final-r8-full-emulator-5554.log`,
+`v0.6.2-final-image-index.json` and `v0.6.2-final-r8-review-images/`.
+Both emulators are stopped with settings restored; synthetic fixtures, private
+exports, credentials and forwarding were removed while existing local data was
+preserved. Physical TalkBack, vendor launchers, Taildrop and Doze remain unverified.
+
 ## 0.6.1 final distribution verification, 2026-11-07
 
 The packaged APK includes the final all-day Cards correction. Opening an empty

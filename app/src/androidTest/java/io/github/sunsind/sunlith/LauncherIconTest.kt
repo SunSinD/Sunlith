@@ -85,6 +85,28 @@ class LauncherIconTest {
     }
 
     @Test
+    fun calendarBodyRemainsVisibleAtLauncherSizeInEveryForegroundAndTheOnboardingMark() {
+        val foregrounds = listOf(
+            R.drawable.ic_launcher_foreground to "#C4552A",
+            R.drawable.ic_launcher_foreground_dark to "#DD8854",
+            R.drawable.ic_launcher_foreground_neutral to "#3C3C3C",
+            R.drawable.ic_launcher_monochrome to "#FFFFFF",
+        )
+        foregrounds.forEach { (resource, color) ->
+            val monochrome = resource == R.drawable.ic_launcher_monochrome
+            val scale = if (monochrome) 0.075f else 0.08f
+            val offsetX = if (monochrome) 15.6f else 13.04f
+            val offsetY = if (monochrome) 14.7375f else 12.12f
+            assertCalendarOutline(resource, 48, Color.parseColor(color)) { x, y ->
+                (offsetX + x * scale) * 48 / 108 to (offsetY + y * scale) * 48 / 108
+            }
+        }
+        assertCalendarOutline(R.drawable.sunlith_mark, 96, Color.parseColor("#C4552A")) { x, y ->
+            (x - 182) * 96 / 660 to (y - 193.5f) * 96 / 660
+        }
+    }
+
+    @Test
     fun manifestKeepsLightAsTheOnlyDefaultLauncherEntry() {
         Style.entries.forEach { style ->
             val info = pm.getActivityInfo(LauncherIcons.component(context, style), PackageManager.MATCH_DISABLED_COMPONENTS)
@@ -193,6 +215,26 @@ class LauncherIconTest {
             }
         }
         assertLauncherIs(Style.Light)
+    }
+
+    private fun assertCalendarOutline(resource: Int, size: Int, color: Int, point: (Float, Float) -> Pair<Float, Float>) {
+        val drawable = requireNotNull(ContextCompat.getDrawable(context, resource))
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        try {
+            drawable.setBounds(0, 0, size, size)
+            drawable.draw(Canvas(bitmap))
+            listOf(226f to 500f, 798f to 500f, 512f to 256f, 512f to 812f).forEach { (x, y) ->
+                val (px, py) = point(x, y)
+                val visible = ((py.toInt() - 1)..(py.toInt() + 1)).any { row ->
+                    ((px.toInt() - 1)..(px.toInt() + 1)).any { column ->
+                        val pixel = bitmap.getPixel(column.coerceIn(0, size - 1), row.coerceIn(0, size - 1))
+                        Color.alpha(pixel) > 80 && kotlin.math.abs(Color.red(pixel) - Color.red(color)) < 30 &&
+                            kotlin.math.abs(Color.green(pixel) - Color.green(color)) < 30 && kotlin.math.abs(Color.blue(pixel) - Color.blue(color)) < 30
+                    }
+                }
+                assertTrue("Calendar outline $resource must remain visible at $size px near $x,$y.", visible)
+            }
+        } finally { bitmap.recycle() }
     }
 
     private fun assertLauncherIs(style: Style) {

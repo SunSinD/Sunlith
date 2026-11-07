@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -49,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,6 +73,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun DeviceLinkScreen(vm: SunlithViewModel) {
     val context = LocalContext.current
+    val largeText = LocalDensity.current.fontScale > 1.3f
     val p = LocalPalette.current
     val scope = rememberCoroutineScope()
     val connection by DeviceLink.state.collectAsState()
@@ -249,14 +252,20 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
     }
     Scaffold(containerColor = p.background, topBar = {
         ScreenTopBar(stringResource(R.string.device_link_title), onNavigate = vm::back, actions = {
-            TextButton(onClick = { refresh++; vm.reload() }, enabled = !busy) { Text(stringResource(R.string.action_refresh)) }
+            if (!largeText) TextButton(onClick = { refresh++; vm.reload() }, enabled = !busy) { Text(stringResource(R.string.action_refresh)) }
         })
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 40.dp)) {
             item {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (largeText) TextButton(onClick = { refresh++; vm.reload() }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), enabled = !busy) {
+                        Text(stringResource(R.string.action_refresh))
+                    }
                     Text(stringResource(R.string.device_link_lead), color = p.muted, style = MaterialTheme.typography.bodyMedium)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (largeText) {
+                        TextButton(onClick = { page = "history" }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) { Text(stringResource(R.string.device_link_history)) }
+                        TextButton(onClick = { page = "details" }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) { Text(stringResource(R.string.device_link_details)) }
+                    } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { page = "history" }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.device_link_history)) }
                         TextButton(onClick = { page = "details" }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.device_link_details)) }
                     }

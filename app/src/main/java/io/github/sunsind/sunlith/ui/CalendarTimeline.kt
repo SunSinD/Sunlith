@@ -200,7 +200,12 @@ internal fun Timeline(
     val minMinutes = ceil(minBlock / hour * 60f).toInt()
     val minColumn = with(density) { maxOf(40.dp, (titleStyle.fontSize * 3.2f).toDp()) }
     val minBlockWidth = with(density) { maxOf(32.dp, (titleStyle.fontSize * 2.6f).toDp()) }
-    val hourLabels = remember(f) { (1 until 24).map { f.time(LocalTime.of(it, 0)) } }
+    val hourLabels = remember(f) {
+        (0..24).map { hour ->
+            if (hour == 24 && f.is24Hour) String.format(f.locale, "%02d:%02d", 24, 0)
+            else f.time(LocalTime.of(hour % 24, 0))
+        }
+    }
     val allDayLabel = stringResource(R.string.all_day)
     val allDay = days.map { d -> eventsOn(d).filter { it.isTimelineBanner() } }
     val gutterLabels = if (allDay.any { it.isNotEmpty() }) {
@@ -337,7 +342,8 @@ private fun HourRail(labels: List<String>, style: TextStyle, hourPx: Float, modi
         val placeables = measurables.map { it.measure(Constraints(maxWidth = constraints.maxWidth)) }
         layout(constraints.maxWidth, constraints.maxHeight) {
             placeables.forEachIndexed { i, placeable ->
-                val y = ((i + 1) * hourPx - placeable.height / 2f).roundToInt()
+                val y = (i * hourPx - placeable.height / 2f).roundToInt()
+                    .coerceIn(0, (constraints.maxHeight - placeable.height).coerceAtLeast(0))
                 placeable.placeRelative((constraints.maxWidth - placeable.width - endPad).coerceAtLeast(0), y)
             }
         }

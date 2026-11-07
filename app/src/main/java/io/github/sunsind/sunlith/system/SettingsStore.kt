@@ -5,6 +5,15 @@ import android.content.Context
 class SettingsStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
 
+    init {
+        if (!prefs.getBoolean("day_timeline_default_v1", false)) {
+            // Older versions did not distinguish default Cards from an explicit choice.
+            val migration = prefs.edit().putBoolean("day_timeline_default_v1", true)
+            if (prefs.getString("day_layout", "cards") == "cards") migration.putString("day_layout", "timeline")
+            migration.apply()
+        }
+    }
+
     var selectedCalendarIds: Set<Long>
         get() = prefs.getStringSet("calendars", emptySet()).orEmpty().mapNotNull(String::toLongOrNull).toSet()
         set(value) { prefs.edit().putStringSet("calendars", value.map(Long::toString).toSet()).apply() }
@@ -86,7 +95,7 @@ class SettingsStore(context: Context) {
         set(value) { saveChoice("week_layout", value, setOf("list", "timeline")) }
 
     var dayLayout: String
-        get() = choice("day_layout", "cards", setOf("cards", "timeline", "schedule"))
+        get() = choice("day_layout", "timeline", setOf("cards", "timeline", "schedule"))
         set(value) { saveChoice("day_layout", value, setOf("cards", "timeline", "schedule")) }
 
     var visibleWeekDays: Int

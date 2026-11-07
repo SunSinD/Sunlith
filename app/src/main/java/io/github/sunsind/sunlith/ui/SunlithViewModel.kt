@@ -905,7 +905,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         val (monthChoice, weekChoice, dayChoice) = when (value) {
             "schedule" -> Triple("split", "list", "schedule")
             "planner" -> Triple("full", "timeline", "timeline")
-            else -> Triple("split", "list", "cards")
+            else -> Triple("split", "list", "timeline")
         }
         Snapshot.withMutableSnapshot {
             settings.monthLayout = monthChoice

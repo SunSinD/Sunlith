@@ -1,5 +1,15 @@
 # Changes
 
+## 0.6.2
+
+- Open Day with all hours by default; choose Events only or Compact schedule in General.
+- Switch old Event cards preferences to All hours once; later explicit choices persist.
+- Put General first and group settings by behavior, appearance and purpose.
+- Restore the calendar outline in launcher icons and onboarding artwork.
+- Remove the month grid's extra-event count and preview popup; every date opens Day directly.
+- Share one time-column label between event cards starting at the same instant while keeping each event separate.
+- Fit Computer connection controls at large text sizes.
+
 ## 0.6.1
 
 - Distribute a nondebuggable, optimized APK with the existing signing certificate.

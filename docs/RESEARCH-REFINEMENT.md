@@ -1,6 +1,6 @@
 # Calendar usability refinement
 
-Research and design decisions for 0.6.0 and 0.6.1, checked 2026-11-07. These are product decisions
+Research and design decisions through 0.6.2, checked 2026-11-07. These are product decisions
 informed by documentation and the reported screenshots, not results of a user study.
 
 ## Calendar navigation and event visibility
@@ -10,14 +10,14 @@ explicitly names Schedule and Month, describes a list of each day's events, and 
 changing view and jumping to today. It does not enumerate every view or specify the
 visual treatment of overflow. Sunlith keeps two distinct starting layouts: Agenda for a
 month above an event list, and Grid for event titles in the month and hourly timelines.
-Individual Month, Week and Day choices remain available.
+Month and Week choices remain in Appearance; the Day view choice lives in General.
 
 A fixed-height month cannot display arbitrarily long titles or unlimited events without
 losing its overview. Growing rows makes the month jump and scrolling every cell is hard
-to discover. Holding a date or tapping its extra-event count opens a scrollable sheet
-with full titles and time ranges. Date tapping still opens Day. This uses the
-[Material bottom-sheet pattern](https://m3.material.io/components/bottom-sheets/guidelines);
-it is Sunlith's choice, not a claim about Google's implementation.
+to discover. Every date now opens Day directly, including empty and crowded dates.
+The former extra-event count, long-press preview and bottom sheet were removed after
+feedback that their behavior was inconsistent and hard to discover. Every event
+remains available in Day; the month is a bounded overview rather than a complete list.
 
 Opening Day or explicitly picking a date requests its first timed event, including
 today, with a brief focus ring. The top renders before the gentle scroll begins;
@@ -84,9 +84,10 @@ wraps legacy icons with an opaque white background instead. Neither route reliab
 provides a background-free silhouette.
 
 Light and Dark now use the calendar paper itself as the adaptive surface, cream and
-charcoal respectively. The separate card shadow and outline are removed; the launcher
-mask becomes the page outline. Pins, sun and date dots retain their positions. This
-removes the separate white/black surround without depending on broken transparency.
+charcoal respectively. A rounded calendar outline now connects the pins, sun and
+date dots into a recognizable calendar; the earlier outline-free symbol appeared
+to float. The launcher still masks the opaque paper surface. The calendar border
+does not restore the removed horizontal header stripe or a separate card shadow.
 The SVG references use the same paper colors. Themed icons still use a launcher-chosen
 filled shape; an app cannot require an unmasked icon on every home screen.
 The monochrome layer remains available for themed icons. A short confirmation applies
@@ -109,13 +110,39 @@ activity, so leaving Appearance or recreation cannot cancel a successful reopen.
 Settings uses seven single-line entries without separator rules or calendar-count
 subtitles. About and Import and export are separate pages. The primary Agenda/Grid
 choice appears only in Appearance and changes only Month after setup, preserving
-custom Week and Day choices; distinct Week and Day alternatives stay there
-as compact menus. General keeps startup, date retention, week start, agenda range,
+custom Week and Day choices. Week alternatives stay in Appearance; the Day view
+menu is in General. General keeps startup, date retention, week start, agenda range,
 agenda days, navigation and reminders. The agenda range is one visible menu with
 Continuous, Month, Week and Day, rather than four permanently expanded choices.
 These choices follow the Android
 [settings pattern](https://developer.android.com/develop/ui/views/components/settings)
 and Material [menus](https://m3.material.io/components/menus/guidelines).
+
+### 0.6.2 feedback: settings order, hours and simultaneous events
+
+The root order is General, Appearance, Calendars, Widget, Computer connection,
+Import and export, About. General begins with startup, Day view and week start,
+then groups Agenda, Navigation and Reminders. Appearance groups Layout, Colors
+and App icon. Calendar selection, widget options, connection permissions, transfer
+and About each retain their own page. This follows the
+[AOSP recommendation to place frequent settings first](https://source.android.com/docs/core/settings/settings-guidelines)
+and Android's guidance to [group related settings](https://developer.android.com/develop/ui/views/components/settings/organize-your-settings).
+Neither source prescribes this exact order; it reflects the reported app usage.
+
+Day view offers All hours, Events only and Compact schedule in one menu. All hours
+is the default and keeps the complete hourly rail, including midnight endpoints.
+Old Cards preferences migrate once to Timeline because older versions did not
+record whether Cards was a default or an explicit choice. Existing Timeline and
+Schedule are retained; choosing Events only after the upgrade persists normally.
+Changing the Month layout continues to preserve independent Week and Day choices.
+
+Events only shows one left-hand time label for consecutive events with exactly
+the same start instant. The event cards remain separate, aligned and independently
+tappable, with their own full durations. Different instants stay separate even
+when clock formatting produces the same text, including repeated daylight-saving
+hours. Stable per-event list keys and row counts preserve focus and restoration,
+following [Compose list guidance](https://developer.android.com/develop/ui/compose/lists#item-keys).
+The hourly timeline continues to place overlapping events in separate columns.
 
 ## Connection and widgets
 
@@ -129,8 +156,8 @@ the settings apply to all Sunlith widgets and the screen states this.
 
 [Android accessibility guidance](https://developer.android.com/guide/topics/ui/accessibility/apps)
 recommends 48dp targets and [WCAG text contrast](https://www.w3.org/TR/UNDERSTANDING-WCAG20/visual-audio-contrast-contrast.html)
-requires 4.5:1 for ordinary text. Toolbar controls retain 48dp targets and the full date
-provides a long-press alternative to its small overflow count. Dense timeline blocks
+requires 4.5:1 for ordinary text. Toolbar controls retain 48dp targets and full spoken
+dates. Month cells expose a direct Open day action and event counts. Dense timeline blocks
 can be smaller; readable-list fallbacks handle narrow columns and large fonts.
 TalkBack descriptions retain full titles and times. Emulator checks do not establish
 comfort on every phone, launcher behavior, or TalkBack interaction quality.

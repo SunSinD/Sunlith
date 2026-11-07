@@ -1,8 +1,6 @@
 package io.github.sunsind.sunlith.ui
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -20,14 +17,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -57,12 +50,11 @@ import java.time.YearMonth
 
 /**
  * A month grid that fills the screen with six fixed rows, ruled into cells, and shows event titles as solid chips
- * inside each date. Rows never grow with their events: a date shows as many titles as fit and a "+n" count for the
- * rest. When the text is too large for six rows to fit, the rows keep a readable minimum height and the grid scrolls.
+ * inside each date. Rows never grow with their events: a date shows as many titles as fit, and the Day view lists
+ * them all. When the text is too large for six rows to fit, the rows keep a readable minimum height and the grid
+ * scrolls.
  *
- * Tapping a date calls [onOpenDay]. Long-pressing a date, or tapping its "+n", previews the whole day (every full
- * title and time) without leaving the month. By default the grid shows that preview itself in a bottom sheet, where
- * tapping an event calls [onOpenEvent] (or opens the day when it is null); pass [onPreviewDay] to show it elsewhere.
+ * Tapping any date calls [onOpenDay], whether it has no events, a few, or more than fit.
  */
 @Composable
 internal fun FullMonthGrid(
@@ -71,14 +63,10 @@ internal fun FullMonthGrid(
     onOpenDay: (LocalDate) -> Unit, modifier: Modifier = Modifier,
     row: Dp, number: Dp, chip: Dp, viewportHeight: Dp, textMeasurer: TextMeasurer,
     todayRequest: Int = 0, active: Boolean = true, onAwayChanged: (Boolean) -> Unit = {},
-    onOpenEvent: ((CalendarEvent) -> Unit)? = null,
-    onPreviewDay: ((LocalDate) -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val start = remember(month, mondayFirst) { gridStart(month, mondayFirst) }
     val dates = remember(start) { List(42) { start.plusDays(it.toLong()) } }
-    var previewEpochDay by rememberSaveable(month) { mutableStateOf<Long?>(null) }
-    val preview: (LocalDate) -> Unit = onPreviewDay ?: { previewEpochDay = it.toEpochDay() }
     Column(modifier.fillMaxSize().padding(horizontal = 2.dp).testTag("calendar_full_month")) {
         Box(Modifier.weight(1f).fillMaxWidth().testTag("calendar_grid")) {
             val scrolls = row * 6 > viewportHeight
@@ -111,7 +99,6 @@ internal fun FullMonthGrid(
                                     day, day == selected, day == today, YearMonth.from(day) == month, eventsOn(day), f,
                                     pulseToday && day == today, number, chip, row, textMeasurer, lastColumn = c == 6, lastRow = r == 5,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                                    onPreview = { preview(day) },
                                 ) { onOpenDay(day) }
                             }
                         }
@@ -120,23 +107,13 @@ internal fun FullMonthGrid(
             }
         }
     }
-    val shown = previewEpochDay?.let(LocalDate::ofEpochDay)
-    if (onPreviewDay == null && active && shown != null) {
-        DayPreviewSheet(
-            shown, eventsOn(shown), f,
-            onOpenEvent = { event -> previewEpochDay = null; onOpenEvent?.invoke(event) ?: onOpenDay(shown) },
-            onOpenDay = { previewEpochDay = null; onOpenDay(it) },
-            onDismiss = { previewEpochDay = null },
-        )
-    }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FullMonthCell(
     day: LocalDate, isSelected: Boolean, isToday: Boolean, inMonth: Boolean, events: List<CalendarEvent>, f: Formats,
     pulse: Boolean, number: Dp, chip: Dp, row: Dp, measurer: TextMeasurer, lastColumn: Boolean, lastRow: Boolean, modifier: Modifier,
-    onPreview: () -> Unit, onClick: () -> Unit,
+    onClick: () -> Unit,
 ) {
     val p = LocalPalette.current
     val context = LocalContext.current
@@ -149,11 +126,9 @@ private fun FullMonthCell(
         }
     }
     val openLabel = stringResource(R.string.calendar_open_day)
-    val previewLabel = stringResource(R.string.calendar_preview_events)
     val lineColor = p.line
     val slots = ((row - number - 10.dp) / chip).toInt().coerceAtLeast(0)
-    val shown = if (events.size > slots) (slots - 1).coerceAtLeast(0) else events.size
-    val hidden = events.size - shown
+    val shown = minOf(events.size, slots)
     val numberStyle = MaterialTheme.typography.bodyMedium.copy(
         color = when { isSelected -> p.onAccent; inMonth -> p.ink; else -> p.faint },
         fontWeight = if (isToday || isSelected) FontWeight.SemiBold else FontWeight.Normal,
@@ -179,8 +154,6 @@ private fun FullMonthCell(
                         constraints = Constraints(maxWidth = (available - 6.dp.toPx()).toInt().coerceAtLeast(0)))
                     Triple(event, colors, text)
                 }
-                val more = if (hidden > 0) measurer.measure("+$hidden", chipStyle.copy(color = p.muted), maxLines = 1,
-                    softWrap = false, constraints = Constraints(maxWidth = (available - 6.dp.toPx()).toInt().coerceAtLeast(0))) else null
                 onDrawBehind {
                     if (pulse) drawRect(p.raised)
                     val stroke = 1.dp.toPx()
@@ -204,22 +177,9 @@ private fun FullMonthCell(
                         val x = if (layoutDirection == LayoutDirection.Rtl) size.width - inset - 3.dp.toPx() - text.size.width else inset + 3.dp.toPx()
                         drawText(text, topLeft = Offset(x, y + (chipHeight - text.size.height) / 2))
                     }
-                    if (more != null) {
-                        val x = if (layoutDirection == LayoutDirection.Rtl) size.width - inset - 3.dp.toPx() - more.size.width else inset + 3.dp.toPx()
-                        drawText(more, topLeft = Offset(x, chipTop + shown * chip.toPx() + (chipHeight - more.size.height) / 2))
-                    }
                 }
             }
-            .combinedClickable(
-                onClickLabel = openLabel, role = Role.Button, onLongClickLabel = previewLabel,
-                onLongClick = onPreview, onClick = onClick,
-            )
+            .clickable(onClickLabel = openLabel, role = Role.Button, onClick = onClick)
             .clearAndSetSemantics { contentDescription = description; selected = isSelected; role = Role.Button },
-    ) {
-        if (hidden > 0) {
-            Box(Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = number + 5.dp + chip * shown)
-                .height(chip - 2.dp).clip(RoundedCornerShape(4.dp))
-                .clickable(onClickLabel = previewLabel, role = Role.Button, onClick = onPreview))
-        }
-    }
+    )
 }

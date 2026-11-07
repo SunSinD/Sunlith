@@ -232,6 +232,11 @@ class CalendarExperienceTest {
     @Test
     fun groupedSettingsExposeRelevantControlsAndPersistRealUiChanges() {
         node(By.pkg(context.packageName).desc(english.getString(R.string.title_settings))).click()
+        val pages = listOf(R.string.settings_general, R.string.beta_settings_appearance, R.string.title_calendars,
+            R.string.beta_settings_widget, R.string.device_link_title, R.string.beta_settings_transfer, R.string.beta_settings_about)
+        pages.map { node(By.pkg(context.packageName).text(english.getString(it))).visibleBounds }.zipWithNext().forEach { (first, next) ->
+            assertTrue("Every settings page must retain its logical place in the hierarchy.", first.bottom <= next.top)
+        }
         captureSettings("root", R.string.beta_settings_about)
         assertFalse(device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.custom_computer_access_desc))))
         assertFalse(device.hasObject(By.pkg(context.packageName).text(english.resources.getQuantityString(R.plurals.calendars_shown, 1, 1))))
@@ -243,6 +248,22 @@ class CalendarExperienceTest {
         captureSettings("general", R.string.settings_keep_date)
         chooseSetting(R.string.beta_start_view, "Week")
         awaitUi { settings.startView == "Week" }
+        scrollToText(english.getString(R.string.settings_day_view)).click()
+        mapOf(
+            "timeline" to R.string.settings_day_all_hours,
+            "cards" to R.string.settings_day_events_only,
+            "schedule" to R.string.custom_schedule,
+        ).forEach { (choice, label) ->
+            val option = node(By.pkg(context.packageName).res("settings_choice_$choice"))
+            val expected = english.getString(label)
+            assertEquals(expected, option.text ?: option.findObject(By.text(expected))?.text)
+        }
+        node(By.pkg(context.packageName).res("settings_choice_timeline")).click()
+        awaitUi { settings.dayLayout == "timeline" }
+        chooseSetting(R.string.settings_day_view, "cards")
+        awaitUi { settings.dayLayout == "cards" }
+        chooseSetting(R.string.settings_day_view, "schedule")
+        awaitUi { settings.dayLayout == "schedule" }
         chooseSetting(R.string.settings_agenda_days, "events")
         awaitUi { settings.agendaDisplay == "events" }
         chooseSetting(R.string.settings_agenda_range, "continuous")
@@ -260,12 +281,13 @@ class CalendarExperienceTest {
         scrollToText(english.getString(R.string.beta_settings_appearance)).click()
         captureSettings("appearance", R.string.layout_preset_grid)
         chooseSetting(R.string.view_week, "timeline3")
-        chooseSetting(R.string.view_day, "schedule")
+        assertFalse("Day behavior belongs in General.", device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.settings_day_view))))
         scrollToText(english.getString(R.string.layout_preset_grid)).click()
         awaitUi { settings.monthLayout == "full" }
         assertEquals("timeline", settings.weekLayout)
         assertEquals(3, settings.visibleWeekDays)
         assertEquals("schedule", settings.dayLayout)
+        scrollToText(english.getString(R.string.beta_collapse_calendar))
         scrollToText(english.getString(R.string.layout_preset_agenda)).click()
         awaitUi { settings.monthLayout == "split" }
         assertEquals("timeline", settings.weekLayout)
@@ -318,7 +340,7 @@ class CalendarExperienceTest {
         fun text(id: Int) = localized.getString(id)
         node(By.pkg(context.packageName).desc(text(R.string.title_settings))).click()
         node(By.pkg(context.packageName).text(text(R.string.beta_settings_appearance))).click()
-        listOf(R.string.view_week to "timeline7", R.string.view_day to "schedule", R.string.settings_theme to "dark").forEach { (label, choice) ->
+        listOf(R.string.view_week to "timeline7", R.string.settings_theme to "dark").forEach { (label, choice) ->
             val title = scrollToText(text(label))
             val bounds = title.visibleBounds
             assertTrue("Dropdown title must have visible width: ${text(label)} / $bounds", bounds.width() >= 24 * context.resources.displayMetrics.density)
@@ -335,11 +357,12 @@ class CalendarExperienceTest {
         }
         assertEquals("timeline", settings.weekLayout)
         assertEquals(7, settings.visibleWeekDays)
-        assertEquals("schedule", settings.dayLayout)
+        assertEquals("cards", settings.dayLayout)
         assertEquals("dark", settings.themeMode)
         node(By.pkg(context.packageName).desc(text(R.string.action_back))).click()
         node(By.pkg(context.packageName).text(text(R.string.settings_general))).click()
-        listOf(R.string.beta_start_view to "last", R.string.settings_agenda_range to "continuous", R.string.settings_agenda_days to "compact").forEach { (label, choice) ->
+        listOf(R.string.beta_start_view to "last", R.string.settings_day_view to "timeline", R.string.settings_day_view to "cards",
+            R.string.settings_day_view to "schedule", R.string.settings_agenda_range to "continuous", R.string.settings_agenda_days to "compact").forEach { (label, choice) ->
             val title = scrollToText(text(label))
             assertTrue("Dropdown title must retain visible width", title.visibleBounds.width() >= 24 * context.resources.displayMetrics.density)
             title.click()
@@ -349,8 +372,76 @@ class CalendarExperienceTest {
             assertTrue(device.takeScreenshot(File(context.filesDir, "dropdown-$language-$choice-selected.png")))
         }
         assertEquals("last", settings.startView)
+        assertEquals("schedule", settings.dayLayout)
         assertEquals("continuous", settings.agendaRange)
         assertEquals("compact", settings.agendaDisplay)
+    }
+
+    @Test
+    fun finalSettingsGalleryShowsEveryPageAndPersistsDayChoices() {
+        val capture = InstrumentationRegistry.getArguments().getString("captureFinal") == "true"
+        val languages = if (Build.VERSION.SDK_INT >= 33) listOf("en", "fr-CA") else listOf("en")
+        languages.forEach { language ->
+            finish()
+            if (Build.VERSION.SDK_INT >= 33) context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(language)
+            launch()
+            val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) })
+            fun text(id: Int) = localized.getString(id)
+            fun backPage() {
+                node(By.pkg(context.packageName).desc(text(R.string.action_back))).click()
+                device.waitForIdle()
+            }
+            fun capture(name: String) {
+                if (!capture) return
+                device.waitForIdle()
+                SystemClock.sleep(350)
+                assertTrue(device.takeScreenshot(File(context.filesDir, "final-settings-$language-$name.png")))
+                device.dumpWindowHierarchy(File(context.filesDir, "final-settings-$language-$name.xml"))
+            }
+            node(By.pkg(context.packageName).desc(text(R.string.title_settings))).click()
+            capture("root")
+            listOf(R.string.settings_general, R.string.beta_settings_appearance, R.string.title_calendars,
+                R.string.beta_settings_widget, R.string.device_link_title, R.string.beta_settings_transfer, R.string.beta_settings_about).forEach { page ->
+                scrollToText(text(page)).click()
+                capture("$page-top")
+                repeat(if (capture) 4 else 0) { index ->
+                    device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5, device.displayWidth / 2, device.displayHeight / 3, 40)
+                    capture("$page-scroll-$index")
+                }
+                backPage()
+            }
+            scrollToText(text(R.string.settings_general)).click()
+            listOf("timeline", "cards", "schedule").forEach { choice ->
+                scrollToText(text(R.string.settings_day_view)).click()
+                node(By.pkg(context.packageName).res("settings_choice_$choice"))
+                capture("day-$choice-open")
+                node(By.pkg(context.packageName).res("settings_choice_$choice")).click()
+                awaitUi { settings.dayLayout == choice }
+                capture("day-$choice-selected")
+                finish()
+                launch()
+                assertEquals("The selected Day choice must survive relaunch.", choice, settings.dayLayout)
+                node(By.pkg(context.packageName).desc(text(R.string.title_settings))).click()
+                scrollToText(text(R.string.settings_general)).click()
+                scrollToText(text(R.string.settings_day_view))
+                capture("day-$choice-persisted")
+            }
+            backPage()
+            listOf("light", "dark").forEach { theme ->
+                scrollToText(text(R.string.beta_settings_appearance)).click()
+                scrollToText(text(R.string.settings_theme))
+                node(By.pkg(context.packageName).text(text(R.string.settings_theme))).click()
+                node(By.pkg(context.packageName).res("settings_choice_$theme")).click()
+                awaitUi { settings.themeMode == theme }
+                device.waitForIdle()
+                repeat(if (capture) 3 else 0) {
+                    device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5, device.displayWidth / 2, device.displayHeight / 3, 40)
+                    device.waitForIdle()
+                }
+                capture("icon-previews-$theme")
+                backPage()
+            }
+        }
     }
 
     private fun chooseSetting(row: Int, choice: String) {

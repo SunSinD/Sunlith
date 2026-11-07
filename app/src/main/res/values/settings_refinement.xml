@@ -12,6 +12,9 @@
     <string name="settings_week_list">List</string>
     <string name="settings_week_timeline3">3-day timeline</string>
     <string name="settings_week_timeline7">7-day timeline</string>
+    <string name="settings_day_view">Day view</string>
+    <string name="settings_day_all_hours">All hours</string>
+    <string name="settings_day_events_only">Events only</string>
     <string name="settings_keep_date">Keep date when changing view</string>
     <string name="settings_agenda_range">Range</string>
     <string name="settings_agenda_days">Days</string>

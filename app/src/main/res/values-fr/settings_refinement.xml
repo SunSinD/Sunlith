@@ -12,6 +12,9 @@
     <string name="settings_week_list">Liste</string>
     <string name="settings_week_timeline3">Grille de 3 jours</string>
     <string name="settings_week_timeline7">Grille de 7 jours</string>
+    <string name="settings_day_view">Vue jour</string>
+    <string name="settings_day_all_hours">Toutes les heures</string>
+    <string name="settings_day_events_only">Événements seulement</string>
     <string name="settings_keep_date">Garder la date en changeant de vue</string>
     <string name="settings_agenda_range">Période</string>
     <string name="settings_agenda_days">Jours</string>

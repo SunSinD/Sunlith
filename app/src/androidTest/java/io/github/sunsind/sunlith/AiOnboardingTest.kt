@@ -94,7 +94,7 @@ class AiOnboardingTest {
         assertEquals("sunlith", settings.layoutPreset)
         assertEquals("split", settings.monthLayout)
         assertEquals("list", settings.weekLayout)
-        assertEquals("cards", settings.dayLayout)
+        assertEquals("timeline", settings.dayLayout)
         assertTrue(uiPrefs().getBoolean("layout_setup_done", false))
         assertFalse(uiPrefs().getBoolean("computer_setup_requested", false))
         finish()

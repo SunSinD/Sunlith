@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -619,7 +620,6 @@ private fun MonthBody(c: CalendarContext, modifier: Modifier) {
     val vm = c.vm
     if (vm.monthLayout == "full") {
         val onOpenDay: (LocalDate) -> Unit = remember(vm) { { vm.openDay(it) } }
-        val onOpenEvent: (CalendarEvent) -> Unit = remember(vm) { { vm.open(Screen.Details(it)) } }
         val onAwayChanged: (Boolean) -> Unit = remember(c.viewport) { { c.viewport.away = it } }
         val textMeasurer = rememberTextMeasurer(cacheSize = 256)
         val density = LocalDensity.current
@@ -642,7 +642,6 @@ private fun MonthBody(c: CalendarContext, modifier: Modifier) {
                         onOpenDay = onOpenDay, row = row, number = number, chip = chip, viewportHeight = height, textMeasurer = textMeasurer,
                         todayRequest = vm.todayRequest, active = active,
                         onAwayChanged = onAwayChanged,
-                        onOpenEvent = onOpenEvent,
                     )
                 }
             }
@@ -1454,12 +1453,14 @@ private fun DayView(vm: SunlithViewModel, day: LocalDate, events: List<CalendarE
             }
             items(allDay, key = { "a-" + it.key() }) { e -> EventCard(e, day, f, onClick = { vm.open(Screen.Details(e)) },
                 modifier = Modifier.focusRing(e.key() == focusedEvent, eventColors(e.color, p).content, RoundedCornerShape(10.dp), motion)) }
-            items(timed, key = { "t-" + it.key() }) { e ->
+            itemsIndexed(timed, key = { _, e -> "t-" + e.key() }) { index, e ->
                 Row(verticalAlignment = Alignment.Top) {
-                    Text(
-                        f.time(e.startMillis), Modifier.width(timeWidth).padding(top = 12.dp, end = 8.dp),
-                        color = p.muted, style = timeStyle, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    )
+                    if (index == 0 || timed[index - 1].startMillis != e.startMillis) {
+                        Text(
+                            f.time(e.startMillis), Modifier.width(timeWidth).padding(top = 12.dp, end = 8.dp).testTag("day_time_${e.id}"),
+                            color = p.muted, style = timeStyle, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                    } else Spacer(Modifier.width(timeWidth))
                     EventCard(e, day, f, onClick = { vm.open(Screen.Details(e)) }, modifier = Modifier.weight(1f).testTag("day_event_${e.id}")
                         .focusRing(e.key() == focusedEvent, eventColors(e.color, p).content, RoundedCornerShape(10.dp), motion))
                 }

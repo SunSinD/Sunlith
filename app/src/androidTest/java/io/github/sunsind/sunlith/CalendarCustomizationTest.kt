@@ -179,12 +179,12 @@ class CalendarCustomizationTest {
         assertEquals("sunlith", vm.layoutPreset)
         assertEquals("split", vm.monthLayout)
         assertEquals("list", vm.weekLayout)
-        assertEquals("cards", vm.dayLayout)
+        assertEquals("timeline", vm.dayLayout)
         assertEquals(7, vm.visibleWeekDays)
         assertEquals("week", vm.agendaRange)
         assertTrue(vm.showNavigationArrows)
         assertFalse(vm.swipeNavigation)
-        node(By.pkg(context.packageName).res("day_event_$firstId"))
+        node(By.pkg(context.packageName).res("calendar_timeline"))
     }
 
     @Test
@@ -236,7 +236,7 @@ class CalendarCustomizationTest {
         node(By.pkg(context.packageName).res("calendar_grid"))
         node(By.pkg(context.packageName).res("calendar_agenda"))
         onMain { vm.changeViewMode(ViewMode.Day); vm.select(date) }
-        node(By.pkg(context.packageName).res("day_event_$firstId"))
+        node(By.pkg(context.packageName).res("calendar_timeline"))
 
         onMain { vm.changeDayLayout("schedule") }
         val schedule = node(By.pkg(context.packageName).res("calendar_schedule"))
@@ -288,6 +288,140 @@ class CalendarCustomizationTest {
     }
 
     @Test
+    fun legacyGridCardsUpgradeOpensTheTimelineAndLaterCardsSurviveRecreation() {
+        val target = date.plusDays(2)
+        val late = addTimed(target, "Upgraded grid afternoon event", 16, 18)
+        finish()
+        context.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit()
+            .remove("day_timeline_default_v1").putString("day_layout", "cards")
+            .putString("month_layout", "full").putString("week_layout", "list")
+            .putString("layout_preset", "custom").putString("start_view", "Month").commit()
+        launch()
+        assertEquals("timeline", vm.dayLayout)
+        assertEquals("list", vm.weekLayout)
+        assertEquals("full", vm.monthLayout)
+        awaitUi { vm.events.any { it.id == late } }
+        node(day(target)).click()
+        awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
+        node(By.pkg(context.packageName).res("calendar_timeline"))
+        awaitUi { device.findObject(By.pkg(context.packageName).res("timeline_event_$late"))?.visibleBounds?.height()?.let { it > 20 } == true }
+        device.pressBack()
+        awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
+        onMain { vm.changeDayLayout("cards"); vm.changeMonthLayout("split"); vm.changeMonthLayout("full") }
+        recreateActivity()
+        assertEquals("cards", vm.dayLayout)
+        assertEquals("list", vm.weekLayout)
+        node(day(target)).click()
+        awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
+        node(By.pkg(context.packageName).res("calendar_day_cards"))
+        node(By.pkg(context.packageName).res("day_event_$late"))
+        recreateActivity()
+        assertEquals("cards", vm.dayLayout)
+        node(By.pkg(context.packageName).res("calendar_day_cards"))
+        device.pressBack()
+        awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
+    }
+
+    @Test
+    fun emptySingleAndCrowdedGridDatesOpenDayDirectlyIncludingTheFormerOverflowArea() {
+        val empty = date.plusDays(2)
+        val single = date.plusDays(3)
+        val crowded = date.plusDays(4)
+        addTimed(single, "Single direct-day event", 16, 18)
+        val crowdedIds = (0 until 12).map { addTimed(crowded, "Crowded direct-day event $it", 9, 10) }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+        awaitUi { crowdedIds.all { id -> vm.events.any { it.id == id } } }
+        listOf(empty, single, crowded).forEach { target ->
+            val cell = node(day(target))
+            assertTrue("Every date must have an accessible click action.", cell.isClickable)
+            captureFinal("grid-${target}")
+            val bounds = cell.visibleBounds
+            device.click(bounds.centerX(), bounds.bottom - (10 * context.resources.displayMetrics.density).toInt())
+            awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target && vm.hasDayParent }
+            node(By.pkg(context.packageName).res("calendar_timeline"))
+            captureFinal("direct-day-${target}")
+            assertFalse("A date must open Day without a preview action.", device.hasObject(By.pkg(context.packageName).text("Open day")))
+            if (target == crowded) assertTrue("Events hidden by the bounded month cell must remain in Day.",
+                vm.eventsByDay[target].orEmpty().map { it.id }.containsAll(crowdedIds))
+            if (target == empty) {
+                fun assertMoves(direction: Direction, message: String) {
+                    val before = timelineRailPixels()
+                    val reported = timelineScroller().scroll(direction, 0.8f)
+                    device.waitForIdle()
+                    SystemClock.sleep(400)
+                    val changed = before != timelineRailPixels()
+                    instrumentation.sendStatus(0, android.os.Bundle().apply {
+                        putString("stream", "EMPTY_TIMELINE_SCROLL direction=$direction reported=$reported renderedRailChanged=$changed\n")
+                    })
+                    assertTrue(message, changed)
+                }
+                assertMoves(Direction.DOWN, "Empty hours must remain scrollable.")
+                assertMoves(Direction.DOWN, "Empty hours must continue beyond one viewport.")
+                assertMoves(Direction.UP, "Earlier empty hours must remain reachable.")
+                if (InstrumentationRegistry.getArguments().getString("captureFinal") == "true") {
+                    repeat(8) { timelineScroller().scroll(Direction.UP, 0.95f) }
+                    captureFinal("axis-start")
+                    repeat(8) { timelineScroller().scroll(Direction.DOWN, 0.95f) }
+                    captureFinal("axis-end")
+                }
+            }
+            device.pressBack()
+            awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date && !vm.hasDayParent }
+        }
+    }
+
+    @Test
+    fun simultaneousCardsShareOneGutterButKeepTheirOwnDurationAndTapTarget() {
+        val target = date.plusDays(2)
+        val first = addTimed(target, "Shared-start first card", 8, 9)
+        val second = addTimed(target, "Shared-start second card", 8, 10)
+        val later = addTimed(target, "Separate-start card", 12, 13)
+        onMain { vm.changeDayLayout("cards"); vm.changeViewMode(ViewMode.Day); vm.select(target); vm.reload() }
+        awaitUi { vm.events.any { it.id == later } }
+        node(By.pkg(context.packageName).res("day_time_$first"))
+        assertFalse("The second simultaneous card must share the first gutter label.", device.hasObject(By.pkg(context.packageName).res("day_time_$second")))
+        node(By.pkg(context.packageName).res("day_time_$later"))
+        val firstBounds = node(By.pkg(context.packageName).res("day_event_$first")).visibleBounds
+        val secondBounds = node(By.pkg(context.packageName).res("day_event_$second")).visibleBounds
+        assertEquals("Grouped cards must keep the same left alignment.", firstBounds.left, secondBounds.left)
+        assertEquals(firstBounds.right, secondBounds.right)
+        assertTrue("Simultaneous cards must be stacked without covering each other.", firstBounds.bottom <= secondBounds.top)
+        captureFinal("same-start-cards")
+        listOf(first to 9, second to 10).forEach { (id, endHour) ->
+            val card = node(By.pkg(context.packageName).res("day_event_$id"))
+            val end = android.text.format.DateFormat.getTimeFormat(english).format(java.util.Date(
+                target.atTime(endHour, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()))
+            assertTrue("Each accessible card must keep its own full end time.",
+                card.text.orEmpty().contains(end) || card.findObject(By.textContains(end)) != null)
+            card.click()
+            awaitUi { (vm.stack.lastOrNull() as? Screen.Details)?.event?.id == id }
+            device.pressBack()
+            awaitUi { vm.stack.isEmpty() }
+        }
+        recreateActivity()
+        node(By.pkg(context.packageName).res("day_time_$first"))
+        node(By.pkg(context.packageName).res("day_event_$second"))
+        assertFalse(device.hasObject(By.pkg(context.packageName).res("day_time_$second")))
+    }
+
+    @Test
+    fun equalFormattedClockTimesAtDifferentInstantsKeepSeparateGutterLabels() {
+        val target = date.plusDays(2)
+        val zone = ZoneId.systemDefault()
+        val ids = listOf(10, 40).map { seconds ->
+            repository.saveEvent(EventDraft(calendarId = calendarId, title = "Distinct instant $seconds",
+                startMillis = target.atTime(8, 0, seconds).atZone(zone).toInstant().toEpochMilli(),
+                endMillis = target.atTime(9, 0, seconds).atZone(zone).toInstant().toEpochMilli(),
+                timeZone = zone.id, reminderMinutes = emptyList()))
+        }
+        onMain { vm.changeDayLayout("cards"); vm.changeViewMode(ViewMode.Day); vm.select(target); vm.reload() }
+        awaitUi { ids.all { id -> vm.events.any { it.id == id } } }
+        captureFinal("distinct-instant-cards")
+        val labels = ids.map { node(By.pkg(context.packageName).res("day_time_$it")).text }
+        assertEquals("Matching displayed times must not merge different start instants, including a repeated DST hour.", labels.first(), labels.last())
+    }
+
+    @Test
     fun allDayOnlyAndEmptyCardsKeepTheirDateHeadingAtTheTop() {
         val allDayDate = date.plusDays(2)
         repeat(12) { i ->
@@ -332,6 +466,7 @@ class CalendarCustomizationTest {
                 allDay = true, timeZone = "UTC", reminderMinutes = emptyList()))
         }
         val late = addTimed(target, "Motion first timed event", 20, 21)
+        val simultaneous = addTimed(target, "Motion simultaneous timed event", 20, 22)
         val capture = InstrumentationRegistry.getArguments().getString("captureMotion") == "true"
         listOf("cards", "timeline", "schedule").forEach { layout ->
             onMain {
@@ -365,6 +500,13 @@ class CalendarCustomizationTest {
             awaitUi { device.findObject(event)?.visibleBounds?.let { it.height() > 30 && it.top >= 0 && it.bottom <= device.displayHeight } == true }
             assertTrue(vm.hasDayParent)
             assertFalse(device.hasObject(By.pkg(context.packageName).res("calendar_view_menu")))
+            if (layout == "cards") {
+                recreateActivity()
+                assertTrue("Recreation must retain the first focused card after many banners.", node(event).visibleBounds.height() > 30)
+                node(By.pkg(context.packageName).res("day_event_$simultaneous"))
+                assertFalse("The adjoining simultaneous card must keep sharing its time label after recreation.",
+                    device.hasObject(By.pkg(context.packageName).res("day_time_$simultaneous")))
+            }
             device.pressBack()
             awaitUi { vm.viewMode == ViewMode.Month }
         }
@@ -608,7 +750,7 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun longPressingAGridDatePreviewsTheCompleteLongTitleAndKeepsTheMonthBehindIt() {
+    fun longPressingAGridDateNeverOpensAPreviewAndTappingStillOpensDay() {
         val target = date.plusDays(2)
         val title = listOf(
             "Electrical engineering laboratory preparation and equipment reservation",
@@ -623,15 +765,16 @@ class CalendarCustomizationTest {
         onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
         awaitUi { vm.events.any { it.id == eventId } }
         node(day(target)).longClick()
-        val preview = node(By.pkg(context.packageName).textContains(title))
-        assertEquals("A preview must leave the Month view active.", ViewMode.Month, vm.viewMode)
-        assertEquals(date, vm.selectedDate)
-        assertTrue("The complete long title must occupy more space than a three-line clipped preview.", preview.visibleBounds.height() > 120 * context.resources.displayMetrics.density * context.resources.configuration.fontScale)
-        node(By.pkg(context.packageName).text(english.getString(R.string.calendar_open_day)))
-        device.pressBack()
-        node(By.pkg(context.packageName).res("calendar_full_month"))
-        assertEquals(ViewMode.Month, vm.viewMode)
-        assertFalse(device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.calendar_open_day))))
+        assertFalse("Long press must not show the removed preview.", device.hasObject(By.pkg(context.packageName).text("Open day")))
+        assertFalse(device.hasObject(By.pkg(context.packageName).textContains("Complete title ending marker")))
+        if (vm.viewMode == ViewMode.Day) device.pressBack()
+        awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
+        node(day(target)).click()
+        awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target && vm.hasDayParent }
+        node(By.pkg(context.packageName).res("calendar_timeline"))
+        revealTimelineEvent(eventId).click()
+        awaitUi { (vm.stack.lastOrNull() as? Screen.Details)?.event?.id == eventId }
+        assertTrue("The complete title must remain accessible from Day.", vm.events.single { it.id == eventId }.title == title)
     }
 
     @Test
@@ -673,6 +816,11 @@ class CalendarCustomizationTest {
         val hours = node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds
         assertTrue("All-day events belong above the hourly scroll area.", allDay.bottom <= hours.top)
         node(By.pkg(context.packageName).descContains(allDayTitle))
+        if (InstrumentationRegistry.getArguments().getString("captureFinal") == "true") {
+            timelineScroller().scroll(Direction.DOWN, 0.4f)
+            device.waitForIdle()
+        }
+        captureFinal("timeline-two-overlaps")
         listOf(firstId, secondId).forEach { id ->
             node(By.pkg(context.packageName).res("timeline_event_$id")).click()
             awaitUi { (vm.stack.lastOrNull() as? Screen.Details)?.event?.id == id }
@@ -826,9 +974,36 @@ class CalendarCustomizationTest {
         device.click(overflow.centerX(), overflow.top + minOf(overflow.height() / 2, inset))
         node(By.pkg(context.packageName).text(label))
         assertTrue("Opening overflow must leave the Day view underneath the chooser.", vm.stack.isEmpty())
+        captureFinal("timeline-overlap-dialog")
         scrollDialogToText(titles.last()).click()
         awaitUi { (vm.stack.lastOrNull() as? Screen.Details)?.event?.id == ids.last() }
         node(By.pkg(context.packageName).textContains(titles.last()))
+    }
+
+    private fun timelineRailPixels(): Long {
+        val bounds = node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds
+        val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            var hash = 1L
+            var y = bounds.top + 8
+            while (y < bounds.bottom - 8) {
+                var x = bounds.left + 2
+                while (x < bounds.left + bounds.width() / 7) {
+                    hash = hash * 31 + bitmap.getPixel(x, y)
+                    x += 2
+                }
+                y += 2
+            }
+            return hash
+        } finally { bitmap.recycle() }
+    }
+
+    private fun captureFinal(name: String) {
+        if (InstrumentationRegistry.getArguments().getString("captureFinal") != "true") return
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        assertTrue(device.takeScreenshot(File(context.filesDir, "final-$name.png")))
+        device.dumpWindowHierarchy(File(context.filesDir, "final-$name.xml"))
     }
 
     private fun recreateActivity() {

@@ -253,6 +253,10 @@
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.R {
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.R$drawable {
+    int ic_launcher_foreground;
+    int ic_launcher_foreground_dark;
+    int ic_launcher_foreground_neutral;
+    int ic_launcher_monochrome;
     int sunlith_mark;
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.R$id {
@@ -305,11 +309,11 @@
     int beta_widget_calendar_name;
     int beta_widget_days;
     int beta_widget_empty_days;
-    int calendar_open_day;
     int connection_setup_connect_computer;
     int connection_setup_open_calendar;
     int connection_setup_share_again;
     int custom_computer_access_desc;
+    int custom_schedule;
     int delete_event_title;
     int device_link_consent;
     int device_link_details;
@@ -345,6 +349,9 @@
     int search_none;
     int settings_agenda_days;
     int settings_agenda_range;
+    int settings_day_all_hours;
+    int settings_day_events_only;
+    int settings_day_view;
     int settings_export;
     int settings_general;
     int settings_import;
@@ -1022,6 +1029,9 @@
     int getLast();
     int getStep();
 }
+-keep,allowoptimization,allowobfuscation class kotlin.ranges.IntRange {
+    <init>(int,int);
+}
 -keep,allowoptimization,allowobfuscation class kotlin.ranges.LongRange {
     <init>(long,long);
 }
@@ -1030,6 +1040,7 @@
 -keep,allowoptimization,allowobfuscation class kotlin.ranges.RangesKt___RangesKt {
     int coerceAtLeast(int,int);
     long coerceAtLeast(long,long);
+    int coerceIn(int,int,int);
     kotlin.ranges.IntProgression step(kotlin.ranges.IntProgression,int);
     kotlin.ranges.IntRange until(int,int);
     kotlin.ranges.LongRange until(long,long);

@@ -161,12 +161,12 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
                 when (shown) {
                     "root" -> {
-                        ClickRow(stringResource(R.string.device_link_title), null) { vm.open(Screen.DeviceLink) }
-                        ClickRow(stringResource(R.string.title_calendars), null) { vm.open(Screen.Calendars) }
-                        ClickRow(stringResource(R.string.beta_settings_appearance), null) { page = "appearance" }
                         ClickRow(stringResource(R.string.settings_general), null) { page = "general" }
-                        ClickRow(stringResource(R.string.beta_settings_transfer), null) { page = "transfer" }
+                        ClickRow(stringResource(R.string.beta_settings_appearance), null) { page = "appearance" }
+                        ClickRow(stringResource(R.string.title_calendars), null) { vm.open(Screen.Calendars) }
                         ClickRow(stringResource(R.string.beta_settings_widget), null) { page = "widget" }
+                        ClickRow(stringResource(R.string.device_link_title), null) { vm.open(Screen.DeviceLink) }
+                        ClickRow(stringResource(R.string.beta_settings_transfer), null) { page = "transfer" }
                         ClickRow(stringResource(R.string.beta_settings_about), null) { page = "about" }
                     }
                     "appearance" -> {
@@ -193,18 +193,7 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                                 if (vm.weekLayout != "timeline") vm.changeWeekLayout("timeline")
                             }
                         }
-                        DropdownRow(
-                            stringResource(R.string.view_day),
-                            vm.dayLayout,
-                            listOf(
-                                "cards" to stringResource(R.string.custom_cards),
-                                "timeline" to stringResource(R.string.custom_timeline),
-                                "schedule" to stringResource(R.string.custom_schedule),
-                            ),
-                            vm::changeDayLayout,
-                        )
-                        if (vm.monthLayout == "split") ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
-                        LauncherIconSection(vm)
+                        ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
                         SectionTitle(stringResource(R.string.custom_colors))
                         DropdownRow(
                             stringResource(R.string.settings_theme),
@@ -222,6 +211,7 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                             vm.materialYou,
                             vm::changeMaterialYou,
                         )
+                        LauncherIconSection(vm)
                     }
                     "general" -> {
                         DropdownRow(
@@ -235,7 +225,16 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                             ),
                             vm::changeStartView,
                         )
-                        ToggleRow(stringResource(R.string.settings_keep_date), null, vm.keepSelectedDate, vm::changeKeepSelectedDate)
+                        DropdownRow(
+                            stringResource(R.string.settings_day_view),
+                            vm.dayLayout,
+                            listOf(
+                                "timeline" to stringResource(R.string.settings_day_all_hours),
+                                "cards" to stringResource(R.string.settings_day_events_only),
+                                "schedule" to stringResource(R.string.custom_schedule),
+                            ),
+                            vm::changeDayLayout,
+                        )
                         ToggleRow(stringResource(R.string.settings_monday), null, vm.weekStartsMonday, vm::setMondayFirst)
 
                         SectionTitle(stringResource(R.string.custom_agenda))
@@ -262,6 +261,7 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                         )
 
                         SectionTitle(stringResource(R.string.custom_navigation))
+                        ToggleRow(stringResource(R.string.settings_keep_date), null, vm.keepSelectedDate, vm::changeKeepSelectedDate)
                         ToggleRow(stringResource(R.string.custom_navigation_arrows), null, vm.showNavigationArrows, vm::changeShowNavigationArrows)
                         ToggleRow(stringResource(R.string.custom_swipe_navigation), null, vm.swipeNavigation, vm::changeSwipeNavigation)
                         ToggleRow(stringResource(R.string.beta_navigation_animation), null, vm.navigationAnimation, vm::changeNavigationAnimation)

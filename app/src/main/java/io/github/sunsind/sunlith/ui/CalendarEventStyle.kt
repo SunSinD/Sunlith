@@ -1,52 +1,22 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package io.github.sunsind.sunlith.ui
 
 import android.text.format.DateFormat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
 import java.time.Instant
 import java.time.LocalDate
@@ -213,60 +183,4 @@ internal suspend fun LazyListState.scrollToFocus(index: Int, motion: Boolean) {
 internal fun startMinuteOn(event: CalendarEvent, day: LocalDate, zone: ZoneId): Int {
     val s = Instant.ofEpochMilli(event.startMillis).atZone(zone)
     return if (s.toLocalDate().isBefore(day)) 0 else s.hour * 60 + s.minute
-}
-
-/**
- * Every event on [day] with its full title and time, in a modal bottom sheet. It reads titles that a month cell
- * has to cut, without leaving the month. Tapping an event opens it; "Open day" goes to the Day view.
- */
-@Composable
-internal fun DayPreviewSheet(
-    day: LocalDate, events: List<CalendarEvent>, f: Formats,
-    onOpenEvent: (CalendarEvent) -> Unit, onOpenDay: (LocalDate) -> Unit, onDismiss: () -> Unit,
-) {
-    val p = LocalPalette.current
-    val context = LocalContext.current
-    val zone = ZoneId.systemDefault()
-    val untitled = stringResource(R.string.untitled)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
-        containerColor = p.surface, contentColor = p.ink,
-    ) {
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).semantics { heading() }) {
-                Text(f.dayLong(day), color = p.ink, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    context.resources.getQuantityString(R.plurals.event_count, events.size, events.size),
-                    color = p.muted, style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            TextButton(onClick = { onOpenDay(day) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.calendar_open_day), maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        if (events.isEmpty()) {
-            Text(
-                stringResource(R.string.no_events), Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
-                color = p.muted, style = MaterialTheme.typography.bodyMedium,
-            )
-        } else {
-            LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 16.dp)) {
-                items(events) { event ->
-                    val colors = eventColors(event.color, p)
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button) { onOpenEvent(event) }.padding(horizontal = 20.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        Box(Modifier.size(14.dp).background(colors.container, RoundedCornerShape(4.dp)))
-                        Column(Modifier.weight(1f)) {
-                            Text(event.title.ifBlank { untitled }, color = p.ink, style = MaterialTheme.typography.bodyLarge)
-                            Text(context.timeLabel(event, day, zone, f), color = p.muted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
