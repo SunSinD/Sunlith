@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,11 +47,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -60,6 +63,9 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.LocaleList
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -191,6 +197,7 @@ internal fun Timeline(
     focus: TimelineFocus? = null,
     onFocusHandled: (TimelineFocus) -> Unit = {},
     tintToday: Boolean = true,
+    allowHorizontalScroll: Boolean = false,
     fallback: @Composable () -> Unit,
 ) {
     val p = LocalPalette.current
@@ -199,15 +206,21 @@ internal fun Timeline(
     val typography = MaterialTheme.typography
     val railStyle = typography.labelSmall
     val titleStyle = typography.labelMedium
-    val hour = with(density) { maxOf(64.dp, (titleStyle.lineHeight * 3.4f).toDp()) }
-    val minBlock = with(density) { maxOf(56.dp, titleStyle.lineHeight.toDp() + 14.dp) }
+    // Scale the actual text size before multiplying; sp conversion is non-linear at large font sizes.
+    val titleSize = with(density) { titleStyle.fontSize.toDp() }
+    val titleLine = with(density) { titleStyle.lineHeight.toDp() }
+    val hour = if (days.size > 1) maxOf(88.dp, titleLine * 5.5f) else maxOf(64.dp, titleLine * 3.4f)
+    val minBlock = maxOf(56.dp, titleLine + 14.dp)
     val minMinutes = ceil(minBlock / hour * 60f).toInt()
-    val minColumn = with(density) { maxOf(40.dp, (titleStyle.fontSize * 3.2f).toDp()) }
-    val minBlockWidth = with(density) { maxOf(32.dp, (titleStyle.fontSize * 2.6f).toDp()) }
-    val hourLabels = remember(f) {
+    val minColumn = maxOf(40.dp, titleSize * 3.2f)
+    val overflowThreshold = maxOf(60.dp, titleSize * 5f)
+    val readableColumn = maxOf(80.dp, titleSize * 6.5f)
+    val minBlockWidth = maxOf(32.dp, titleSize * 2.6f)
+    val compact = remember(f) { CompactTimes(f.locale, f.is24Hour, f::range) }
+    val hourLabels = remember(f, compact) {
         (0..24).map { hour ->
             if (hour == 24 && f.is24Hour) String.format(f.locale, "%02d:%02d", 24, 0)
-            else f.time(LocalTime.of(hour % 24, 0))
+            else compact.time(LocalTime.of(hour % 24, 0))
         }
     }
     val allDayLabel = stringResource(R.string.all_day)
@@ -215,8 +228,8 @@ internal fun Timeline(
     val gutterLabels = if (allDay.any { it.isNotEmpty() }) {
         hourLabels + listOf(allDayLabel.substringBeforeLast(' '), allDayLabel.substringAfterLast(' '))
     } else hourLabels
-    val compact = remember(f) { CompactTimes(f.locale, f.is24Hour, f::range) }
     val reportFocus by rememberUpdatedState(onFocusHandled)
+    val sideways = rememberScrollState()
     var highlighted by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(highlighted) {
         if (highlighted == null) return@LaunchedEffect
@@ -225,9 +238,29 @@ internal fun Timeline(
     }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val gutter = rememberTimeGutter(gutterLabels, railStyle, 44.dp, maxWidth * 0.25f)
-        val column = (maxWidth - gutter - 4.dp) / days.size
-        if (column < minColumn) {
+        val gutter = rememberTimeGutter(gutterLabels, railStyle, 44.dp,
+            maxWidth * if (allDay.any { it.isNotEmpty() }) 0.30f else 0.25f)
+        val fitted = (maxWidth - gutter - 4.dp) / days.size
+        val overflow = allowHorizontalScroll && days.size > 1 && fitted < overflowThreshold
+        val column = if (overflow) readableColumn else fitted
+        val dayArea = Modifier.then(if (overflow) Modifier.horizontalScroll(sideways) else Modifier)
+        if (overflow) {
+            // Keeps the selected weekday in view. A neighbouring page uses the same weekday, so settling on it never jumps.
+            val anchor = days.indexOf(selected).takeIf { it >= 0 } ?: days.indexOfFirst { it.dayOfWeek == selected.dayOfWeek }.coerceAtLeast(0)
+            val columnPx = with(density) { column.toPx() }
+            LaunchedEffect(anchor, columnPx, todayRequest) {
+                val viewport = withTimeoutOrNull(1_000) { snapshotFlow { sideways.viewportSize }.first { it > 0 } } ?: return@LaunchedEffect
+                val start = (anchor * columnPx).roundToInt()
+                val end = ((anchor + 1) * columnPx).roundToInt()
+                val target = when {
+                    start < sideways.value -> start
+                    end > sideways.value + viewport -> end - viewport
+                    else -> return@LaunchedEffect
+                }.coerceIn(0, sideways.maxValue.coerceAtLeast(0))
+                if (autoScroll && motion) sideways.animateScrollTo(target, tween(250)) else sideways.scrollTo(target)
+            }
+        }
+        if (!overflow && column < minColumn) {
             fallback()
         } else {
             val allDayHeight = maxHeight / 4
@@ -293,52 +326,60 @@ internal fun Timeline(
                 if (showHeaders) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                         Spacer(Modifier.width(gutter))
-                        days.forEach { day ->
-                            TimelineDayHeader(day, day == selected, day == today, eventsOn(day).size, f, Modifier.width(column)) { onSelectDay(day) }
+                        Row(Modifier.weight(1f).then(dayArea)) {
+                            days.forEach { day ->
+                                TimelineDayHeader(day, day == selected, day == today, eventsOn(day).size, f, Modifier.width(column)) { onSelectDay(day) }
+                            }
                         }
                     }
                 }
                 if (allDay.any { it.isNotEmpty() }) {
                     Row(Modifier.fillMaxWidth().heightIn(max = allDayHeight).testTag("calendar_timeline_all_day").verticalScroll(rememberScrollState()).padding(vertical = 2.dp)) {
                         Text(
-                            allDayLabel, Modifier.width(gutter).padding(end = 6.dp, top = 6.dp),
-                            color = p.muted, style = railStyle, textAlign = TextAlign.End, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            allDayLabel.substringBeforeLast(' ') + "\n" + allDayLabel.substringAfterLast(' '),
+                            Modifier.width(gutter).padding(end = 6.dp, top = 6.dp),
+                            color = p.muted, style = railStyle,
+                            textAlign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) TextAlign.Left else TextAlign.Right,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis,
                         )
-                        days.forEachIndexed { i, day ->
-                            Column(Modifier.width(column).padding(horizontal = 1.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                allDay[i].forEach { e -> AllDayChip(e, day, f, titleStyle, highlighted == e.key(), motion) { onOpen(e) } }
+                        Row(Modifier.weight(1f).then(dayArea)) {
+                            days.forEachIndexed { i, day ->
+                                Column(Modifier.width(column).padding(horizontal = 1.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    allDay[i].forEach { e -> AllDayChip(e, day, f, highlighted == e.key(), motion, allDayHeight) { onOpen(e) } }
+                                }
                             }
                         }
                     }
                 }
                 HorizontalDivider(color = p.line)
-                Box(Modifier.weight(1f).fillMaxWidth().testTag("calendar_timeline").verticalScroll(scroll)) {
-                    val lineColor = p.line
-                    Row(
-                        Modifier.height(hour * 24).fillMaxWidth().drawBehind {
-                            val left = gutter.toPx()
-                            val stroke = 1.dp.toPx()
-                            for (h in 1 until 24) {
-                                val y = h * hourPx
-                                drawLine(lineColor, Offset(startX(left), y), Offset(startX(size.width), y), strokeWidth = stroke)
+                Row(Modifier.weight(1f).fillMaxWidth().testTag("calendar_timeline").verticalScroll(scroll)) {
+                    HourRail(hourLabels, railStyle, hourPx, Modifier.width(gutter).height(hour * 24))
+                    Box(Modifier.weight(1f).height(hour * 24).then(dayArea)) {
+                        val lineColor = p.line
+                        Row(
+                            Modifier.width(column * days.size).fillMaxHeight().drawBehind {
+                                val stroke = 1.dp.toPx()
+                                for (h in 1 until 24) {
+                                    val y = h * hourPx
+                                    drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
+                                }
+                                for (i in 1 until days.size) {
+                                    val x = startX(i * column.toPx())
+                                    drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+                                }
+                            },
+                        ) {
+                            days.forEach { day ->
+                                val timed = eventsOn(day).filter { !it.isTimelineBanner() }
+                                DayColumn(
+                                    day, timed, zone, minMinutes, hour, minBlockWidth, day == today && tintToday, f, compact, titleStyle,
+                                    highlighted, motion, Modifier.width(column).fillMaxHeight(), onOpen, onNew, onOverflow,
+                                )
                             }
-                            for (i in 1 until days.size) {
-                                val x = startX(left + i * column.toPx())
-                                drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
-                            }
-                        },
-                    ) {
-                        HourRail(hourLabels, railStyle, hourPx, Modifier.width(gutter).fillMaxHeight())
-                        days.forEach { day ->
-                            val timed = eventsOn(day).filter { !it.isTimelineBanner() }
-                            DayColumn(
-                                day, timed, zone, minMinutes, hour, minBlockWidth, day == today && tintToday, f, compact, titleStyle,
-                                highlighted, motion, Modifier.width(column).fillMaxHeight(), onOpen, onNew, onOverflow,
-                            )
                         }
+                        val todayIndex = days.indexOf(today)
+                        if (todayIndex >= 0) NowLine(column, todayIndex, days.size, hourPx, Modifier.width(column * days.size).fillMaxHeight())
                     }
-                    val todayIndex = days.indexOf(today)
-                    if (todayIndex >= 0) NowLine(gutter, column, todayIndex, days.size, hourPx, Modifier.matchParentSize())
                 }
             }
         }
@@ -382,7 +423,7 @@ private fun TimelineDayHeader(day: LocalDate, isSelected: Boolean, isToday: Bool
     val description = dayDescription(context, f, day, isToday, count)
     val density = LocalDensity.current
     val narrow = density.fontScale > 1.3f
-    val circle = with(density) { maxOf(40.dp, (MaterialTheme.typography.bodyLarge.fontSize * 2.25f).toDp()) }
+    val circle = with(density) { maxOf(40.dp, MaterialTheme.typography.bodyLarge.fontSize.toDp() * 2.25f) }
     Column(
         modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick)
             .clearAndSetSemantics { contentDescription = description; selected = isSelected; role = Role.Button }
@@ -410,15 +451,22 @@ private fun TimelineDayHeader(day: LocalDate, isSelected: Boolean, isToday: Bool
 }
 
 @Composable
-private fun AllDayChip(event: CalendarEvent, day: LocalDate, f: Formats, style: TextStyle, highlight: Boolean, motion: Boolean, onClick: () -> Unit) {
-    val p = LocalPalette.current
+private fun AllDayChip(event: CalendarEvent, day: LocalDate, f: Formats, highlight: Boolean, motion: Boolean, viewportHeight: Dp, onClick: () -> Unit) {
     val context = LocalContext.current
-    val title = event.title.ifBlank { stringResource(R.string.untitled) }
-    val description = title + ", " + context.timeLabel(event, day, ZoneId.systemDefault(), f)
-    val colors = eventColors(event.color, p)
-    val shape = RoundedCornerShape(6.dp)
+    val title = event.displayTitle().ifBlank { stringResource(R.string.untitled) }
+    val status = absenceStatus(event, f)
+    val description = listOfNotNull(title, status, context.timeLabel(event, day, ZoneId.systemDefault(), f)).joinToString(", ")
+    val colors = eventColors(event)
+    val shape = RoundedCornerShape(8.dp)
+    val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold, hyphens = Hyphens.Auto, lineBreak = LineBreak.Paragraph,
+        localeList = LocaleList(f.locale.toLanguageTag()))
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val lineHeight = remember(style, density) { measurer.measure("Ag", style, maxLines = 1).size.height.coerceAtLeast(1) }
+    val maxLines = with(density) { ((viewportHeight - 12.dp).toPx() / lineHeight).toInt().coerceIn(1, 4) }
     Box(
-        Modifier.fillMaxWidth().heightIn(min = 32.dp).clip(shape).background(colors.container)
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(shape).background(colors.container)
+            .then(colors.border?.let { Modifier.border(2.dp, it, shape) } ?: Modifier)
             .focusRing(highlight, colors.content, shape, motion)
             .testTag("timeline_event_${event.id}")
             .clickable(role = Role.Button, onClick = onClick)
@@ -426,7 +474,7 @@ private fun AllDayChip(event: CalendarEvent, day: LocalDate, f: Formats, style: 
             .padding(horizontal = 6.dp, vertical = 4.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        Text(title, color = colors.content, style = style, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(title, color = colors.content, style = style, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -454,7 +502,7 @@ private fun DayColumn(
                     hidden += b
                 } else {
                     EventBlock(
-                        b.event, day, zone, f, compact, style, highlighted == b.event.key(), motion,
+                        b.event, day, zone, f, compact, style, highlighted == b.event.key(), motion, b.end - b.start,
                         Modifier.offset(x = width * b.col, y = hour * (b.start / 60f)).width(width).height(hour * ((b.end - b.start) / 60f)),
                     ) { onOpen(b.event) }
                 }
@@ -481,54 +529,97 @@ private fun blockTime(context: android.content.Context, event: CalendarEvent, da
 }
 
 /**
- * A timed event as a solid block. The time range always gets the lines it needs first (it wraps between start and
- * end in narrow columns), and the title fills the rest. When everything fits, the text is centred vertically; when
- * it does not, it starts at the top and the title is cut. The spoken description always has the full title and time.
+ * A timed event as a solid block, read from the top: the title, any teacher absence, the time, then the rooms. The
+ * title and absence take priority in narrow columns; a compact one-line time follows when space permits. The rest
+ * of the title and the rooms fill what is left. Missed periods get a bar on the start edge covering the missed time. The spoken
+ * description always has the full title, absence, time and rooms.
  */
 @Composable
 private fun EventBlock(
     event: CalendarEvent, day: LocalDate, zone: ZoneId, f: Formats, compact: CompactTimes, style: TextStyle,
-    highlight: Boolean, motion: Boolean, modifier: Modifier, onClick: () -> Unit,
+    highlight: Boolean, motion: Boolean, shownMinutes: Int, modifier: Modifier, onClick: () -> Unit,
 ) {
-    val p = LocalPalette.current
     val context = LocalContext.current
-    val title = event.title.ifBlank { stringResource(R.string.untitled) }
-    val description = "$title, ${context.timeLabel(event, day, zone, f)}"
+    val typography = MaterialTheme.typography
+    val title = event.displayTitle().ifBlank { stringResource(R.string.untitled) }
     val time = remember(event, day, zone, compact) { blockTime(context, event, day, zone, f, compact) }
-    val colors = eventColors(event.color, p)
+    val status = absenceStatus(event, f, compact)
+    val spokenStatus = absenceStatus(event, f)
+    val rooms = remember(event.location) { compactRooms(event.location) }
+    val description = listOfNotNull(title, spokenStatus, context.timeLabel(event, day, zone, f), event.location.takeIf { it.isNotBlank() })
+        .joinToString(", ")
+    val colors = eventColors(event)
     val shape = RoundedCornerShape(6.dp)
-    val titleStyle = style.copy(fontWeight = FontWeight.Medium)
-    val timeStyle = MaterialTheme.typography.labelSmall
+    val missed = remember(event, day, zone, shownMinutes) {
+        val origin = maxOf(event.startMillis, day.atStartOfDay(zone).toInstant().toEpochMilli())
+        val total = shownMinutes.coerceAtLeast(1) * 60_000f
+        event.partialAbsences().map { (start, end) ->
+            ((start - origin) / total).coerceIn(0f, 1f) to ((end - origin) / total).coerceIn(0f, 1f)
+        }.filter { it.second > it.first }
+    }
+    val bar = 4.dp
     val measurer = rememberTextMeasurer()
     BoxWithConstraints(
         modifier.padding(1.dp).clip(shape).background(colors.container)
+            .then(colors.border?.let { Modifier.border(2.dp, it, shape) } ?: Modifier)
+            .then(if (missed.isEmpty()) Modifier else Modifier.drawBehind {
+                val width = bar.toPx()
+                missed.forEach { (from, to) ->
+                    drawRect(colors.content, Offset(if (layoutDirection == LayoutDirection.Rtl) size.width - width else 0f, from * size.height),
+                        Size(width, (to - from) * size.height))
+                }
+            })
             .focusRing(highlight, colors.content, shape, motion)
             .testTag("timeline_event_${event.id}")
             .clickable(role = Role.Button, onClick = onClick)
             .clearAndSetSemantics { contentDescription = description; role = Role.Button },
     ) {
         val density = LocalDensity.current
-        val padH = if (maxWidth < 56.dp) 3.dp else 6.dp
+        val wide = maxWidth >= 96.dp
+        val titleStyle = (if (wide) typography.labelLarge else style)
+            .copy(fontWeight = FontWeight.SemiBold, hyphens = Hyphens.Auto, lineBreak = LineBreak.Paragraph,
+                localeList = LocaleList(f.locale.toLanguageTag()))
+        val detailStyle = if (wide) typography.labelMedium else typography.labelSmall
+        val statusStyle = detailStyle.copy(fontWeight = FontWeight.Bold)
+        val padH = if (maxWidth < 72.dp) 3.dp else 5.dp
+        val padStart = padH + if (missed.isEmpty()) 0.dp else bar
         val padV = 3.dp
-        val innerWidth = with(density) { (maxWidth - padH * 2).roundToPx().coerceAtLeast(1) }
+        val innerWidth = with(density) { (maxWidth - padH - padStart).roundToPx().coerceAtLeast(1) }
         val innerHeight = with(density) { (maxHeight - padV * 2).toPx() }
-        val titleLayout = remember(title, titleStyle, innerWidth) { measurer.measure(title, titleStyle, constraints = Constraints(maxWidth = innerWidth)) }
-        val timeLayout = remember(time, timeStyle, innerWidth) { measurer.measure(time, timeStyle, constraints = Constraints(maxWidth = innerWidth)) }
+        fun measureText(text: String, textStyle: TextStyle) = measurer.measure(text, textStyle, constraints = Constraints(maxWidth = innerWidth))
+        val titleLayout = remember(title, titleStyle, innerWidth) { measureText(title, titleStyle) }
+        val shownTime = remember(time, event.startMillis, zone, compact, detailStyle, innerWidth, wide) {
+            if (wide || measureText(time, detailStyle).lineCount == 1) time
+            else if (event.span(zone).multiDay) ""
+            else compact.time(Instant.ofEpochMilli(event.startMillis).atZone(zone).toLocalTime())
+                .takeIf { measureText(it, detailStyle).lineCount == 1 }.orEmpty()
+        }
+        val timeLayout = remember(shownTime, detailStyle, innerWidth) { measureText(shownTime, detailStyle) }
+        val statusLayout = remember(status, statusStyle, innerWidth) { status?.let { measureText(it, statusStyle) } }
+        val roomLayout = remember(rooms, detailStyle, innerWidth) { rooms.takeIf { it.isNotEmpty() }?.let { measureText(it, detailStyle) } }
+        var left = innerHeight
+        fun take(lines: Int, height: Float): Int {
+            val line = height / lines.coerceAtLeast(1)
+            val n = minOf(lines, (left / line).toInt()).coerceAtLeast(0)
+            left -= n * line
+            return n
+        }
+        val firstTitle = maxOf(1, take(1, titleLayout.size.height.toFloat() / titleLayout.lineCount.coerceAtLeast(1)))
+        val statusLines = statusLayout?.let { take(it.lineCount, it.size.height.toFloat()) } ?: 0
         val titleLine = titleLayout.size.height.toFloat() / titleLayout.lineCount.coerceAtLeast(1)
-        val timeLine = timeLayout.size.height.toFloat() / timeLayout.lineCount.coerceAtLeast(1)
-        val timeLines: Int
-        val titleLines: Int
-        timeLines = minOf(timeLayout.lineCount, (innerHeight / timeLine).toInt()).coerceAtLeast(1)
-        titleLines = ((innerHeight - timeLines * timeLine) / titleLine).toInt().coerceAtLeast(0)
-        val fits = (titleLines == 0 || titleLayout.lineCount <= titleLines) && timeLines == timeLayout.lineCount
-        Column(
-            Modifier.fillMaxSize().padding(horizontal = padH, vertical = padV),
-            verticalArrangement = if (fits) Arrangement.Center else Arrangement.Top,
-        ) {
-            if (titleLines > 0) Text(title, Modifier.fillMaxWidth(), color = colors.content, style = titleStyle, textAlign = TextAlign.Center,
-                maxLines = titleLines, overflow = TextOverflow.Ellipsis)
-            if (timeLines > 0) Text(time, Modifier.fillMaxWidth(), color = colors.content, style = timeStyle, textAlign = TextAlign.Center,
+        val priorityTitle = minOf(if (wide) 1 else 2, titleLayout.lineCount - firstTitle)
+        var titleLines = firstTitle + take(priorityTitle, titleLine * priorityTitle)
+        val timeLines = if (shownTime.isEmpty()) 0 else take(timeLayout.lineCount, timeLayout.size.height.toFloat())
+        titleLines += take(titleLayout.lineCount - titleLines, titleLine * (titleLayout.lineCount - titleLines))
+        val roomLines = roomLayout?.let { take(minOf(2, it.lineCount), it.size.height.toFloat() / it.lineCount.coerceAtLeast(1) * minOf(2, it.lineCount)) } ?: 0
+        Column(Modifier.fillMaxSize().padding(start = padStart, end = padH, top = padV, bottom = padV)) {
+            Text(title, Modifier.fillMaxWidth(), color = colors.content, style = titleStyle, maxLines = titleLines, overflow = TextOverflow.Ellipsis)
+            if (status != null && statusLines > 0) Text(status, Modifier.fillMaxWidth(), color = colors.content, style = statusStyle,
+                maxLines = statusLines, overflow = TextOverflow.Ellipsis)
+            if (timeLines > 0) Text(shownTime, Modifier.fillMaxWidth(), color = colors.content, style = detailStyle,
                 maxLines = timeLines, overflow = TextOverflow.Ellipsis)
+            if (roomLines > 0) Text(rooms, Modifier.fillMaxWidth(), color = colors.content, style = detailStyle,
+                maxLines = roomLines, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -552,7 +643,7 @@ private fun OverflowBlock(count: Int, modifier: Modifier, onClick: () -> Unit) {
  * column. It is drawn above the events and ignores touches and accessibility, like the grid lines.
  */
 @Composable
-private fun NowLine(gutter: Dp, column: Dp, todayIndex: Int, dayCount: Int, hourPx: Float, modifier: Modifier) {
+private fun NowLine(column: Dp, todayIndex: Int, dayCount: Int, hourPx: Float, modifier: Modifier) {
     val p = LocalPalette.current
     val now by produceState(LocalTime.now()) {
         while (true) {
@@ -564,7 +655,7 @@ private fun NowLine(gutter: Dp, column: Dp, todayIndex: Int, dayCount: Int, hour
     Spacer(
         modifier.clearAndSetSemantics { }.drawBehind {
             val y = (now.hour * 60 + now.minute) / 60f * hourPx
-            val left = gutter.toPx()
+            val left = 0f
             val col = column.toPx()
             drawLine(ink.copy(alpha = 0.45f), Offset(startX(left), y), Offset(startX(left + col * dayCount), y), strokeWidth = 1.dp.toPx())
             val from = left + col * todayIndex

@@ -665,7 +665,10 @@ class CalendarRefinementTest {
             awaitState("The $days-day timeline must load today") { vm.loaded && !vm.loadingEvents && vm.selectedDate == vm.today }
             SystemClock.sleep(650)
             val original = vm.selectedDate
-            fun area() = requireNotNull(stableBounds(By.pkg(context.packageName).res("calendar_timeline")))
+            fun area(): Rect {
+                val bounds = requireNotNull(stableBounds(By.pkg(context.packageName).res("calendar_timeline")))
+                return if (days == 3) bounds else timelinePagingArea(bounds)
+            }
             val todayArea = area()
             horizontalSwipe(area(), true)
             awaitState("The $days-day timeline must page away") { vm.selectedDate == original.plusDays(days.toLong()) }
@@ -706,7 +709,8 @@ class CalendarRefinementTest {
             "agenda", "continuous" -> Rect(device.displayWidth / 12, device.displayHeight / 5, device.displayWidth * 11 / 12, device.displayHeight / 2)
             "week-list" -> Rect(device.displayWidth / 12, device.displayHeight / 6, device.displayWidth * 11 / 12, device.displayHeight / 3)
             "day-cards" -> node(By.pkg(context.packageName).res("calendar_day_cards")).visibleBounds
-            "day-timeline", "week-timeline", "week-three-timeline" -> node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds
+            "week-timeline", "week-three-timeline" -> timelinePagingArea(node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds)
+            "day-timeline" -> node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds
             else -> error("Unknown paging layout $layout")
         }
         fun expected(original: LocalDate, offset: Long): LocalDate = when (layout) {
@@ -850,6 +854,10 @@ class CalendarRefinementTest {
         assertTrue(device.swipe(startX, startY, endX, startY - rise, 28))
         device.waitForIdle()
     }
+
+    private fun timelinePagingArea(timeline: Rect): Rect =
+        // The divider above the hours belongs to the pager, outside the columns' sideways scroll.
+        Rect(timeline.left, timeline.top - 1, timeline.right, timeline.top)
 
     private fun horizontalSwipe(bounds: Rect, forward: Boolean) {
         val left = bounds.left + bounds.width() / 6

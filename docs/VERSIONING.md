@@ -1,6 +1,6 @@
 # Versioning
 
-The current version is **v0.6.3**. Android and the companion use `0.6.3`; Android's `versionCode` is `14`. This update adds optional Col.NET school schedules to an existing calendar, a school picker, notification choices and calendar navigation fixes. Earlier published binaries remain unchanged.
+The current version is **v0.6.4**. Android and the companion use `0.6.4`; Android's `versionCode` is `15`. This update adds readable course colors, combined school periods and absence details, and a five-day timeline. Earlier published binaries remain unchanged.
 
 Use plain `MAJOR.MINOR.PATCH` numbers, without testing suffixes or an extra build counter. The `v` prefix belongs to the Git tag and release title. Major zero means initial development under [Semantic Versioning](https://semver.org/). Physical-device and integration testing are still in progress.
 

@@ -1,6 +1,6 @@
 # Calendar usability refinement
 
-Research and design decisions through 0.6.2, checked 2026-11-07. These are product decisions
+Research and design decisions through 0.6.4, checked 2026-11-08. These are product decisions
 informed by documentation and the reported screenshots, not results of a user study.
 
 ## Calendar navigation and event visibility
@@ -29,12 +29,27 @@ covers this interaction with many all-day entries above the timed event.
 Day has no floating return-to-today control. Month and Week retain an up arrow with an
 explicit accessible Today label. A week-wide current-time line and restrained shading
 identify the current day without changing event colors.
+Bounded agendas save their last handled Today request alongside their scroll position.
+Returning to today's page after a new request moves to today; ordinary navigation and
+visits to other months retain the user's saved position.
 
-Calendar event fills use provider event colors, with calendar colors as the provider's
-fallback. Text selects black or white by contrast. This avoids a shared surface making
-different calendar colors appear identical. The time range gets wrapping space before
-extra title lines in week blocks. Blocks have a readable minimum height; when the time
-range uses that height, the full title remains available by opening the event.
+From 0.6.4, school courses retain saved palette colors, and personal events use consistent
+colors based on their titles. This follows feedback asking to distinguish events within
+one calendar. Event blocks use these colors instead of provider calendar or event colors;
+the provider values remain unchanged, and the editor's calendar dot still identifies
+the destination calendar. Light and dark palettes keep text contrast above 4.5:1.
+Week blocks give course titles priority over compact time labels and grow the hour height
+to leave room for wrapped text. A narrow block shows the full time range when it fits,
+otherwise just its start; multi-day labels are omitted rather than replaced with an
+incorrect start from another date. The complete times and rooms remain in Details.
+
+Large-text dimensions convert the base font or line height to dp before multiplying,
+because Android text scaling is nonlinear. List titles, absence ranges and room lists
+can wrap instead of losing information. Month chip capacity retains fractional pixel
+spacing with a half-pixel layout tolerance, so rounding cannot hide the only event label.
+Text direction follows the first strong character with a left-to-right fallback;
+this keeps numeric time ranges chronological inside mirrored controls while retaining
+the direction of Arabic or Hebrew event text.
 
 ## Gestures, space and motion
 

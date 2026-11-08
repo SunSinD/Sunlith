@@ -16,6 +16,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
+import io.github.sunsind.sunlith.data.projectSchoolEvents
 import io.github.sunsind.sunlith.data.CalendarRepository
 import io.github.sunsind.sunlith.data.DeviceCalendar
 import io.github.sunsind.sunlith.data.EventDraft
@@ -128,6 +129,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var weekLayout by mutableStateOf(settings.weekLayout); private set
     var dayLayout by mutableStateOf(settings.dayLayout); private set
     var visibleWeekDays by mutableStateOf(settings.visibleWeekDays); private set
+    var courseColorSlots by mutableStateOf(settings.courseColorSlots); private set
     var layoutPreset by mutableStateOf(settings.layoutPreset); private set
 
     var today by mutableStateOf(LocalDate.now()); private set
@@ -295,9 +297,9 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     private fun wantedRange(): Pair<LocalDate, LocalDate> {
         if (continuousAgenda()) return targetWindow ?: initialWindow()
         val grid = gridRange()
-        // Selecting inside a three-day window keeps up to two earlier dates visible.
-        return if (viewMode == ViewMode.Week && weekLayout == "timeline" && visibleWeekDays == 3) {
-            grid.first.minusDays(2) to grid.second
+        // A rolling timeline can retain earlier dates while the selection stays in its window.
+        return if (viewMode == ViewMode.Week && weekLayout == "timeline" && visibleWeekDays < 7) {
+            grid.first.minusDays((visibleWeekDays - 1).toLong()) to grid.second
         } else grid
     }
 
@@ -328,7 +330,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         val zone = ZoneId.systemDefault()
         val start = from.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         val end = to.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
-        return repo.events(start, end, ids)
+        return repo.events(start, end, ids, school = true)
     }
 
     fun reload() {
@@ -435,15 +437,25 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     private fun prepareEvents(agenda: List<CalendarEvent>, grid: List<CalendarEvent>, from: LocalDate, to: LocalDate): EventSnapshot {
-        val merged = (agenda + grid).distinctBy { it.key() }.sortedWith(compareBy({ it.startMillis }, { it.id }))
+        val merged = projectSchoolEvents((agenda + grid).distinctBy { it.key() }, ZoneId.systemDefault())
+            .sortedWith(compareBy({ it.startMillis }, { it.id }))
         return EventSnapshot(agenda, grid, merged, indexByDay(merged, ZoneId.systemDefault(), from, to))
     }
 
     private fun publishEvents(result: EventSnapshot) {
+        rememberCourseSlots(result.events)
         agendaEvents = result.agenda
         gridEvents = result.grid
         events = result.events
         eventsByDay = result.byDay
+    }
+
+    private fun rememberCourseSlots(events: List<CalendarEvent>) {
+        val next = assignCourseSlots(events.mapNotNull { it.school?.courseKey }, courseColorSlots)
+        if (next != courseColorSlots) {
+            settings.courseColorSlots = next
+            courseColorSlots = next
+        }
     }
 
     private fun effectiveIds(cals: List<DeviceCalendar>): Set<Long> {
@@ -595,15 +607,23 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val event = withContext(Dispatchers.IO) {
                     val draft = repo.getEvent(eventId) ?: return@withContext null
-                    if (begin > 0) {
-                        repo.events(begin - 1, begin + 1, setOf(draft.calendarId))
-                            .firstOrNull { it.id == eventId && it.startMillis == begin }
-                            ?.let { return@withContext it }
+                    val occurrenceStart = if (begin > 0) begin else draft.startMillis
+                    val calendarIds = setOf(draft.calendarId)
+                    val occurrence = repo.events(occurrenceStart - 1, occurrenceStart + 1, calendarIds, school = true)
+                        .firstOrNull { it.id == eventId && it.startMillis == occurrenceStart }
+                    if (occurrence?.school != null) {
+                        val zone = ZoneId.systemDefault()
+                        val day = occurrence.span(zone).first
+                        val surrounding = repo.events(day.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+                            day.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli(), calendarIds, school = true)
+                        projectSchoolEvents(surrounding, zone).firstOrNull { projected ->
+                            projected.school?.periods?.any { it.eventId == eventId && it.startMillis == occurrenceStart } == true
+                        }?.let { return@withContext it }
                     }
+                    if (occurrence != null) return@withContext occurrence
                     val cal = repo.calendars().firstOrNull { it.id == draft.calendarId }
-                    val start = if (begin > 0) begin else draft.startMillis
-                    CalendarEvent(eventId, draft.calendarId, draft.title, draft.description, draft.location, start,
-                        start + (draft.endMillis - draft.startMillis), draft.allDay, draft.timeZone, draft.rrule,
+                    CalendarEvent(eventId, draft.calendarId, draft.title, draft.description, draft.location, occurrenceStart,
+                        occurrenceStart + (draft.endMillis - draft.startMillis), draft.allDay, draft.timeZone, draft.rrule,
                         cal?.color ?: 0, cal?.name ?: "")
                 }
                 if (event == null) {
@@ -957,9 +977,10 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
                     val zone = ZoneId.systemDefault()
                     val today = LocalDate.now()
                     val ids = effectiveIds(repo.calendars())
-                    repo.events(today.minusDays(365).atStartOfDay(zone).toInstant().toEpochMilli(),
-                        today.plusDays(730).atStartOfDay(zone).toInstant().toEpochMilli(), ids)
+                    projectSchoolEvents(repo.events(today.minusDays(365).atStartOfDay(zone).toInstant().toEpochMilli(),
+                        today.plusDays(730).atStartOfDay(zone).toInstant().toEpochMilli(), ids, school = true), zone)
                 }
+                rememberCourseSlots(pool)
                 searchPool = pool
                 filterSearch()
             } catch (c: CancellationException) {

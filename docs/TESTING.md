@@ -2,6 +2,80 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.4 calendar readability verification, 2026-11-08
+
+The tested distribution APK is version 0.6.4/code 15, nondebuggable and
+R8-minified. The r44 and r46 production APKs are byte-identical. r46 changes
+only the readability capture test's scrolling and readiness helper.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Distribution APK | `d9bbcca34f3953b1a909fac5cb73ddda69650b25036284fc8f3e53d9bf3eb41e` |
+| r46 test APK | `6cc21832f11fc4ee7b2f8f7370081ffaee8ddb1ee4a0d0efa1752ab2f8ff59c2` |
+| r44 test APK | `b2fc99dd2ab776eb26bacd33c5f59cfba6ae5e4962f12c794691b1c2f61b4f6f` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+
+| Check | API 36 | API 30 |
+| --- | --- | --- |
+| Full instrumentation | r44: 263 passed, 0 failed, 6 skipped; 1395.684s | r46: 261 passed, 0 failed, 5 skipped; 1334.724s |
+| Readability display variants | 3 r44 priority + 5 r46 remaining passed | All 8 r46 passed |
+| External Android/Node connection | r44: all 8 tools passed | r46: all 8 tools passed |
+| Synthetic code 14 to 15 upgrade | Both 3-day and 7-day settings passed | Both 3-day and 7-day settings passed |
+| Notification-permission recovery | Both opt-ins passed in r46 | Requires API 33 |
+
+The reused API 36 results ran the older r44 test APK against the identical
+production APK; they are not claimed as new r46 executions. Four focused Today
+checks and a color preflight also passed on API 36 in r44. API 30's color
+preflight passed in r46. Neither full suite used command-line exclusions or
+retries. Three API-33-minimum tests account for the discovery difference
+(269 versus 266). Full-suite skips are the opt-in readability captures, external
+connection fixture, older school-display captures and private live-portal smoke;
+API 30 also skips Material You, while API 36 skips both permission opt-ins.
+Readability, external tools and API 36 permission recovery were enabled separately.
+The older school-display fixture and live-portal smoke were not enabled here.
+
+English and French were checked at normal width, narrow width, 200% text and
+forced RTL. The complete matrix contains 256 checkpoint states, including the
+48 reused r44 priority states. The runtime worker reviewed 262 fresh PNGs and
+223 valid XML files across display, full-suite, upgrade and platform evidence.
+These are file counts, not distinct frames; most full-suite images have no XML.
+One original 73-byte invalid XML dump is retained and excluded from valid counts.
+Pixel review, rather than semantics alone, checked chronological time ranges,
+partial absence versus total class duration, room ordering, mirrored rails and
+absence markers, full-absence outlines, large text and month chips.
+
+The earlier r45 capture failure was a test gesture overshooting its Schedule
+target. Its original evidence remains recorded; r46 fixes only that helper.
+Waiting for day focus to be consumed does not prove its scrolling has finished.
+Before API 30 tests, a pre-existing System UI ANR caused a missing XML dump;
+a separate recovered-readiness assessment allowed continuation without retrying
+a test. A cleanup guard also rejected the nonempty original provider baseline
+before mutation. The corrected local harness preserves those original rows.
+Raw natural-cleanup differences remain recorded separately from explicit cleanup:
+synthetic preferences, demo data and two proven-owned audit files were removed
+only after ownership checks. Both original emulator baselines were restored
+exactly and both emulators stopped. Source, APK, signing, privacy and historical
+artifact audits passed.
+
+Local checks passed 61 JVM tests, distribution app/test builds, desktop syntax
+checks and 44 desktop tests with one external opt-in skip. Dependency audit found
+zero production vulnerabilities. Lint reported zero errors, 139 warnings and
+seven hints. Independent source and evidence reviews found no release blocker.
+
+Known limits: narrow overview labels can ellipsize or hyphenate; scrolling edges
+and floating buttons can hide content in a single capture. Some grouped-class
+captures prove only partial visibility, and an empty late-hour Monday frame does
+not prove its morning event. Search provides the full title, precise absence and
+all three room times in every variant. Large-text month grids can open with the
+first row's dates above the viewport, and have no visible extra-event count by
+design; count semantics remain. Forced EN/FR RTL does not validate Arabic time
+formatting. The compact fractional-density month fixture is not physical rotation.
+Saved course colors can collide when courses assigned in separate fetched sets
+later appear together. The pre-existing Today request-counter reset after process
+death remains outside the narrow remounted-page fix. Encrypted school-connection
+upgrade, live portal behavior, physical TalkBack, OEM and real-phone checks remain
+unverified by this campaign.
+
 ## 0.6.3 school setup verification, 2026-11-08
 
 The prepared distribution APK is version 0.6.3/code 14, nondebuggable and

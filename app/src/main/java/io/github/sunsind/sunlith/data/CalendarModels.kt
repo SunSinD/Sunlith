@@ -29,7 +29,51 @@ data class CalendarEvent(
     val rrule: String? = null,
     val color: Int = 0,
     val calendarName: String = "",
+    val school: SchoolEventInfo? = null,
 )
+
+enum class SchoolAbsenceCoverage { NONE, PARTIAL, FULL }
+
+data class SchoolEventPeriod(
+    val eventId: Long,
+    val startMillis: Long,
+    val endMillis: Long,
+    val location: String,
+    val description: String,
+)
+
+data class SchoolEventAbsence(
+    val startMillis: Long,
+    val endMillis: Long,
+    val allDay: Boolean,
+    val notes: List<String>,
+)
+
+data class SchoolEventInfo(
+    val course: String,
+    val group: String,
+    val classKey: String,
+    val classKind: String,
+    val kind: String,
+    val courseTitle: String,
+    val periods: List<SchoolEventPeriod>,
+    val absences: List<SchoolEventAbsence>,
+) {
+    val courseKey: String get() = course
+    val absenceCoverage: SchoolAbsenceCoverage get() {
+        if (absences.isEmpty()) return SchoolAbsenceCoverage.NONE
+        if (periods.isEmpty()) return SchoolAbsenceCoverage.FULL
+        val fullyAbsent = periods.all { period ->
+            var coveredUntil = period.startMillis
+            absences.sortedBy { it.startMillis }.forEach { absence ->
+                if (absence.allDay) coveredUntil = period.endMillis
+                else if (absence.startMillis <= coveredUntil && absence.endMillis > coveredUntil) coveredUntil = absence.endMillis
+            }
+            coveredUntil >= period.endMillis
+        }
+        return if (fullyAbsent) SchoolAbsenceCoverage.FULL else SchoolAbsenceCoverage.PARTIAL
+    }
+}
 
 data class EventDraft(
     val id: Long? = null,

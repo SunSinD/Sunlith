@@ -183,12 +183,13 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                             listOf(
                                 "list" to stringResource(R.string.settings_week_list),
                                 "timeline3" to stringResource(R.string.settings_week_timeline3),
+                                "timeline5" to stringResource(R.string.settings_week_timeline5),
                                 "timeline7" to stringResource(R.string.settings_week_timeline7),
                             ),
                         ) { choice ->
                             if (choice == "list") vm.changeWeekLayout("list")
                             else {
-                                val days = if (choice == "timeline3") 3 else 7
+                                val days = when (choice) { "timeline3" -> 3; "timeline5" -> 5; else -> 7 }
                                 if (vm.visibleWeekDays != days) vm.changeVisibleWeekDays(days)
                                 if (vm.weekLayout != "timeline") vm.changeWeekLayout("timeline")
                             }

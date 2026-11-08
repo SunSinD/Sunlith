@@ -188,6 +188,16 @@ class SettingsPreferencesTest {
     }
 
     @Test
+    fun fiveDayTimelineAndCourseColorsSurviveRecreation() {
+        val settings = SettingsStore(isolated)
+        settings.visibleWeekDays = 5
+        settings.courseColorSlots = mapOf("synthetic-course" to 3)
+        val restored = SettingsStore(isolated)
+        assertEquals(5, restored.visibleWeekDays)
+        assertEquals(mapOf("synthetic-course" to 3), restored.courseColorSlots)
+    }
+
+    @Test
     fun unreadableLayoutChoicesFallBackWithoutChangingOtherPreferences() {
         isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit()
             .putString("agenda_range", "future-version")
@@ -195,7 +205,7 @@ class SettingsPreferencesTest {
             .putString("week_layout", "future-version")
             .putString("day_layout", "future-version")
             .putString("layout_preset", "future-version")
-            .putInt("visible_week_days", 5)
+            .putInt("visible_week_days", 4)
             .putString("theme", "dark")
             .putInt("widget_days", 14)
             .commit()
@@ -241,7 +251,7 @@ class SettingsPreferencesTest {
         assertThrows(IllegalArgumentException::class.java) { settings.monthLayout = "invalid" }
         assertThrows(IllegalArgumentException::class.java) { settings.weekLayout = "invalid" }
         assertThrows(IllegalArgumentException::class.java) { settings.dayLayout = "invalid" }
-        assertThrows(IllegalArgumentException::class.java) { settings.visibleWeekDays = 5 }
+        assertThrows(IllegalArgumentException::class.java) { settings.visibleWeekDays = 4 }
         assertThrows(IllegalArgumentException::class.java) { settings.layoutPreset = "invalid" }
         val restored = SettingsStore(isolated)
         assertEquals("day", restored.agendaRange)

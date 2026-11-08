@@ -7,6 +7,15 @@
 -keep,allowoptimization,allowobfuscation class androidx.activity.compose.ComponentActivityKt {
     void setContent$default(androidx.activity.ComponentActivity,androidx.compose.runtime.CompositionContext,kotlin.jvm.functions.Function2,int,java.lang.Object);
 }
+-keep,allowoptimization,allowobfuscation class androidx.activity.compose.LocalActivityKt {
+    androidx.compose.runtime.ProvidableCompositionLocal getLocalActivity();
+}
+-keep,allowoptimization,allowobfuscation class androidx.activity.compose.LocalActivityResultRegistryOwner {
+    androidx.activity.compose.LocalActivityResultRegistryOwner INSTANCE;
+    androidx.compose.runtime.ProvidedValue provides(androidx.activity.result.ActivityResultRegistryOwner);
+}
+-keep,allowoptimization,allowobfuscation class androidx.activity.result.ActivityResultRegistryOwner {
+}
 -keep,allowoptimization,allowobfuscation class androidx.annotation.RestrictTo {
 }
 -keep,allowoptimization,allowobfuscation class androidx.annotation.RestrictTo$Scope {
@@ -34,6 +43,7 @@
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.foundation.layout.SizeKt {
     androidx.compose.ui.Modifier fillMaxSize$default(androidx.compose.ui.Modifier,float,int,java.lang.Object);
+    androidx.compose.ui.Modifier fillMaxWidth$default(androidx.compose.ui.Modifier,float,int,java.lang.Object);
     androidx.compose.ui.Modifier height-3ABfNKs(androidx.compose.ui.Modifier,float);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.foundation.lazy.LazyDslKt {
@@ -67,8 +77,30 @@
     androidx.compose.material3.ColorScheme dynamicDarkColorScheme(android.content.Context);
     androidx.compose.material3.ColorScheme dynamicLightColorScheme(android.content.Context);
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.material3.MaterialTheme {
+    int $stable;
+    androidx.compose.material3.MaterialTheme INSTANCE;
+    androidx.compose.material3.Typography getTypography(androidx.compose.runtime.Composer,int);
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.material3.TextKt {
     void Text-Nvy7gAk(java.lang.String,androidx.compose.ui.Modifier,long,androidx.compose.foundation.text.TextAutoSize,long,androidx.compose.ui.text.font.FontStyle,androidx.compose.ui.text.font.FontWeight,androidx.compose.ui.text.font.FontFamily,long,androidx.compose.ui.text.style.TextDecoration,androidx.compose.ui.text.style.TextAlign,long,int,boolean,int,int,kotlin.jvm.functions.Function1,androidx.compose.ui.text.TextStyle,androidx.compose.runtime.Composer,int,int,int);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.material3.Typography {
+    androidx.compose.ui.text.TextStyle getBodyLarge();
+    androidx.compose.ui.text.TextStyle getBodyMedium();
+    androidx.compose.ui.text.TextStyle getBodySmall();
+    androidx.compose.ui.text.TextStyle getDisplayLarge();
+    androidx.compose.ui.text.TextStyle getDisplayMedium();
+    androidx.compose.ui.text.TextStyle getDisplaySmall();
+    androidx.compose.ui.text.TextStyle getHeadlineLarge();
+    androidx.compose.ui.text.TextStyle getHeadlineMedium();
+    androidx.compose.ui.text.TextStyle getHeadlineSmall();
+    androidx.compose.ui.text.TextStyle getLabelLarge();
+    androidx.compose.ui.text.TextStyle getLabelMedium();
+    androidx.compose.ui.text.TextStyle getLabelSmall();
+    androidx.compose.ui.text.TextStyle getTitleLarge();
+    androidx.compose.ui.text.TextStyle getTitleMedium();
+    androidx.compose.ui.text.TextStyle getTitleSmall();
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.Applier {
 }
@@ -85,12 +117,14 @@
     boolean changedInstance(java.lang.Object);
     void createNode(kotlin.jvm.functions.Function0);
     void endNode();
+    void endReplaceGroup();
     androidx.compose.runtime.Applier getApplier();
     androidx.compose.runtime.CompositionLocalMap getCurrentCompositionLocalMap();
     boolean getInserting();
     java.lang.Object rememberedValue();
     boolean shouldExecute(boolean,int);
     void skipToGroupEnd();
+    void startReplaceGroup(int);
     void startReusableNode();
     void updateRememberedValue(java.lang.Object);
     void useNode();
@@ -105,6 +139,10 @@
     void sourceInformationMarkerStart(androidx.compose.runtime.Composer,int,java.lang.String);
     void traceEventEnd();
     void traceEventStart(int,int,int,java.lang.String);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.CompositionLocalKt {
+    void CompositionLocalProvider(androidx.compose.runtime.ProvidedValue,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int);
+    void CompositionLocalProvider(androidx.compose.runtime.ProvidedValue[],kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.CompositionLocalMap {
 }
@@ -132,6 +170,12 @@
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.MutableLongState {
     void setLongValue(long);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.ProvidableCompositionLocal {
+    androidx.compose.runtime.ProvidedValue provides(java.lang.Object);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.ProvidedValue {
+    int $stable;
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.SnapshotIntStateKt {
     androidx.compose.runtime.MutableIntState mutableIntStateOf(int);
@@ -168,6 +212,9 @@
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.Modifier$Companion {
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.geometry.Rect {
+    long getCenter-F1C5BW0();
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.graphics.ColorKt {
     int toArgb-8_81llA(long);
 }
@@ -186,6 +233,14 @@
     kotlin.jvm.functions.Function2 getSetModifier();
     kotlin.jvm.functions.Function2 getSetResolvedCompositionLocals();
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.platform.AndroidCompositionLocals_androidKt {
+    androidx.compose.runtime.ProvidableCompositionLocal getLocalConfiguration();
+    androidx.compose.runtime.ProvidableCompositionLocal getLocalContext();
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.platform.CompositionLocalsKt {
+    androidx.compose.runtime.ProvidableCompositionLocal getLocalDensity();
+    androidx.compose.runtime.ProvidableCompositionLocal getLocalLayoutDirection();
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.platform.TestTagKt {
     androidx.compose.ui.Modifier testTag(androidx.compose.ui.Modifier,java.lang.String);
 }
@@ -195,11 +250,41 @@
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.semantics.SemanticsProperties_androidKt {
     void setTestTagsAsResourceId(androidx.compose.ui.semantics.SemanticsPropertyReceiver,boolean);
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.TextLayoutResult {
+    androidx.compose.ui.geometry.Rect getBoundingBox(int);
+    androidx.compose.ui.text.style.ResolvedTextDirection getParagraphDirection(int);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.TextMeasurer {
+    androidx.compose.ui.text.TextLayoutResult measure-wNUYSr0$default(androidx.compose.ui.text.TextMeasurer,java.lang.String,androidx.compose.ui.text.TextStyle,int,boolean,int,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.text.font.FontFamily$Resolver,boolean,int,java.lang.Object);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.TextMeasurerHelperKt {
+    androidx.compose.ui.text.TextMeasurer rememberTextMeasurer(int,androidx.compose.runtime.Composer,int,int);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.TextStyle {
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.font.FontFamily {
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.font.FontFamily$Resolver {
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.style.ResolvedTextDirection {
+    androidx.compose.ui.text.style.ResolvedTextDirection Ltr;
+    androidx.compose.ui.text.style.ResolvedTextDirection Rtl;
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.ConstraintsKt {
+    long Constraints$default(int,int,int,int,int,java.lang.Object);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.DensityKt {
+    androidx.compose.ui.unit.Density Density(float,float);
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.Dp {
     float constructor-impl(float);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.IntSize {
     long unbox-impl();
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.LayoutDirection {
+    androidx.compose.ui.unit.LayoutDirection Ltr;
+    androidx.compose.ui.unit.LayoutDirection Rtl;
 }
 -keep,allowoptimization,allowobfuscation class androidx.concurrent.futures.AbstractResolvableFuture {
     void addListener(java.lang.Runnable,java.util.concurrent.Executor);
@@ -247,10 +332,12 @@
 -keep,allowoptimization,allowobfuscation class androidx.lifecycle.ViewModelProvider {
     <init>(androidx.lifecycle.ViewModelStore,androidx.lifecycle.ViewModelProvider$Factory,androidx.lifecycle.viewmodel.CreationExtras,int,kotlin.jvm.internal.DefaultConstructorMarker);
     <init>(androidx.lifecycle.ViewModelStoreOwner);
+    <init>(androidx.lifecycle.ViewModelStoreOwner,androidx.lifecycle.ViewModelProvider$Factory);
     androidx.lifecycle.ViewModel get(java.lang.Class);
 }
 -keep,allowoptimization,allowobfuscation class androidx.lifecycle.ViewModelProvider$AndroidViewModelFactory {
     androidx.lifecycle.ViewModelProvider$AndroidViewModelFactory$Companion Companion;
+    <init>(android.app.Application);
 }
 -keep,allowoptimization,allowobfuscation class androidx.lifecycle.ViewModelProvider$AndroidViewModelFactory$Companion {
     androidx.lifecycle.ViewModelProvider$AndroidViewModelFactory getInstance(android.app.Application);
@@ -337,12 +424,18 @@
     int beta_widget_calendar_name;
     int beta_widget_days;
     int beta_widget_empty_days;
+    int calendar_next_five_days;
+    int calendar_prev_five_days;
+    int calendar_teacher_absent;
+    int calendar_teacher_absent_range;
     int connection_setup_connect_computer;
     int connection_setup_open_calendar;
     int connection_setup_share_again;
     int custom_computer_access_desc;
     int custom_schedule;
     int delete_event_title;
+    int details_school_periods;
+    int details_teacher_absence;
     int device_link_consent;
     int device_link_details;
     int device_link_history;
@@ -444,12 +537,14 @@
     long allDayMillis(java.time.LocalDate);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.CalendarEvent {
-    <init>(long,long,java.lang.String,java.lang.String,java.lang.String,long,long,boolean,java.lang.String,java.lang.String,int,java.lang.String,int,kotlin.jvm.internal.DefaultConstructorMarker);
+    <init>(long,long,java.lang.String,java.lang.String,java.lang.String,long,long,boolean,java.lang.String,java.lang.String,int,java.lang.String,io.github.sunsind.sunlith.data.SchoolEventInfo,int,kotlin.jvm.internal.DefaultConstructorMarker);
     boolean getAllDay();
     int getColor();
     java.lang.String getDescription();
     long getEndMillis();
     long getId();
+    java.lang.String getLocation();
+    io.github.sunsind.sunlith.data.SchoolEventInfo getSchool();
     long getStartMillis();
     java.lang.String getTitle();
 }
@@ -460,7 +555,8 @@
     void deleteEvent(long);
     void deleteIfUnchanged$app_distribution(long,java.util.Map);
     io.github.sunsind.sunlith.data.EditBlockReason editBlockReason(long);
-    java.util.List events(long,long,java.util.Set);
+    java.util.List events(long,long,java.util.Set,boolean);
+    java.util.List events$default(io.github.sunsind.sunlith.data.CalendarRepository,long,long,java.util.Set,boolean,int,java.lang.Object);
     io.github.sunsind.sunlith.data.EventDraft getEvent(long);
     java.util.Map revision$app_distribution(long);
     long saveEvent(io.github.sunsind.sunlith.data.EventDraft);
@@ -505,6 +601,24 @@
     int getDuplicates();
     int getImported();
     int getSkipped();
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.SchoolAbsenceCoverage {
+    io.github.sunsind.sunlith.data.SchoolAbsenceCoverage PARTIAL;
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.SchoolEventInfo {
+    io.github.sunsind.sunlith.data.SchoolAbsenceCoverage getAbsenceCoverage();
+    java.lang.String getCourse();
+    java.lang.String getCourseKey();
+    java.util.List getPeriods();
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.SchoolEventPeriod {
+    long getEndMillis();
+    long getEventId();
+    java.lang.String getLocation();
+    long getStartMillis();
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.SchoolEventProjectionKt {
+    java.util.List projectSchoolEvents(java.util.List,java.time.ZoneId);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.StoredEvent {
     io.github.sunsind.sunlith.data.EventDraft getDraft();
@@ -850,6 +964,7 @@
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolTerm {
     <init>(java.lang.String,java.lang.String,java.time.LocalDate,java.time.LocalDate);
     java.lang.String getKey();
+    java.time.LocalDate getStart();
     java.util.List mondays();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.system.AppRefresh {
@@ -899,6 +1014,7 @@
     java.lang.String getAgendaDisplay();
     java.lang.String getAgendaRange();
     boolean getCollapseCalendarOnScroll();
+    java.util.Map getCourseColorSlots();
     java.lang.String getDayLayout();
     boolean getHasChosenCalendars();
     boolean getKeepSelectedDate();
@@ -921,6 +1037,7 @@
     void setAgendaDisplay(java.lang.String);
     void setAgendaRange(java.lang.String);
     void setCollapseCalendarOnScroll(boolean);
+    void setCourseColorSlots(java.util.Map);
     void setDayLayout(java.lang.String);
     void setHasChosenCalendars(boolean);
     void setKeepSelectedDate(boolean);
@@ -944,6 +1061,7 @@
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.CalendarEventStyleKt {
     java.lang.Object awaitFocusStart(boolean,kotlin.coroutines.Continuation);
+    io.github.sunsind.sunlith.ui.EventColors courseColors(int,boolean);
     io.github.sunsind.sunlith.data.CalendarEvent focusTarget(java.util.List,java.time.LocalDate,java.time.ZoneId);
     java.lang.Object scrollToFocus(androidx.compose.foundation.lazy.LazyListState,int,boolean,kotlin.coroutines.Continuation);
 }
@@ -953,17 +1071,20 @@
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.CalendarSwipeKt {
     void PagedPeriod(io.github.sunsind.sunlith.ui.PeriodSwipeState,long,androidx.compose.ui.Modifier,kotlin.jvm.functions.Function3,androidx.compose.runtime.Composer,int,int);
     void SlidingPeriod(io.github.sunsind.sunlith.ui.PeriodSwipeState,long,androidx.compose.ui.Modifier,kotlin.jvm.functions.Function3,androidx.compose.runtime.Composer,int,int);
-    androidx.compose.ui.Modifier periodSwipe(androidx.compose.ui.Modifier,io.github.sunsind.sunlith.ui.PeriodSwipeState);
+    androidx.compose.ui.Modifier periodSwipe$default(androidx.compose.ui.Modifier,io.github.sunsind.sunlith.ui.PeriodSwipeState,boolean,int,java.lang.Object);
     io.github.sunsind.sunlith.ui.PeriodSwipeState rememberPeriodSwipe(boolean,boolean,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.CalendarTimelineKt {
-    void Timeline(java.util.List,kotlin.jvm.functions.Function1,java.time.LocalDate,java.time.LocalDate,io.github.sunsind.sunlith.ui.Formats,boolean,androidx.compose.foundation.ScrollState,boolean,int,boolean,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function2,androidx.compose.ui.Modifier,io.github.sunsind.sunlith.ui.TimelineFocus,kotlin.jvm.functions.Function1,boolean,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int,int,int);
+    void Timeline(java.util.List,kotlin.jvm.functions.Function1,java.time.LocalDate,java.time.LocalDate,io.github.sunsind.sunlith.ui.Formats,boolean,androidx.compose.foundation.ScrollState,boolean,int,boolean,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function2,androidx.compose.ui.Modifier,io.github.sunsind.sunlith.ui.TimelineFocus,kotlin.jvm.functions.Function1,boolean,boolean,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int,int,int);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.EditorState {
     io.github.sunsind.sunlith.ui.EditorState copy$default(io.github.sunsind.sunlith.ui.EditorState,java.lang.Long,java.lang.Long,boolean,java.lang.String,java.lang.String,java.lang.String,boolean,java.time.LocalDate,java.time.LocalTime,java.time.LocalDate,java.time.LocalTime,java.lang.String,java.lang.String,java.lang.String,java.util.List,io.github.sunsind.sunlith.data.EventDraft,int,java.lang.Object);
     java.time.LocalDate getStartDate();
     java.lang.String getTitle();
     io.github.sunsind.sunlith.data.EventDraft toDraft(java.time.ZoneId);
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.EventColors {
+    long getContainer-0d7_KjU();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.FormatKt {
     java.time.LocalDate gridStart(java.time.YearMonth,boolean);
@@ -974,6 +1095,7 @@
     java.lang.String dayLong(java.time.LocalDate);
     java.lang.String dayMonth(java.time.LocalDate);
     java.lang.String numericDayMonth(java.time.LocalDate);
+    java.lang.String timeRange(long,long);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.ImportUi {
     java.lang.String getError();
@@ -1005,10 +1127,14 @@
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.Screen$Settings {
     io.github.sunsind.sunlith.ui.Screen$Settings INSTANCE;
 }
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.SunlithAppKt {
+    void SunlithApp(io.github.sunsind.sunlith.ui.SunlithViewModel,androidx.compose.runtime.Composer,int);
+}
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.SunlithPalette {
     long getAccent-0d7_KjU();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.SunlithViewModel {
+    int $stable;
     void applyLayoutPreset(java.lang.String);
     void back();
     void changeAgendaDisplay(java.lang.String);
@@ -1034,6 +1160,7 @@
     java.lang.String getAgendaDisplay();
     java.lang.String getAgendaRange();
     boolean getAiIntroDone();
+    java.util.Map getCourseColorSlots();
     int getDayFocusRequest();
     java.lang.String getDayLayout();
     io.github.sunsind.sunlith.ui.EditorState getEditor();
@@ -1073,6 +1200,8 @@
     boolean getWeekStartsMonday();
     boolean getWidgetShowCalendarName();
     void goToday();
+    void handleLink$default(io.github.sunsind.sunlith.ui.SunlithViewModel,long,long,boolean,java.time.LocalDate,int,java.lang.Object);
+    void handleSchoolLink(java.time.LocalDate);
     void newEvent(java.time.LocalDate);
     void open(io.github.sunsind.sunlith.ui.Screen);
     void openDay(java.time.LocalDate);
@@ -1085,6 +1214,7 @@
     void setTheme(java.lang.String);
     void step(int);
     void updateEditor(kotlin.jvm.functions.Function1);
+    void updateSearch(java.lang.String);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.ThemeKt {
     void SunlithTheme(java.lang.String,boolean,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int,int);
@@ -1105,6 +1235,11 @@
     void updateAll(android.content.Context);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.widget.WidgetConfigureActivity {
+}
+-keep,allowoptimization,allowobfuscation class kotlin.ExceptionsKt {
+}
+-keep,allowoptimization,allowobfuscation class kotlin.ExceptionsKt__ExceptionsKt {
+    java.lang.String stackTraceToString(java.lang.Throwable);
 }
 -keep,allowoptimization,allowobfuscation class kotlin.Lazy {
     java.lang.Object getValue();
@@ -1374,6 +1509,7 @@
 -keep,allowoptimization,allowobfuscation class kotlin.ranges.RangesKt___RangesKt {
     int coerceAtLeast(int,int);
     long coerceAtLeast(long,long);
+    int coerceAtMost(int,int);
     int coerceIn(int,int,int);
     kotlin.ranges.IntProgression step(kotlin.ranges.IntProgression,int);
     kotlin.ranges.IntRange until(int,int);
@@ -1410,6 +1546,8 @@
 }
 -keep,allowoptimization,allowobfuscation class kotlin.text.StringsKt__StringsKt {
     boolean contains$default(java.lang.CharSequence,java.lang.CharSequence,boolean,int,java.lang.Object);
+    int getLastIndex(java.lang.CharSequence);
+    int indexOf$default(java.lang.CharSequence,java.lang.String,int,boolean,int,java.lang.Object);
     boolean isBlank(java.lang.CharSequence);
     kotlin.sequences.Sequence lineSequence(java.lang.CharSequence);
     java.util.List lines(java.lang.CharSequence);

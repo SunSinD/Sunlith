@@ -41,12 +41,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
 import java.time.LocalDate
 import java.time.YearMonth
+import kotlin.math.floor
+
+internal fun fullMonthChipSlots(row: Dp, number: Dp, chip: Dp, density: Density): Int = with(density) {
+    // Keep the fractional chip stride; allow half a pixel for rounding in the available space.
+    floor(((row - number - 10.dp).toPx() + 0.5f) / chip.toPx().coerceAtLeast(1f)).toInt().coerceAtLeast(0)
+}
 
 /**
  * A month grid that fills the screen with six fixed rows, ruled into cells, and shows event titles as solid chips
@@ -119,17 +126,21 @@ private fun FullMonthCell(
 ) {
     val p = LocalPalette.current
     val context = LocalContext.current
+    val courses = LocalCourseColors.current
     val untitled = stringResource(R.string.untitled)
-    val description = remember(day, isToday, events, f, untitled) {
+    val absenceLabels = events.associateWith { absenceStatus(it, f) }
+    val description = remember(day, isToday, events, f, untitled, absenceLabels) {
         buildString {
             append(dayDescription(context, f, day, isToday, events.size))
-            if (events.isNotEmpty()) append(". ").append(events.take(5).joinToString(", ") { it.title.ifBlank { untitled } })
+            if (events.isNotEmpty()) append(". ").append(events.take(5).joinToString(", ") {
+                listOfNotNull(it.displayTitle().ifBlank { untitled }, absenceLabels[it]).joinToString(", ")
+            })
             if (events.size > 5) append(", ").append(context.resources.getQuantityString(R.plurals.calendar_more_events, events.size - 5, events.size - 5))
         }
     }
     val openLabel = stringResource(R.string.calendar_open_day)
     val lineColor = p.line
-    val slots = ((row - number - 10.dp) / chip).toInt().coerceAtLeast(0)
+    val slots = fullMonthChipSlots(row, number, chip, LocalDensity.current)
     val shown = minOf(events.size, slots)
     val numberStyle = MaterialTheme.typography.bodyMedium.copy(
         color = when { isSelected -> p.onAccent; inMonth -> p.ink; else -> p.faint },
@@ -150,8 +161,8 @@ private fun FullMonthCell(
                 val chipHeight = (chip - 2.dp).toPx()
                 val chipTop = top + numberSize + 2.dp.toPx()
                 val labels = events.take(shown).map { event ->
-                    val colors = eventColors(event.color, p, dimmed = !inMonth)
-                    val text = measurer.measure(event.title.ifBlank { untitled }, chipStyle.copy(color = colors.content),
+                    val colors = eventColors(event, p, courses, dimmed = !inMonth)
+                    val text = measurer.measure(event.displayTitle().ifBlank { untitled }, chipStyle.copy(color = colors.content),
                         maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
                         constraints = Constraints(maxWidth = (available - 6.dp.toPx()).toInt().coerceAtLeast(0)))
                     Triple(event, colors, text)
@@ -174,8 +185,9 @@ private fun FullMonthCell(
                     labels.forEachIndexed { index, (event, colors, text) ->
                         val y = chipTop + index * chip.toPx()
                         drawRoundRect(colors.container, Offset(inset, y), Size(available, chipHeight), CornerRadius(4.dp.toPx()))
-                        if (pulse && event.color == 0) drawRoundRect(p.line, Offset(inset, y), Size(available, chipHeight),
-                            CornerRadius(4.dp.toPx()), style = Stroke(1.dp.toPx()))
+                        colors.border?.let { border ->
+                            drawRoundRect(border, Offset(inset, y), Size(available, chipHeight), CornerRadius(4.dp.toPx()), style = Stroke(1.dp.toPx()))
+                        }
                         val x = if (layoutDirection == LayoutDirection.Rtl) size.width - inset - 3.dp.toPx() - text.size.width else inset + 3.dp.toPx()
                         drawText(text, topLeft = Offset(x, y + (chipHeight - text.size.height) / 2))
                     }

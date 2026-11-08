@@ -1,5 +1,18 @@
 # Changes
 
+## 0.6.4
+
+- Give school courses consistent colors, with readable text and the same colors across calendar views.
+- Give personal events consistent colors based on their titles; event blocks use these instead of provider calendar or event colors.
+- Widen narrow timeline columns with sideways scrolling and enlarge all-day labels.
+- Scale timeline space with large text, let list titles and room lists wrap, and retain event labels in the large-text month grid.
+- Keep time ranges in start-to-end order when the surrounding layout is mirrored.
+- Return to today's agenda after revisiting a month while preserving manual scroll during ordinary month navigation.
+- Add a rolling five-day timeline under Appearance, alongside List, three days and seven days.
+- Combine consecutive periods of the same verified school class while keeping each period's times and rooms in Details.
+- Show teacher absences on the affected class, including the exact missed period when only part of a combined class is affected.
+- Keep the original calendar rows, reminders and external event IDs unchanged when grouping the display.
+
 ## 0.6.3
 
 - Add optional Col.NET school schedules to an existing calendar, alongside personal events.

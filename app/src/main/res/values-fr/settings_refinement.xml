@@ -11,6 +11,7 @@
     <string name="settings_layout">Disposition du mois</string>
     <string name="settings_week_list">Liste</string>
     <string name="settings_week_timeline3">Grille de 3 jours</string>
+    <string name="settings_week_timeline5">Grille de 5 jours</string>
     <string name="settings_week_timeline7">Grille de 7 jours</string>
     <string name="settings_day_view">Vue jour</string>
     <string name="settings_day_all_hours">Toutes les heures</string>

@@ -172,11 +172,23 @@ internal fun rememberPeriodSwipe(enabled: Boolean, motion: Boolean, onCommit: (I
  * Once vertical scrolling wins, the rest of that gesture stays with the child, even if the thumb curves sideways.
  * When swiping is off, sideways drags are still consumed so they never count as a tap on an event or date.
  */
-internal fun Modifier.periodSwipe(state: PeriodSwipeState): Modifier = pointerInput(state) {
+internal fun Modifier.periodSwipe(state: PeriodSwipeState, allowChildHorizontalScroll: Boolean = false): Modifier = pointerInput(state, allowChildHorizontalScroll) {
     val slop = viewConfiguration.touchSlop
     val flingVelocity = 400.dp.toPx()
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        if (!state.enabled && allowChildHorizontalScroll) {
+            var moved = Offset.Zero
+            while (true) {
+                // Skip the down already seen on Initial; clickable may consume it on Main.
+                awaitPointerEvent(PointerEventPass.Initial)
+                val change = awaitPointerEvent(PointerEventPass.Final).changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed || change.isConsumed) break
+                moved += change.positionChange()
+                if (abs(moved.x) > slop && abs(moved.x) > abs(moved.y) * 1.4f) change.consume()
+            }
+            return@awaitEachGesture
+        }
         if (state.pager != null && state.enabled) return@awaitEachGesture
         val tracker = VelocityTracker()
         tracker.addPosition(down.uptimeMillis, down.position)

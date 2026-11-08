@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.sp
 
 @Immutable
@@ -63,6 +64,28 @@ val LightPalette = SunlithPalette(
 )
 
 val LocalPalette = staticCompositionLocalOf { DarkPalette }
+
+// Text follows its content even when the surrounding controls are mirrored.
+private val SunlithTypography = Typography().run {
+    copy(
+        displayLarge = displayLarge.copy(textDirection = TextDirection.ContentOrLtr),
+        displayMedium = displayMedium.copy(textDirection = TextDirection.ContentOrLtr),
+        displaySmall = displaySmall.copy(textDirection = TextDirection.ContentOrLtr),
+        headlineLarge = headlineLarge.copy(textDirection = TextDirection.ContentOrLtr),
+        headlineMedium = headlineMedium.copy(textDirection = TextDirection.ContentOrLtr),
+        headlineSmall = headlineSmall.copy(textDirection = TextDirection.ContentOrLtr,
+            fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp),
+        titleLarge = titleLarge.copy(textDirection = TextDirection.ContentOrLtr, fontWeight = FontWeight.SemiBold),
+        titleMedium = titleMedium.copy(textDirection = TextDirection.ContentOrLtr, fontWeight = FontWeight.Medium),
+        titleSmall = titleSmall.copy(textDirection = TextDirection.ContentOrLtr),
+        bodyLarge = bodyLarge.copy(textDirection = TextDirection.ContentOrLtr),
+        bodyMedium = bodyMedium.copy(textDirection = TextDirection.ContentOrLtr),
+        bodySmall = bodySmall.copy(textDirection = TextDirection.ContentOrLtr),
+        labelLarge = labelLarge.copy(textDirection = TextDirection.ContentOrLtr, fontWeight = FontWeight.Medium),
+        labelMedium = labelMedium.copy(textDirection = TextDirection.ContentOrLtr),
+        labelSmall = labelSmall.copy(textDirection = TextDirection.ContentOrLtr),
+    )
+}
 
 @Composable
 fun isDarkTheme(themeMode: String): Boolean = when (themeMode) {
@@ -130,19 +153,13 @@ fun SunlithTheme(themeMode: String, materialYou: Boolean = true, content: @Compo
             dark = dark,
         )
     } else p
-    val base = Typography()
-    val type = base.copy(
-        headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp),
-        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.Medium),
-        labelLarge = base.labelLarge.copy(fontWeight = FontWeight.Medium),
-    )
     CompositionLocalProvider(LocalPalette provides palette, LocalContentColor provides palette.ink) {
-        MaterialTheme(colorScheme = scheme, typography = type, content = content)
+        MaterialTheme(colorScheme = scheme, typography = SunlithTypography, content = content)
     }
 }
 
-val SectionLabel = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.6.sp)
+val SectionLabel = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.6.sp,
+    textDirection = TextDirection.ContentOrLtr)
 
 fun eventTint(argb: Int, palette: SunlithPalette): Color {
     if (argb == 0) return palette.muted

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.EventBusy
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Notifications
@@ -41,6 +42,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
@@ -84,6 +87,11 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var confirmSeriesEdit by rememberSaveable { mutableStateOf(false) }
     BackHandler { vm.back() }
+    val school = event.school
+    // A combined class spans several provider rows; the draft only describes the first one.
+    val periods = school?.periods.orEmpty().sortedBy { it.startMillis }.takeIf { it.size > 1 }.orEmpty()
+    val absences = school?.absences.orEmpty().sortedBy { it.startMillis }
+    val courseColors = rememberCourseColors(vm.eventsByDay, vm.courseColorSlots)
 
     Scaffold(
         containerColor = p.background,
@@ -98,16 +106,23 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
             }
         },
     ) { pad ->
+        CompositionLocalProvider(LocalCourseColors provides courseColors) {
         Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 32.dp)) {
             Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
-                Box(Modifier.padding(top = 8.dp).size(14.dp).background(eventTint(event.color, p), RoundedCornerShape(4.dp)))
+                Box(Modifier.padding(top = 8.dp).size(14.dp).background(eventAccent(event), RoundedCornerShape(4.dp)))
                 Spacer(Modifier.width(16.dp))
                 SelectionContainer {
                     Text(
-                        event.title.ifBlank { stringResource(R.string.untitled) }, color = p.ink,
+                        event.displayTitle().ifBlank { stringResource(R.string.untitled) }, color = p.ink,
                         style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() },
                     )
                 }
+            }
+            absenceStatus(event, f)?.let { status ->
+                Text(
+                    status, Modifier.padding(start = 50.dp, end = 20.dp, bottom = 4.dp), color = p.ink,
+                    style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
+                )
             }
             Spacer(Modifier.height(8.dp))
             DetailRow(Icons.Outlined.Schedule) {
@@ -152,7 +167,17 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
                     else -> R.string.details_unsupported
                 }))
             }
-            if (event.location.isNotBlank()) {
+            if (periods.isNotEmpty()) {
+                DetailRow(Icons.Outlined.LocationOn) {
+                    SecondaryText(stringResource(R.string.details_school_periods))
+                    periods.forEach { period ->
+                        Column(Modifier.padding(top = 6.dp).semantics(mergeDescendants = true) { }) {
+                            PrimaryText(f.timeRange(period.startMillis, period.endMillis))
+                            if (period.location.isNotBlank()) SecondaryText(period.location)
+                        }
+                    }
+                }
+            } else if (event.location.isNotBlank()) {
                 DetailRow(Icons.Outlined.LocationOn, onClick = {
                     try {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(event.location))))
@@ -161,15 +186,34 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
                     }
                 }) { PrimaryText(event.location) }
             }
-            draft?.reminderMinutes?.takeIf { it.isNotEmpty() }?.let { reminders ->
+            draft?.reminderMinutes?.takeIf { it.isNotEmpty() && periods.isEmpty() }?.let { reminders ->
                 DetailRow(Icons.Outlined.Notifications) { reminders.sorted().forEach { PrimaryText(f.reminder(it)) } }
             }
-            val notes = draft?.description ?: event.description
+            val notes = if (periods.isNotEmpty()) event.description else draft?.description ?: event.description
+            if (absences.isNotEmpty()) {
+                DetailRow(Icons.Outlined.EventBusy) {
+                    SecondaryText(stringResource(R.string.details_teacher_absence))
+                    absences.forEach { absence ->
+                        Column(Modifier.padding(top = 6.dp).semantics(mergeDescendants = true) { }) {
+                            PrimaryText(when {
+                                absence.allDay -> stringResource(R.string.all_day)
+                                absence.endMillis > absence.startMillis -> f.timeRange(absence.startMillis, absence.endMillis)
+                                else -> f.time(absence.startMillis)
+                            })
+                            // Notes the event description already shows below are not repeated here.
+                            absence.notes.map { it.trim() }.filter { it.isNotEmpty() && it !in notes }.forEach { note ->
+                                SelectionContainer { Text(note, color = p.ink, style = MaterialTheme.typography.bodyMedium) }
+                            }
+                        }
+                    }
+                }
+            }
             if (notes.isNotBlank()) {
                 DetailRow(Icons.AutoMirrored.Outlined.Notes) {
                     SelectionContainer { Text(notes, color = p.ink, style = MaterialTheme.typography.bodyLarge) }
                 }
             }
+        }
         }
     }
 

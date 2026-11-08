@@ -133,3 +133,13 @@ The sun/calendar reference is redrawn as SVG, with matching Android vectors for 
 The [PackageManager API](https://developer.android.com/reference/android/content/pm/PackageManager) supports changing enabled launcher aliases. API 33 and newer update the aliases in one batch; older versions enable the replacement before disabling the previous entry, with rollback on failure. A short launcher activity forwards to the stable main activity, keeping an open calendar independent of the alias being changed. It also preserves an open document picker when returning from the home screen. Startup reconciliation repairs an interrupted switch. The Settings previews use Android's adaptive icon drawable and the phone's icon mask.
 
 Some launchers cache icon changes or remove the old home-screen shortcut. Emulator checks cover alias state, persistence, recreation and launching; Samsung shortcut migration, splash animations and physical Fold behavior need phone testing. Icon style is independent of the app's existing system, light and dark appearance options.
+
+## School calendar readability, November 8, 2026
+
+The Montmorency screenshots show the need for distinct course colors, readable titles and room changes, with dated absences kept beside the affected class. These observations inform Sunlith's own layout; they do not establish support for every Col.NET school.
+
+- [WCAG text contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html) sets a 4.5:1 target for ordinary text. The light and dark course palettes are checked by unit tests.
+- [WCAG use of color](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html) requires another way to convey status. Teacher absences retain explicit text and exact missed times, alongside an outline or partial-time marker.
+- [Android accessibility guidance](https://developer.android.com/guide/topics/ui/accessibility/apps) recommends at least 48dp touch targets. All-day chips use 48dp height; narrow timelines scroll horizontally rather than shrinking all columns indefinitely.
+
+Course colors are saved locally so browsing another date does not recolor existing courses. Personal event fills use consistent title-based colors instead of provider colors; the stored provider values stay unchanged. Consecutive periods are combined only for verified school identity and a changeover of at most five minutes; the display keeps each period's room and exact absence range. Calendar-provider rows, reminders and computer-connection event IDs remain separate. The five-day option is a rolling range including weekends, consistent with the existing three-day option.

@@ -46,6 +46,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -93,6 +94,8 @@ fun SunlithApp(vm: SunlithViewModel) {
                 if (result == SnackbarResult.ActionPerformed) m.action?.invoke()
             }
         }
+        val courseColors = rememberCourseColors(vm.eventsByDay, vm.courseColorSlots)
+        CompositionLocalProvider(LocalCourseColors provides courseColors) {
         Box(Modifier.fillMaxSize().background(p.background)) {
             when {
                 !vm.aiIntroDone -> ComputerWelcome(vm)
@@ -136,6 +139,7 @@ fun SunlithApp(vm: SunlithViewModel) {
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(bottom = 72.dp)) { data ->
                 Snackbar(data, containerColor = p.ink, contentColor = p.background, actionColor = p.background, dismissActionContentColor = p.background, shape = RoundedCornerShape(10.dp))
             }
+        }
         }
     }
 }

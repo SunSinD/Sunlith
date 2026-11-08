@@ -1,0 +1,11 @@
+<resources>
+    <string name="calendar_prev_five_days">Previous 5 days</string>
+    <string name="calendar_next_five_days">Next 5 days</string>
+    <string name="calendar_teacher_absent">Teacher absent</string>
+    <string name="calendar_teacher_absent_range">Teacher absent %1$s</string>
+    <string name="calendar_absent_short">Absent</string>
+    <string name="calendar_absent_short_range">Absent %1$s</string>
+    <string name="calendar_period_room">%1$s · %2$s</string>
+    <string name="details_school_periods">Class periods</string>
+    <string name="details_teacher_absence">Teacher absence</string>
+</resources>

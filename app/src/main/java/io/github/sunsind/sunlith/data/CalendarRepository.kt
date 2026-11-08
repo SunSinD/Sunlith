@@ -16,6 +16,7 @@ import android.provider.CalendarContract.Instances
 import android.provider.CalendarContract.Reminders
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.school.SchoolOwnership
+import io.github.sunsind.sunlith.school.SchoolCalendarPresentation
 import java.util.TimeZone
 import java.util.UUID
 
@@ -43,7 +44,7 @@ class CalendarRepository(context: Context) {
         } ?: emptyList()
     }
 
-    fun events(startMillis: Long, endMillis: Long, calendarIds: Set<Long>): List<CalendarEvent> {
+    fun events(startMillis: Long, endMillis: Long, calendarIds: Set<Long>, school: Boolean = false): List<CalendarEvent> {
         checkRead()
         require(endMillis > startMillis) { "Choose a valid date range." }
         require(endMillis - startMillis <= 366L * 24 * 60 * 60 * 1000 * 3) { "Load at most three years at a time." }
@@ -53,7 +54,7 @@ class CalendarRepository(context: Context) {
             ContentUris.appendId(it, endMillis)
         }.build()
         val ids = calendarIds.toList()
-        return resolver.query(uri,
+        val events = resolver.query(uri,
             arrayOf(Instances.EVENT_ID, Instances.CALENDAR_ID, Instances.TITLE, Instances.DESCRIPTION,
                 Instances.EVENT_LOCATION, Instances.BEGIN, Instances.END, Instances.ALL_DAY,
                 Instances.EVENT_TIMEZONE, Instances.RRULE, Instances.DISPLAY_COLOR, Instances.CALENDAR_DISPLAY_NAME),
@@ -71,6 +72,7 @@ class CalendarRepository(context: Context) {
                 ))
             }
         } ?: emptyList()
+        return if (school) SchoolCalendarPresentation.annotate(context, events) else events
     }
 
     fun getEvent(id: Long): EventDraft? {

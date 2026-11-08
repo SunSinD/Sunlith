@@ -15,6 +15,8 @@ import androidx.test.rule.GrantPermissionRule
 import io.github.sunsind.sunlith.data.CalendarRepository
 import io.github.sunsind.sunlith.data.EditBlockReason
 import io.github.sunsind.sunlith.data.EventDraft
+import io.github.sunsind.sunlith.data.SchoolAbsenceCoverage
+import io.github.sunsind.sunlith.data.projectSchoolEvents
 import io.github.sunsind.sunlith.requireEmulator
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -76,6 +78,56 @@ class SchoolConnectorFixtureTest {
     private fun record() = SchoolRecord("https://example.invalid/colnet/mobile/", "synthetic-user", "synthetic-password", zone.id, calendar,
         "synthetic-account-hash", UUID.randomUUID().toString(), "synthetic-token", Long.MAX_VALUE, calendarIdentity = SchoolCalendarWriter(context).calendarIdentity(calendar))
     private fun feed(items: List<SchoolItem>) = SchoolFeed("synthetic-account-hash", term, items)
+
+    @Test fun presentationGroupsPreservedPastRowsWithoutChangingProviderEvents() {
+        val first = source().copy(teacherAbsent = true)
+        val second = source("agenda-2").copy(startMillis = first.endMillis + 5 * 60_000,
+            endMillis = first.endMillis + 55 * 60_000, rooms = listOf("B200"))
+        val writer = SchoolCalendarWriter(context)
+        val initial = record()
+        val ledger = writer.commit(initial, writer.plan(initial, feed(listOf(first, second)), day))
+        val connected = initial.copy(ledger = ledger, initialized = true, baseline = listOf(first, second))
+        SchoolStore(context).save(connected)
+        val personalId = savePersonal(first)
+        val repo = CalendarRepository(context)
+        val raw = repo.events(first.startMillis - 60_000, second.endMillis + 60_000, setOf(calendar), school = true)
+        assertTrue(repo.events(first.startMillis - 60_000, second.endMillis + 60_000, setOf(calendar)).all { it.school == null })
+        assertEquals(3, raw.size)
+        assertNull(raw.single { it.id == personalId }.school)
+        assertEquals(2, raw.count { it.school != null })
+        assertEquals(first.endMillis, repo.getEvent(ledger.first().rowId)!!.endMillis)
+        val projected = projectSchoolEvents(raw, zone)
+        assertEquals(2, projected.size)
+        val course = projected.single { it.school != null }
+        assertEquals(first.startMillis, course.startMillis)
+        assertEquals(second.endMillis, course.endMillis)
+        assertEquals(SchoolAbsenceCoverage.PARTIAL, course.school!!.absenceCoverage)
+        assertEquals(2, course.school.periods.size)
+        assertEquals("A100; B200", course.location)
+        assertEquals(first.endMillis, repo.getEvent(ledger.first().rowId)!!.endMillis)
+        val pastPlan = writer.plan(connected, feed(listOf(first.copy(teacherAbsent = false), second)), day.plusDays(1))
+        assertEquals(ledger, pastPlan.after)
+        assertEquals(raw, repo.events(first.startMillis - 60_000, second.endMillis + 60_000, setOf(calendar), school = true))
+    }
+
+    @Test fun presentationMetadataRequiresUnchangedOwnedContentAndIdentity() {
+        val writer = SchoolCalendarWriter(context)
+        val initial = record()
+        val item = source()
+        val ledger = writer.commit(initial, writer.plan(initial, feed(listOf(item)), day))
+        SchoolStore(context).save(initial.copy(ledger = ledger, initialized = true, baseline = listOf(item)))
+        val repo = CalendarRepository(context)
+        fun shown() = repo.events(item.startMillis - 60_000, item.endMillis + 60_000, setOf(calendar), school = true).single()
+        assertNotNull(shown().school)
+        val row = ContentUris.withAppendedId(Events.CONTENT_URI, ledger.single().rowId)
+        context.contentResolver.update(row, ContentValues().apply { put(Events.TITLE, "Edited synthetic title") }, null, null)
+        assertNull(shown().school)
+        context.contentResolver.update(row, ContentValues().apply {
+            put(Events.TITLE, ledger.single().revision[Events.TITLE])
+            put(Events.UID_2445, "foreign-synthetic-uid")
+        }, null, null)
+        assertNull(shown().school)
+    }
     private fun savePersonal(item: SchoolItem = source(), description: String = "Personal notes") = CalendarRepository(context).saveEvent(EventDraft(
         calendarId = calendar, title = "Personal event", description = description, startMillis = item.startMillis, endMillis = item.endMillis, timeZone = zone.id, reminderMinutes = emptyList()))
     private fun markReleased(id: Long, item: SchoolItem = source(), sourceAccount: String = "synthetic-account-hash") {

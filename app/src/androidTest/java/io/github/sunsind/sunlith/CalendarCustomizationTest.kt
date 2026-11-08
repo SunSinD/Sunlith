@@ -281,6 +281,101 @@ class CalendarCustomizationTest {
     }
 
     @Test
+    fun todayReturnsToItsDateAfterRestoringABoundedAgendaPage() {
+        val today = LocalDate.now()
+        val marker = "Bounded restored Today marker"
+        addTimed(today, marker, 7, 8)
+        prepareBoundedRestoreAgenda()
+        val request = vm.todayRequest
+        listOf(today.minusMonths(2), today.plusMonths(2)).forEach { shown ->
+            onMain { vm.select(shown) }
+            awaitUi { vm.selectedDate == shown && device.hasObject(day(shown)) }
+        }
+        onMain { vm.goToday() }
+        awaitUi { vm.selectedDate == today && vm.todayRequest == request + 1 &&
+            visibleAgendaMarker(marker) != null &&
+            !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
+    }
+
+    @Test
+    fun boundedAgendaPreservesOtherMonthScrollAcrossAnInterveningTodayRequest() {
+        val today = LocalDate.now()
+        val todayMarker = "Intervening Today marker"
+        addTimed(today, todayMarker, 7, 8)
+        val (anchor, prefix) = prepareBoundedRestoreAgenda(monthOffset = 1)
+        val first = requireNotNull(visibleAgendaMarker(prefix)).first
+        val list = node(By.pkg(context.packageName).res("calendar_agenda"))
+        val bounds = list.visibleBounds
+        list.setGestureMargins(bounds.width() / 5, bounds.height() / 6, bounds.width() / 5, bounds.height() / 4)
+        list.scroll(Direction.DOWN, 0.8f)
+        device.waitForIdle()
+        awaitUi { visibleAgendaMarker(prefix)?.let { it.first != first } == true }
+        val marker = requireNotNull(visibleAgendaMarker(prefix))
+        val request = vm.todayRequest
+        onMain { vm.step(2) }
+        val away = anchor.plusMonths(2).withDayOfMonth(1)
+        awaitUi { vm.selectedDate == away && device.hasObject(day(away)) }
+        onMain { vm.goToday() }
+        awaitUi { vm.selectedDate == today && vm.todayRequest == request + 1 &&
+            visibleAgendaMarker(todayMarker) != null }
+        onMain { vm.step(1) }
+        val returned = today.plusMonths(1).withDayOfMonth(1)
+        val tolerance = 2 * context.resources.displayMetrics.density
+        awaitUi { vm.selectedDate == returned && visibleAgendaMarker(prefix)?.let {
+            it.first == marker.first && kotlin.math.abs(it.second - marker.second) <= tolerance
+        } == true }
+        assertEquals("Returning to another month must not request Today again.", request + 1, vm.todayRequest)
+    }
+
+    @Test
+    fun boundedAgendaPreservesManualScrollWhenSteppingAwayAndBackWithoutATodayRequest() {
+        val (anchor, prefix) = prepareBoundedRestoreAgenda()
+        val first = requireNotNull(visibleAgendaMarker(prefix)).first
+        val list = node(By.pkg(context.packageName).res("calendar_agenda"))
+        val bounds = list.visibleBounds
+        list.setGestureMargins(bounds.width() / 5, bounds.height() / 6, bounds.width() / 5, bounds.height() / 4)
+        list.scroll(Direction.DOWN, 0.8f)
+        device.waitForIdle()
+        awaitUi { visibleAgendaMarker(prefix)?.let { it.first != first } == true }
+        val marker = requireNotNull(visibleAgendaMarker(prefix))
+        val request = vm.todayRequest
+        onMain { vm.step(2) }
+        val away = anchor.plusMonths(2).withDayOfMonth(1)
+        awaitUi { vm.selectedDate == away && device.hasObject(day(away)) }
+        onMain { vm.step(-2) }
+        val tolerance = 2 * context.resources.displayMetrics.density
+        awaitUi { vm.selectedDate == LocalDate.now() && visibleAgendaMarker(prefix)?.let {
+            it.first == marker.first && kotlin.math.abs(it.second - marker.second) <= tolerance
+        } == true }
+        assertEquals("Ordinary month navigation must not request Today.", request, vm.todayRequest)
+    }
+
+    private fun prepareBoundedRestoreAgenda(monthOffset: Long = 0): Pair<LocalDate, String> {
+        val today = LocalDate.now()
+        val anchor = today.withDayOfMonth(if (today.dayOfMonth == 1) 15 else 1).plusMonths(monthOffset)
+        val prefix = "Bounded restore marker "
+        repeat(20) { addTimed(anchor, "$prefix$it", 8, 9) }
+        onMain {
+            vm.changeViewMode(ViewMode.Month)
+            vm.changeAgendaRange("month")
+            vm.select(anchor)
+            vm.reload()
+        }
+        val arrow = if (anchor.isBefore(today)) "down" else "up"
+        awaitUi { vm.events.count { it.title.startsWith(prefix) } == 20 &&
+            visibleAgendaMarker(prefix) != null && device.hasObject(By.pkg(context.packageName).res("calendar_today_$arrow")) }
+        return anchor to prefix
+    }
+
+    private fun visibleAgendaMarker(prefix: String): Pair<String, Int>? {
+        val bounds = device.findObject(By.pkg(context.packageName).res("calendar_agenda"))?.visibleBounds ?: return null
+        return device.findObjects(By.pkg(context.packageName).textStartsWith(prefix)).firstOrNull {
+            val marker = it.visibleBounds
+            marker.height() > 0 && marker.top >= bounds.top && marker.bottom <= bounds.bottom
+        }?.let { it.text to (it.visibleBounds.top - bounds.top) }
+    }
+
+    @Test
     fun weekListDefaultsAndExplicitTimelinesSurviveNewActivities() {
         finish()
         context.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit()
@@ -417,7 +512,7 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun providerEventColorOverridesItsCalendarAndKeepsCardsDistinctInBothThemes() {
+    fun personalEventColorsStayStableWhenProviderColorsChangeInBothThemes() {
         val blue = android.graphics.Color.rgb(35, 80, 200)
         val red = android.graphics.Color.rgb(200, 45, 35)
         assertEquals(1, context.contentResolver.update(localCalendarUri(calendarId, account), ContentValues().apply {
@@ -430,11 +525,25 @@ class CalendarCustomizationTest {
         awaitUi { vm.events.any { it.id == firstId && it.color == blue } && vm.events.any { it.id == secondId && it.color == red } }
         listOf("light", "dark").forEach { theme ->
             onMain { vm.setTheme(theme) }
-            val blueFill = dominantRenderedColor(By.pkg(context.packageName).res("day_event_$firstId"))
-            val redFill = dominantRenderedColor(By.pkg(context.packageName).res("day_event_$secondId"))
-            assertTrue("Calendar and event override colors must remain visibly distinct in $theme.", blueFill != redFill)
-            assertTrue("The calendar color must retain its blue identity.", android.graphics.Color.blue(blueFill) > android.graphics.Color.red(blueFill))
-            assertTrue("An event override must retain its red identity.", android.graphics.Color.red(redFill) > android.graphics.Color.blue(redFill))
+            val expectedAccent = if (theme == "dark") DarkPalette.accent.toArgb() else LightPalette.accent.toArgb()
+            awaitUi { dominantFabColor() == expectedAccent }
+            val firstFill = dominantRenderedColor(By.pkg(context.packageName).res("day_event_$firstId"))
+            val secondFill = dominantRenderedColor(By.pkg(context.packageName).res("day_event_$secondId"))
+            assertTrue("These different titles must remain visibly distinct in $theme.", firstFill != secondFill)
+            val changedCalendar = if (theme == "light") android.graphics.Color.rgb(20, 170, 70) else blue
+            val changedOverride = if (theme == "light") android.graphics.Color.rgb(230, 190, 30) else red
+            assertEquals(1, context.contentResolver.update(localCalendarUri(calendarId, account), ContentValues().apply {
+                put(CalendarContract.Calendars.CALENDAR_COLOR, changedCalendar)
+            }, null, null))
+            assertEquals(1, context.contentResolver.update(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, secondId), ContentValues().apply {
+                put(CalendarContract.Events.EVENT_COLOR, changedOverride)
+            }, null, null))
+            onMain { vm.reload() }
+            awaitUi { vm.events.any { it.id == firstId && it.color == changedCalendar } && vm.events.any { it.id == secondId && it.color == changedOverride } }
+            assertEquals("Calendar color changes must preserve the first title's displayed color in $theme.",
+                firstFill, dominantRenderedColor(By.pkg(context.packageName).res("day_event_$firstId")))
+            assertEquals("Provider event overrides must preserve the second title's displayed color in $theme.",
+                secondFill, dominantRenderedColor(By.pkg(context.packageName).res("day_event_$secondId")))
             node(By.pkg(context.packageName).res("day_event_$secondId")).click()
             awaitUi { (vm.stack.lastOrNull() as? Screen.Details)?.event?.id == secondId }
             node(By.pkg(context.packageName).textContains(secondTitle))
@@ -1054,13 +1163,46 @@ class CalendarCustomizationTest {
         onMain { vm.applyLayoutPreset("planner"); vm.changeWeekLayout("timeline"); vm.changeViewMode(ViewMode.Week); vm.select(date); vm.reload() }
         node(By.pkg(context.packageName).res("calendar_timeline"))
         val dates = date.minusDays(2).let { monday -> (0L until 7L).map { monday.plusDays(it) } }
-        assertEquals(7, dates.count { device.hasObject(day(it)) })
+        onMain { vm.changeSwipeNavigation(false) }
+        val minimumHeaderWidth = (24 * context.resources.displayMetrics.density).toInt()
+        fun visibleHeader(value: LocalDate): UiObject2? = device.findObject(day(value))?.takeIf {
+            it.visibleBounds.width() >= minimumHeaderWidth
+        }
+        fun dragHeaders(forward: Boolean) {
+            refreshAccessibility()
+            val headerY = requireNotNull(dates.firstNotNullOfOrNull(::visibleHeader)).visibleBounds.centerY()
+            val bounds = node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds
+            val left = bounds.left + bounds.width() / 4
+            val right = bounds.right - bounds.width() / 8
+            assertTrue(device.swipe(if (forward) right else left, headerY, if (forward) left else right, headerY, 30))
+            device.waitForIdle()
+            refreshAccessibility()
+            assertEquals("Scrolling the readable columns must retain the selected date.", date, vm.selectedDate)
+            assertFalse("A column scroll must not expose a date before this week.", visibleHeader(dates.first().minusDays(1)) != null)
+            assertFalse("A column scroll must not expose a date after this week.", visibleHeader(dates.last().plusDays(1)) != null)
+        }
+        val reached = mutableSetOf<LocalDate>()
+        fun observeHeaders() { dates.filterTo(reached) { visibleHeader(it) != null } }
+        awaitUi { !vm.loadingEvents && visibleHeader(date) != null }
+        observeHeaders()
+        listOf(true, false).forEach { forward ->
+            repeat(4) {
+                if (reached.size < dates.size) { dragHeaders(forward); observeHeaders() }
+            }
+        }
+        assertEquals("All seven dates must remain reachable in the same readable week.", dates.toSet(), reached)
+        val eventDate = date.plusDays(2)
+        repeat(4) { if (visibleHeader(eventDate) == null) dragHeaders(true) }
+        requireNotNull(visibleHeader(eventDate)).click()
+        awaitUi { vm.selectedDate == eventDate && visibleHeader(eventDate)?.let { it.isSelected || it.isChecked } == true }
         revealTimelineEvent(shortId)
         device.takeScreenshot(File(context.filesDir, "week-seven-days.png"))
-        onMain { vm.changeVisibleWeekDays(3) }
+        onMain { vm.changeSwipeNavigation(true); vm.changeVisibleWeekDays(3) }
         node(By.pkg(context.packageName).res("calendar_timeline"))
         awaitUi { dates.count { device.hasObject(day(it)) } == 3 }
         assertEquals("The three-day timeline must show only three selectable dates.", 3, dates.count { device.hasObject(day(it)) })
+        assertFalse(device.hasObject(day(eventDate.minusDays(1))))
+        assertFalse(device.hasObject(day(eventDate.plusDays(3))))
         assertEquals("custom", vm.layoutPreset)
     }
 

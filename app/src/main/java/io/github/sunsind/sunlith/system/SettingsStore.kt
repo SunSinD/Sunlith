@@ -1,9 +1,17 @@
 package io.github.sunsind.sunlith.system
 
 import android.content.Context
+import org.json.JSONObject
 
 class SettingsStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
+
+    var courseColorSlots: Map<String, Int>
+        get() = runCatching {
+            val saved = JSONObject(prefs.getString("course_color_slots", "{}").orEmpty())
+            saved.keys().asSequence().associateWith { saved.getInt(it) }.filterValues { it in 0..9 }
+        }.getOrDefault(emptyMap())
+        set(value) { prefs.edit().putString("course_color_slots", JSONObject(value).toString()).apply() }
 
     init {
         if (!prefs.getBoolean("day_timeline_default_v1", false)) {
@@ -99,8 +107,8 @@ class SettingsStore(context: Context) {
         set(value) { saveChoice("day_layout", value, setOf("cards", "timeline", "schedule")) }
 
     var visibleWeekDays: Int
-        get() = prefs.getInt("visible_week_days", 7).takeIf { it == 3 || it == 7 } ?: 7
-        set(value) { require(value == 3 || value == 7); prefs.edit().putInt("visible_week_days", value).apply() }
+        get() = prefs.getInt("visible_week_days", 7).takeIf { it in setOf(3, 5, 7) } ?: 7
+        set(value) { require(value in setOf(3, 5, 7)); prefs.edit().putInt("visible_week_days", value).apply() }
 
     var layoutPreset: String
         get() = choice("layout_preset", "sunlith", setOf("sunlith", "schedule", "planner", "custom")).let { if (it == "schedule") "custom" else it }
