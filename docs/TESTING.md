@@ -33,6 +33,8 @@ connection fixture, older school-display captures and private live-portal smoke;
 API 30 also skips Material You, while API 36 skips both permission opt-ins.
 Readability, external tools and API 36 permission recovery were enabled separately.
 The older school-display fixture and live-portal smoke were not enabled here.
+Upgrade checks prove preference and event preservation; their Month screenshots
+do not prove the upgraded three-day or seven-day timeline renders.
 
 English and French were checked at normal width, narrow width, 200% text and
 forced RTL. The complete matrix contains 256 checkpoint states, including the
@@ -69,7 +71,10 @@ not prove its morning event. Search provides the full title, precise absence and
 all three room times in every variant. Large-text month grids can open with the
 first row's dates above the viewport, and have no visible extra-event count by
 design; count semantics remain. Forced EN/FR RTL does not validate Arabic time
-formatting. The compact fractional-density month fixture is not physical rotation.
+formatting. At 200% text, five/seven-day timelines show about one column, and
+swipe-off captures can show only Friday's edge beside Saturday. English stored
+fixture descriptions do not validate French-generated school notes.
+The compact fractional-density month fixture is not physical rotation.
 Saved course colors can collide when courses assigned in separate fetched sets
 later appear together. The pre-existing Today request-counter reset after process
 death remains outside the narrow remounted-page fix. Encrypted school-connection
