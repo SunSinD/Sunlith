@@ -50,6 +50,7 @@ sealed interface Screen {
     data object Settings : Screen
     data object WidgetSettings : Screen
     data object Calendars : Screen
+    data object SchoolSchedule : Screen
     data object DeviceLink : Screen
     data object Editor : Screen
     data class Details(val event: CalendarEvent) : Screen
@@ -619,6 +620,25 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun handleSchoolLink(date: LocalDate? = null) {
+        require(date == null || date.year in 1900..2100)
+        if (!aiIntroDone || !layoutSetupDone || !hasPermission || needsNotificationStep || !loaded) {
+            pendingLink = { handleSchoolLink(date) }
+            return
+        }
+        if (stack.contains(Screen.Editor) && editorDirty) {
+            message(context.getString(R.string.msg_finish_editing))
+            return
+        }
+        openCalendar()
+        if (date != null) openDay(date)
+        else {
+            open(Screen.Settings)
+            open(Screen.Calendars)
+            open(Screen.SchoolSchedule)
+        }
+    }
+
     fun deliverPendingLink() {
         if (!aiIntroDone || !layoutSetupDone || !hasPermission || needsNotificationStep || !loaded) return
         pendingLink?.let { link -> pendingLink = null; link() }
@@ -904,7 +924,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         require(value in setOf("sunlith", "schedule", "planner"))
         val (monthChoice, weekChoice, dayChoice) = when (value) {
             "schedule" -> Triple("split", "list", "schedule")
-            "planner" -> Triple("full", "timeline", "timeline")
+            "planner" -> Triple("full", "list", "timeline")
             else -> Triple("split", "list", "timeline")
         }
         Snapshot.withMutableSnapshot {

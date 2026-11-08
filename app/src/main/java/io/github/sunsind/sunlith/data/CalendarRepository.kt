@@ -15,6 +15,7 @@ import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.Instances
 import android.provider.CalendarContract.Reminders
 import io.github.sunsind.sunlith.R
+import io.github.sunsind.sunlith.school.SchoolOwnership
 import java.util.TimeZone
 import java.util.UUID
 
@@ -80,6 +81,8 @@ class CalendarRepository(context: Context) {
     fun editBlockReason(id: Long): EditBlockReason? {
         checkRead()
         val stored = readStored(id) ?: return EditBlockReason.MISSING
+        val current = revision(id) ?: return EditBlockReason.MISSING
+        if (SchoolOwnership.isManaged(context, id, current)) return EditBlockReason.SCHOOL_MANAGED
         if (calendars().none { it.id == stored.draft.calendarId && it.writable }) return EditBlockReason.READ_ONLY
         if (stored.invalidReason != null) return EditBlockReason.INVALID_PROVIDER_DATA
         if (hasAttendees(id)) return EditBlockReason.GUESTS
@@ -103,6 +106,10 @@ class CalendarRepository(context: Context) {
         CalendarDates.validate(draft)
         writableCalendar(draft.calendarId)
         val original = draft.id?.let { readStored(it) ?: error("This event no longer exists.") }
+        val currentRevision = draft.id?.let { revision(it) ?: error("This event no longer exists.") }
+        if (draft.id != null && currentRevision != null) require(!SchoolOwnership.isManaged(context, draft.id, currentRevision)) {
+            context.getString(R.string.school_sync_managed_event)
+        }
         if (original != null) {
             require(original.invalidReason == null) { original.invalidReason.orEmpty() }
             writableCalendar(original.draft.calendarId)
@@ -158,6 +165,7 @@ class CalendarRepository(context: Context) {
         }
         val operations = arrayListOf<ContentProviderOperation>()
         if (expected != null && draft.id != null) operations += revisionAssert(draft.id, expected)
+        if (currentRevision != null && draft.id != null) operations += revisionAssert(draft.id, currentRevision)
         if (draft.id == null) {
             operations += ContentProviderOperation.newInsert(Events.CONTENT_URI).withValues(values).build()
         } else {
@@ -185,6 +193,8 @@ class CalendarRepository(context: Context) {
     private fun delete(id: Long, expected: Map<String, String?>?) {
         checkWrite()
         val stored = readStored(id) ?: return
+        val currentRevision = revision(id) ?: return
+        require(!SchoolOwnership.isManaged(context, id, currentRevision)) { context.getString(R.string.school_sync_managed_event) }
         writableCalendar(stored.draft.calendarId)
         require(stored.originalId == null && stored.originalSyncId == null && stored.originalInstanceTime == null) {
             "Delete this occurrence in your existing calendar app to preserve the repeating series."
@@ -194,13 +204,11 @@ class CalendarRepository(context: Context) {
             "This series has exceptions. Delete it in your existing calendar app to preserve them."
         }
         val uri = ContentUris.withAppendedId(Events.CONTENT_URI, id)
-        if (expected != null) {
-            resolver.applyBatch(CalendarContract.AUTHORITY, arrayListOf(revisionAssert(id, expected),
-                ContentProviderOperation.newDelete(uri).withExpectedCount(1).build()))
-            return
-        }
-        val count = resolver.delete(uri, null, null)
-        check(count == 1) { "The calendar could not delete this event." }
+        val operations = arrayListOf<ContentProviderOperation>()
+        if (expected != null) operations += revisionAssert(id, expected)
+        operations += revisionAssert(id, currentRevision)
+        operations += ContentProviderOperation.newDelete(uri).withExpectedCount(1).build()
+        resolver.applyBatch(CalendarContract.AUTHORITY, operations)
     }
 
     fun createLocalCalendar(): Long {
@@ -437,7 +445,7 @@ class CalendarRepository(context: Context) {
         private val REVISION_PROJECTION = arrayOf(Events.CALENDAR_ID, Events.TITLE, Events.DESCRIPTION, Events.EVENT_LOCATION,
             Events.DTSTART, Events.DTEND, Events.DURATION, Events.ALL_DAY, Events.EVENT_TIMEZONE, Events.EVENT_END_TIMEZONE,
             Events.RRULE, Events.RDATE, Events.EXRULE, Events.EXDATE, Events.ORIGINAL_ID, Events.ORIGINAL_SYNC_ID,
-            Events.ORIGINAL_INSTANCE_TIME, Events.STATUS, Events.UID_2445, Events.DELETED)
+            Events.ORIGINAL_INSTANCE_TIME, Events.STATUS, Events.UID_2445, Events.DELETED, Events.CUSTOM_APP_PACKAGE, Events.CUSTOM_APP_URI, Events.HAS_ALARM)
     }
 }
 

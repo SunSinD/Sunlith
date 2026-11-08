@@ -2,6 +2,54 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.3 school setup verification, 2026-11-08
+
+The prepared distribution APK is version 0.6.3/code 14, nondebuggable and
+R8-minified, with the existing signing certificate. Its SHA-256 is
+`d96b253f7ee874ea3a148f40d585c073152e9f9562c4b852537bd78759e8027f`.
+The r22 and r23 production APKs are byte-identical; r23 changes only one test's
+disabled-button selector and failure capture.
+
+| Check | API 36 | API 30 |
+| --- | --- | --- |
+| r22 three school test classes | 65 passed, 1 selector failure, 3 skipped | 65 passed, 1 selector failure, 2 skipped |
+| r23 exact affected setup test | 1 passed, 0 failed | 1 passed, 0 failed |
+| English/French display variants | 8 passed | 8 passed |
+| Isolated code 13 to code 14 upgrade | Passed | Passed |
+
+The r22 failures read the enabled state of the Connect text label instead of its
+disabled clickable parent. The corrected test checks that parent and passes all
+remaining assertions on both APIs: blank account fields, school selection,
+Montmorency's public address and Toronto time zone, the existing calendar ID,
+and the connected state. Original failures remain in the archived r22 record;
+r23 is a focused closure, not a new full-suite run.
+
+School coverage includes manual Col.NET setup, known and custom reauthentication,
+an unavailable saved calendar, notification categories, provider ownership and
+recovery, explicit legacy linking, lifecycle cancellation, and personal-event
+preservation. The display test was separately enabled for English/French normal,
+narrow, 200% text and RTL layouts. The Android 33 notification-permission recovery
+test and private live-account smoke were not enabled in this campaign; the former
+is SDK-excluded on API 30. No real account was used for these new setup tests.
+
+All 256 school PNG/XML pairs were reviewed. Three PNGs captured the preceding
+error frame and are retained but excluded from their named-state coverage; their
+XML and the other 253 PNGs show the expected state. No new layout defect or XML
+bounds issue was found. Upgrade checks preserved a synthetic event, selected
+calendar, theme and layout preferences. Both emulators were restored exactly and
+stopped after each campaign; source and frozen-artifact audits passed.
+
+JVM checks passed 39 tests; desktop checks passed 44 with one opt-in skip. Lint
+reported zero errors, 135 warnings and seven hints. English/French school resource
+keys match. The final source/APK scan found no saved account credentials.
+
+Earlier calendar and school regression evidence is retained separately: r18 full
+API 36 had 244 passes, one stale-node automation failure and five skips; API 30
+had 243 passes and four skips. r19 closed that failure and a display automation
+failure with both affected classes passing on both APIs, plus complete large-text
+captures. These are historical runs, not a full-suite claim for the new setup APK.
+Instant push and Google-account full-resync ownership behavior remain unverified.
+
 ## 0.6.2 final distribution verification, 2026-11-07
 
 The exact packaged app/test pair is nondebuggable and R8-minified, version

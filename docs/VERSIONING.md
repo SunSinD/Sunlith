@@ -1,6 +1,6 @@
 # Versioning
 
-The current version is **v0.6.2**. Android and the companion use `0.6.2`; Android's `versionCode` is `13`. This update makes hourly Day the default, simplifies date opening, groups simultaneous events and refines Settings and calendar artwork. Published binaries remain unchanged.
+The current version is **v0.6.3**. Android and the companion use `0.6.3`; Android's `versionCode` is `14`. This update adds optional Col.NET school schedules to an existing calendar, a school picker, notification choices and calendar navigation fixes. Earlier published binaries remain unchanged.
 
 Use plain `MAJOR.MINOR.PATCH` numbers, without testing suffixes or an extra build counter. The `v` prefix belongs to the Git tag and release title. Major zero means initial development under [Semantic Versioning](https://semver.org/). Physical-device and integration testing are still in progress.
 

@@ -1,0 +1,21 @@
+<resources>
+    <string name="school_sync_managed_event">This event follows your school schedule. Refresh it from School schedule.</string>
+    <string name="school_sync_absence_notice">Teacher absence notice: %1$s</string>
+    <string name="school_sync_absent_title">Teacher absent: %1$s</string>
+    <string name="school_sync_teacher_absent">Teacher reported absent. Check the school notice for instructions.</string>
+    <string name="school_sync_course">Course: %1$s · Group: %2$s</string>
+    <string name="school_sync_class_kind">Class: %1$s</string>
+    <string name="school_sync_period">Period: %1$s</string>
+    <string name="school_sync_theory">Theory</string>
+    <string name="school_sync_lab">Lab</string>
+    <string name="school_sync_stage">Placement</string>
+    <string name="school_sync_teachers">Teachers: %1$s</string>
+    <string name="school_sync_rooms">Rooms: %1$s</string>
+    <string name="school_sync_notification_title">School schedule</string>
+    <string name="school_sync_changes_channel">Schedule changes</string>
+    <string name="school_sync_problems_channel">Connection problems</string>
+    <string name="school_sync_sign_in_notification">Your school connection needs attention. Open School schedule to sign in.</string>
+    <string name="school_sync_connection_notification">School refresh failed. Open School schedule for details.</string>
+    <string name="school_sync_review_notification">Open School schedule to review changes before applying them.</string>
+    <plurals name="school_sync_changes_count"><item quantity="one">%d school event changed</item><item quantity="other">%d school events changed</item></plurals>
+</resources>

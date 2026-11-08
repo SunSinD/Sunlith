@@ -1,5 +1,15 @@
 # Changes
 
+## 0.6.3
+
+- Add optional Col.NET school schedules to an existing calendar, alongside personal events.
+- Choose Collège Montmorency to configure its public portal address and time zone automatically. Other Col.NET schools require manual setup and are untested.
+- Include dated teacher absences, school days and source-provided deadlines, with separate notification choices for nine categories.
+- Check for updates when connected, with a five-minute foreground throttle and best-effort fifteen-minute background scheduling. Instant push is not supported.
+- Review existing imported class links and large removals before applying them; preserve personal events and keep events by default when disconnecting.
+- Correct Today directions across sparse agendas and month grids, and let timeline gestures interrupt Today scrolling.
+- Default new Week layouts to List while preserving existing choices; clarify the Month layout heading.
+
 ## 0.6.2
 
 - Open Day with all hours by default; choose Events only or Compact schedule in General.

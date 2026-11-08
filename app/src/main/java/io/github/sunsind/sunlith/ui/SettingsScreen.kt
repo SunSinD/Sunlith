@@ -652,6 +652,9 @@ fun CalendarsScreen(vm: SunlithViewModel) {
     Scaffold(containerColor = p.background, topBar = { ScreenTopBar(stringResource(R.string.title_calendars), onNavigate = vm::back) }) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(bottom = 48.dp)) {
             item { Text(stringResource(R.string.calendars_intro), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
+            item(key = "school-schedule") {
+                ClickRow(stringResource(R.string.school_title), null) { vm.open(Screen.SchoolSchedule) }
+            }
             if (vm.loaded && vm.calendars.isEmpty()) {
                 item { Text(stringResource(R.string.no_calendars_on_phone), Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge) }
             }

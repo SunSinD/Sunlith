@@ -148,6 +148,7 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
                     EditBlockReason.RECURRENCE_EXCEPTION -> R.string.details_exceptions
                     EditBlockReason.MISSING -> R.string.msg_event_missing
                     EditBlockReason.READ_ONLY -> R.string.details_read_only
+                    EditBlockReason.SCHOOL_MANAGED -> R.string.school_settings_managed_event
                     else -> R.string.details_unsupported
                 }))
             }

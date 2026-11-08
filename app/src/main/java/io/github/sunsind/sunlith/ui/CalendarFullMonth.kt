@@ -13,7 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -62,11 +62,12 @@ internal fun FullMonthGrid(
     eventsOn: (LocalDate) -> List<CalendarEvent>, f: Formats, pulseToday: Boolean,
     onOpenDay: (LocalDate) -> Unit, modifier: Modifier = Modifier,
     row: Dp, number: Dp, chip: Dp, viewportHeight: Dp, textMeasurer: TextMeasurer,
-    todayRequest: Int = 0, active: Boolean = true, onAwayChanged: (Boolean) -> Unit = {},
+    todayRequest: Int = 0, active: Boolean = true, onTodayDirectionChanged: (TodayDirection?) -> Unit = {},
 ) {
     val density = LocalDensity.current
     val start = remember(month, mondayFirst) { gridStart(month, mondayFirst) }
     val dates = remember(start) { List(42) { start.plusDays(it.toLong()) } }
+    val monthDirection = todayDirection(today, month.atDay(1), month.atEndOfMonth())
     Column(modifier.fillMaxSize().padding(horizontal = 2.dp).testTag("calendar_full_month")) {
         Box(Modifier.weight(1f).fillMaxWidth().testTag("calendar_grid")) {
             val scrolls = row * 6 > viewportHeight
@@ -75,20 +76,21 @@ internal fun FullMonthGrid(
                 val rowPx = with(density) { row.toPx() }
                 val dateHeightPx = with(density) { (number + 6.dp).toPx() }
                 val heightPx = with(density) { viewportHeight.toPx() }
-                val reportAway by rememberUpdatedState(onAwayChanged)
+                val reportDirection by rememberUpdatedState(onTodayDirectionChanged)
                 if (active && scrolls) {
                     LaunchedEffect(selected, todayRequest, rowPx) {
                         val targetRow = (java.time.temporal.ChronoUnit.DAYS.between(start, selected) / 7).coerceIn(0, 5)
                         scroll.scrollTo((targetRow * rowPx).toInt())
                     }
-                    LaunchedEffect(scroll, today, start, rowPx, dateHeightPx, heightPx) {
-                        val dayIndex = java.time.temporal.ChronoUnit.DAYS.between(start, today)
+                    LaunchedEffect(scroll, today, start, monthDirection, rowPx, dateHeightPx, heightPx) {
                         snapshotFlow {
-                            val top = (dayIndex / 7) * rowPx
-                            dayIndex in 0..41 && (top < scroll.value || top + dateHeightPx > scroll.value + heightPx + 1)
-                        }.collect { reportAway(it) }
+                            val firstRow = kotlin.math.ceil(scroll.value / rowPx).toInt().coerceIn(0, 5)
+                            val lastRow = kotlin.math.floor((scroll.value + heightPx + 1 - dateHeightPx) / rowPx).toInt().coerceIn(firstRow, 5)
+                            monthDirection ?: todayDirection(today, dates[firstRow * 7], dates[lastRow * 7 + 6])
+                        }.collect { reportDirection(it) }
                     }
-                    DisposableEffect(Unit) { onDispose { reportAway(false) } }
+                } else if (active) {
+                    SideEffect { reportDirection(monthDirection ?: todayDirection(today, dates.first(), dates.last())) }
                 }
                 Column(if (scrolls) Modifier.verticalScroll(scroll) else Modifier) {
                     repeat(6) { r ->

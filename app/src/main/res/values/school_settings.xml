@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="school_title">School schedule</string>
+    <string name="school_intro">Connect your school\'s Col.NET account to add classes, exams and deadlines beside your own events.</string>
+    <string name="school_provider_colnet">Col.NET</string>
+    <string name="school_institution">School</string>
+    <string name="school_choose_institution">Choose your school</string>
+    <string name="school_montmorency">Collège Montmorency</string>
+    <string name="school_other_colnet">Another Col.NET school</string>
+    <string name="school_supported_note">Only Collège Montmorency has been tested. Other choices require a Col.NET portal.</string>
+    <string name="school_portal_help">Open your school\'s Col.NET sign-in page and paste its address here. Other schools have not been tested.</string>
+    <string name="school_portal">Col.NET portal address</string>
+    <string name="school_portal_short">Portal</string>
+    <string name="school_username">Username</string>
+    <string name="school_password">Password</string>
+    <string name="school_password_show">Show password</string>
+    <string name="school_password_hide">Hide password</string>
+    <string name="school_private_note">Your sign-in is saved encrypted on this phone only.</string>
+    <string name="school_destination">Add classes to</string>
+    <string name="school_destination_single">Classes go into %1$s.</string>
+    <string name="school_no_calendar">No calendar can receive classes yet.</string>
+    <string name="school_connect">Connect</string>
+    <string name="school_connecting">Connecting…</string>
+    <string name="school_more_options">More options</string>
+    <string name="school_expanded">Expanded</string>
+    <string name="school_collapsed">Collapsed</string>
+    <string name="school_time_zone">Time zone</string>
+    <string name="school_time_zone_sub">Class times from your school use this zone, even when you travel.</string>
+    <string name="school_time_zone_device">This phone: %1$s</string>
+    <string name="school_time_zone_search">Search</string>
+    <string name="school_time_zone_none">No match</string>
+
+    <string name="school_connected">Connected</string>
+    <string name="school_updated">Updated %1$s</string>
+    <string name="school_updated_now">Updated just now</string>
+    <string name="school_never_updated">Not updated yet</string>
+    <string name="school_stale">Out of date. Last updated %1$s</string>
+    <string name="school_syncing">Updating…</string>
+    <string name="school_sync_now">Sync now</string>
+    <string name="school_refresh_note">Checks for changes regularly and when you open the app.</string>
+    <plurals name="school_event_count">
+        <item quantity="one">%1$d school event in %2$s</item>
+        <item quantity="other">%1$d school events in %2$s</item>
+    </plurals>
+    <string name="school_sign_in_again">Sign in again</string>
+    <string name="school_open_android_settings">Open Android settings</string>
+
+    <string name="school_error_portal">Check the portal address.</string>
+    <string name="school_error_sign_in">The username or password didn\'t work.</string>
+    <string name="school_error_mfa">This account needs an extra sign-in step that isn\'t supported.</string>
+    <string name="school_error_network">Couldn\'t reach the portal. Check your connection.</string>
+    <string name="school_error_calendar_permission">Calendar access is off.</string>
+    <string name="school_error_data">The portal sent something that couldn\'t be read.</string>
+    <string name="school_error_unavailable">The portal isn\'t available right now.</string>
+    <string name="school_error_storage">Couldn\'t save on this phone.</string>
+    <string name="school_storage_recovery">Check your calendar before trying again. If this continues, disconnect while keeping events, then reconnect.</string>
+    <string name="school_error_existing_classes">Some existing classes couldn\'t be linked safely. Check for duplicate imported classes, then try again.</string>
+    <string name="school_error_generic">Something went wrong. Try again.</string>
+    <string name="school_error_calendar_changed">Some school events were moved or replaced in another app. Disconnect and reconnect the school schedule.</string>
+
+    <string name="school_review_title">Review changes</string>
+    <string name="school_link_title">Link classes already in your calendar</string>
+    <plurals name="school_pending_linked">
+        <item quantity="one">%d class already in your calendar will be linked, not duplicated</item>
+        <item quantity="other">%d classes already in your calendar will be linked, not duplicated</item>
+    </plurals>
+    <plurals name="school_pending_added">
+        <item quantity="one">%d new</item>
+        <item quantity="other">%d new</item>
+    </plurals>
+    <plurals name="school_pending_updated">
+        <item quantity="one">%d changed</item>
+        <item quantity="other">%d changed</item>
+    </plurals>
+    <plurals name="school_pending_removed">
+        <item quantity="one">%d removed</item>
+        <item quantity="other">%d removed</item>
+    </plurals>
+    <string name="school_pending_hold">Nothing changes until you apply.</string>
+    <string name="school_apply">Apply</string>
+
+    <string name="school_notifications_section">Notifications</string>
+    <string name="school_notifications">School notifications</string>
+    <string name="school_notifications_sub">When something changes in your schedule</string>
+    <string name="school_notifications_blocked">Notifications are off for this app.</string>
+    <string name="school_group_classes">Classes</string>
+    <string name="school_group_notices">School notices</string>
+    <string name="school_group_connection">Connection</string>
+    <string name="school_alert_class_times">Time changes</string>
+    <string name="school_alert_rooms">Room changes</string>
+    <string name="school_alert_teachers">Teacher changes</string>
+    <string name="school_alert_added">Added classes</string>
+    <string name="school_alert_removed">Removed classes</string>
+    <string name="school_alert_teacher_absences">Teacher absences</string>
+    <string name="school_alert_assessments">Exams and deadlines</string>
+    <string name="school_alert_school_days">School day changes</string>
+    <string name="school_alert_connection">Sync problems</string>
+
+    <string name="school_change_connection">Sign in again</string>
+    <string name="school_disconnect">Disconnect</string>
+    <string name="school_disconnect_title">Disconnect school schedule?</string>
+    <string name="school_disconnect_body">Classes already added stay in your calendar as normal events.</string>
+    <plurals name="school_disconnect_remove">
+        <item quantity="one">Also remove %d school event</item>
+        <item quantity="other">Also remove %d school events</item>
+    </plurals>
+    <string name="school_disconnect_remove_note">Your own events and school events edited in another app stay.</string>
+    <string name="school_disconnect_remove_confirm">Disconnect and remove</string>
+    <string name="school_settings_managed_event">Updated by your school portal.</string>
+    <string name="school_link_managed">Your school will update these classes from now on. Disconnect to edit them yourself.</string>
+    <string name="school_not_now">Not now</string>
+</resources>

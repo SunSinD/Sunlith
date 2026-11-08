@@ -43,6 +43,7 @@ const codeMessages = {
   permission_missing: 'Calendar access is missing on the phone. Allow calendar access in Sunlith and try again.', internal: messages[500]
 };
 const blockedReasons = {
+  school_managed: 'This event is updated by the school portal. Disconnect the school schedule on the phone before editing it.',
   series_scope_required: codeMessages.SERIES_SCOPE_REQUIRED,
   recurrence_exception: codeMessages.RECURRENCE_EXCEPTION,
   guests: 'This event has guests. Sunlith cannot safely change meetings with invitations through this tool.',

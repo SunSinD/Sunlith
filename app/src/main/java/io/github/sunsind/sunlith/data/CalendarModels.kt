@@ -45,7 +45,7 @@ data class EventDraft(
     val reminderMinutes: List<Int> = listOf(15),
 )
 
-enum class EditBlockReason { MISSING, READ_ONLY, GUESTS, RECURRENCE_EXCEPTION, INVALID_PROVIDER_DATA }
+enum class EditBlockReason { MISSING, READ_ONLY, GUESTS, RECURRENCE_EXCEPTION, INVALID_PROVIDER_DATA, SCHOOL_MANAGED }
 
 internal data class ReminderPolicy(val maximumCount: Int, val alertsAllowed: Boolean, val maximumMinutes: Int, val writeMethod: Int = 1) {
     fun accepted(minutes: List<Int>): List<Int> = if (!alertsAllowed) emptyList()

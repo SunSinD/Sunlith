@@ -153,9 +153,222 @@ class CalendarCustomizationTest {
     }
 
     @Test
+    fun todayPillFollowsVisibleAgendaDatesThroughTouchScrollingAndReturnsToToday() {
+        val today = LocalDate.now()
+        onMain { vm.changeViewMode(ViewMode.Month); vm.goToday() }
+        node(By.pkg(context.packageName).res("calendar_agenda"))
+        val selected = vm.selectedDate
+        listOf(Direction.UP to "down", Direction.DOWN to "up").forEach { (scroll, arrow) ->
+            onMain { vm.goToday() }
+            awaitUi { !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
+            scrollAgendaUntilArrow(scroll, arrow)
+            assertEquals("Scrolling must preserve the selected date.", selected, vm.selectedDate)
+            val button = node(By.pkg(context.packageName).res("calendar_today_$arrow"))
+            assertEquals(english.getString(R.string.action_today), button.contentDescription)
+            assertTrue(button.isClickable)
+            assertTrue(button.visibleBounds.height() >= 48 * context.resources.displayMetrics.density)
+            captureMinor("agenda-$arrow")
+            val request = vm.todayRequest
+            button.click()
+            awaitUi { vm.selectedDate == today && vm.todayRequest == request + 1 &&
+                !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
+        }
+        onMain { vm.changeViewMode(ViewMode.Day) }
+        assertFalse(device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))))
+    }
+
+    @Test
+    fun compactAndSparseAgendasUseVisibleDatesInsteadOfTheSelectedMonth() {
+        val today = LocalDate.now()
+        val before = today.minusDays(28)
+        val after = today.plusDays(28)
+        listOf(before, after).forEach { day -> repeat(14) { addTimed(day, "Minor sparse $day $it", 8, 9) } }
+        addTimed(today, "Minor today anchor", 10, 11)
+        listOf("compact", "events").forEach { display ->
+            onMain { vm.changeViewMode(ViewMode.Month); vm.changeAgendaDisplay(display); vm.reload(); vm.goToday() }
+            awaitUi { !vm.loadingEvents }
+            listOf(Direction.UP to "down", Direction.DOWN to "up").forEach { (scroll, arrow) ->
+                onMain { vm.goToday() }
+                scrollAgendaUntilArrow(scroll, arrow)
+                assertEquals(today, vm.selectedDate)
+                captureMinor("$display-$arrow")
+                node(By.pkg(context.packageName).res("calendar_today_$arrow")).click()
+                awaitUi { !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
+            }
+        }
+    }
+
+    @Test
+    fun eventsOnlyTodayWithoutAnEventReturnsAcrossEmptyGapsAndSingleSidedMonths() {
+        val today = LocalDate.now()
+        val month = java.time.YearMonth.from(today)
+        val before = today.minusDays(1).takeIf { java.time.YearMonth.from(it) == month }
+        val after = today.plusDays(1).takeIf { java.time.YearMonth.from(it) == month }
+        val cases = listOfNotNull(before?.let { listOf(it) }, after?.let { listOf(it) },
+            if (before != null && after != null) listOf(before, after) else null)
+        cases.forEachIndexed { case, days ->
+            context.contentResolver.delete(CalendarContract.Events.CONTENT_URI,
+                "${CalendarContract.Events.CALENDAR_ID} = ?", arrayOf(calendarId.toString()))
+            days.forEach { day -> repeat(28) { addTimed(day, "Empty today case $case item $it", 8, 9) } }
+            onMain {
+                vm.changeViewMode(ViewMode.Month)
+                vm.changeAgendaRange("month")
+                vm.changeAgendaDisplay("events")
+                vm.goToday()
+                vm.reload()
+            }
+            awaitUi { !vm.loadingEvents && vm.events.size == days.size * 28 &&
+                vm.events.all { it.title.startsWith("Empty today case $case") } }
+            onMain { vm.goToday() }
+            awaitUi { !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
+            val scroll = if (days.last().isBefore(today)) Direction.UP else Direction.DOWN
+            val arrow = if (scroll == Direction.UP) "down" else "up"
+            scrollAgendaUntilArrow(scroll, arrow)
+            node(By.pkg(context.packageName).res("calendar_today_$arrow")).click()
+            awaitUi { !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
+            assertEquals(today, vm.selectedDate)
+            assertTrue("The events-only fixture must contain no event on today", vm.eventsByDay[today].isNullOrEmpty())
+            captureMinor("empty-today-$case")
+        }
+    }
+
+    @Test
+    fun aVisibleSpilloverTodayKeepsTheReturnButtonForTheSelectedGridMonth() {
+        val today = LocalDate.now()
+        val current = java.time.YearMonth.from(today)
+        val adjacent = listOf(current.minusMonths(1), current.plusMonths(1)).firstOrNull { month ->
+            val start = gridStart(month, true)
+            !today.isBefore(start) && !today.isAfter(start.plusDays(41))
+        } ?: return
+        onMain { vm.changeViewMode(ViewMode.Month); vm.changeMonthLayout("full"); vm.select(adjacent.atDay(15)) }
+        node(By.pkg(context.packageName).res("calendar_full_month"))
+        val arrow = if (adjacent < current) "down" else "up"
+        node(By.pkg(context.packageName).res("calendar_today_$arrow")).click()
+        awaitUi { vm.month == current && vm.selectedDate == today &&
+            !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
+        captureMinor("grid-spillover-return")
+    }
+
+    @Test
+    fun todayDirectionSurvivesBoundedRangesGridAndWeekLayoutDisposal() {
+        val today = LocalDate.now()
+        fun checkPeriod(name: String) {
+            listOf(today.minusMonths(2) to "down", today.plusMonths(2) to "up").forEach { (shown, arrow) ->
+                onMain { vm.select(shown) }
+                awaitUi { vm.selectedDate == shown && device.hasObject(day(shown)) &&
+                    device.hasObject(By.pkg(context.packageName).res("calendar_today_$arrow")) }
+                captureMinor("period-$name-$arrow")
+            }
+            onMain { vm.goToday() }
+            awaitUi { !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
+        }
+        onMain { vm.changeViewMode(ViewMode.Month) }
+        listOf("month", "week", "day").forEach { range ->
+            onMain { vm.changeAgendaRange(range) }
+            checkPeriod(range)
+        }
+        onMain { vm.changeMonthLayout("full") }
+        checkPeriod("grid")
+        onMain { vm.changeViewMode(ViewMode.Week); vm.changeWeekLayout("list") }
+        checkPeriod("week-list")
+        listOf(3, 7).forEach { days ->
+            onMain { vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(days) }
+            checkPeriod("week-timeline$days")
+        }
+        onMain { vm.changeWeekLayout("list"); vm.changeViewMode(ViewMode.Month); vm.changeMonthLayout("split") }
+        node(By.pkg(context.packageName).res("calendar_agenda"))
+        awaitUi { !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
+    }
+
+    @Test
+    fun weekListDefaultsAndExplicitTimelinesSurviveNewActivities() {
+        finish()
+        context.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit()
+            .remove("week_layout").remove("visible_week_days").remove("layout_preset").commit()
+        launch()
+        onMain { vm.changeViewMode(ViewMode.Week) }
+        node(By.pkg(context.packageName).res("calendar_agenda"))
+        assertEquals("list", vm.weekLayout)
+        assertFalse(device.hasObject(By.pkg(context.packageName).res("calendar_timeline")))
+        captureMinor("week-fresh-list")
+        listOf("sunlith", "planner").forEach { preset ->
+            onMain { vm.applyLayoutPreset(preset) }
+            finish()
+            launch()
+            onMain { vm.changeViewMode(ViewMode.Week) }
+            assertEquals(preset, vm.layoutPreset)
+            assertEquals("list", vm.weekLayout)
+            assertEquals(7, vm.visibleWeekDays)
+            node(By.pkg(context.packageName).res("calendar_agenda"))
+            captureMinor("week-$preset-list")
+        }
+        listOf(3, 7).forEach { days ->
+            onMain { vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(days) }
+            finish()
+            launch()
+            onMain { vm.changeViewMode(ViewMode.Week) }
+            assertEquals("custom", vm.layoutPreset)
+            assertEquals("timeline", vm.weekLayout)
+            assertEquals(days, vm.visibleWeekDays)
+            node(By.pkg(context.packageName).res("calendar_timeline"))
+            captureMinor("week-custom-timeline$days")
+        }
+    }
+
+    @Test
+    fun monthLayoutHeadingIsLocalizedAndMonthChoicesPreserveTheCustomWeek() {
+        listOf("en" to "MONTH LAYOUT", "fr-CA" to "DISPOSITION DU MOIS").forEach { (language, heading) ->
+            if (language != "en" && Build.VERSION.SDK_INT < 33) return@forEach
+            finish()
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(language)
+            }
+            launch(Locale.forLanguageTag(language))
+            onMain { vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(3) }
+            val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
+                setLocale(Locale.forLanguageTag(language))
+            })
+            node(By.pkg(context.packageName).desc(localized.getString(R.string.title_settings))).click()
+            node(By.pkg(context.packageName).text(localized.getString(R.string.beta_settings_appearance))).click()
+            node(By.pkg(context.packageName).text(heading))
+            listOf(R.string.layout_preset_grid to "full", R.string.layout_preset_agenda to "split").forEach { (label, layout) ->
+                node(By.pkg(context.packageName).text(localized.getString(label))).click()
+                awaitUi { vm.monthLayout == layout }
+                assertEquals("timeline", vm.weekLayout)
+                assertEquals(3, vm.visibleWeekDays)
+            }
+            captureMinor("heading-$language")
+        }
+    }
+
+    private fun scrollAgendaUntilArrow(direction: Direction, arrow: String) {
+        val selector = By.pkg(context.packageName).res("calendar_today_$arrow")
+        repeat(16) {
+            refreshAccessibility()
+            if (device.hasObject(selector)) return
+            val list = node(By.pkg(context.packageName).res("calendar_agenda"))
+            val bounds = list.visibleBounds
+            list.setGestureMargins(bounds.width() / 5, bounds.height() / 6, bounds.width() / 5, bounds.height() / 4)
+            list.scroll(direction, 0.8f)
+            device.waitForIdle()
+        }
+        node(selector)
+    }
+
+    private fun captureMinor(name: String) {
+        if (InstrumentationRegistry.getArguments().getString("captureMinor") != "true") return
+        device.waitForIdle()
+        SystemClock.sleep(350)
+        val prefix = InstrumentationRegistry.getArguments().getString("minorEvidencePrefix") ?: "minor-v0.6.3"
+        device.takeScreenshot(File(context.filesDir, "$prefix-$name.png"))
+        device.dumpWindowHierarchy(File(context.filesDir, "$prefix-$name.xml"))
+    }
+
+    @Test
     fun customLayoutChangesAndPresetResetSurviveStartingANewActivity() {
         onMain {
             vm.applyLayoutPreset("planner")
+            vm.changeWeekLayout("timeline")
             vm.changeVisibleWeekDays(3)
             vm.changeDayLayout("schedule")
             vm.changeAgendaRange("week")
@@ -838,7 +1051,7 @@ class CalendarCustomizationTest {
             startMillis = date.plusDays(2).atTime(10, 0).atZone(zone).toInstant().toEpochMilli(),
             endMillis = date.plusDays(2).atTime(10, 30).atZone(zone).toInstant().toEpochMilli(),
             timeZone = zone.id, reminderMinutes = emptyList()))
-        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Week); vm.select(date); vm.reload() }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeWeekLayout("timeline"); vm.changeViewMode(ViewMode.Week); vm.select(date); vm.reload() }
         node(By.pkg(context.packageName).res("calendar_timeline"))
         val dates = date.minusDays(2).let { monday -> (0L until 7L).map { monday.plusDays(it) } }
         assertEquals(7, dates.count { device.hasObject(day(it)) })
@@ -886,7 +1099,7 @@ class CalendarCustomizationTest {
     fun threeDayWindowKeepsTheSelectedMiddleDateAndVisibleDatesAfterActivityRecreation() {
         val start = date.plusWeeks(1)
         val shownDates = (0L until 3L).map(start::plusDays)
-        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Week); vm.changeVisibleWeekDays(3); vm.select(start) }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeWeekLayout("timeline"); vm.changeViewMode(ViewMode.Week); vm.changeVisibleWeekDays(3); vm.select(start) }
         awaitUi { shownDates.all { device.hasObject(day(it)) } && !device.hasObject(day(start.minusDays(1))) && !device.hasObject(day(start.plusDays(3))) }
         val middle = start.plusDays(1)
         node(day(middle)).click()
@@ -911,6 +1124,7 @@ class CalendarCustomizationTest {
             val marker = addTimed(start, "Boundary first date", 9, 10)
             onMain {
                 vm.applyLayoutPreset("planner")
+                vm.changeWeekLayout("timeline")
                 vm.changeViewMode(ViewMode.Week)
                 vm.changeVisibleWeekDays(3)
                 vm.setMondayFirst(mondayFirst)
@@ -1114,10 +1328,11 @@ class CalendarCustomizationTest {
         ))
     }
 
-    private fun launch() {
+    private fun launch(locale: Locale = Locale.ENGLISH) {
         activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as ComponentActivity
         onMain { vm = ViewModelProvider(requireNotNull(activity))[SunlithViewModel::class.java]; vm.select(date) }
-        node(By.pkg(context.packageName).desc(english.getString(R.string.action_new_event)))
+        val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
+        node(By.pkg(context.packageName).desc(localized.getString(R.string.action_new_event)))
     }
 
     private fun finish() {

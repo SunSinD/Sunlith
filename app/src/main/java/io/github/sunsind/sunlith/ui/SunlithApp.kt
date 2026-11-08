@@ -65,6 +65,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import io.github.sunsind.sunlith.R
+import io.github.sunsind.sunlith.school.SchoolScheduleManager
 
 @Composable
 fun SunlithApp(vm: SunlithViewModel) {
@@ -119,6 +120,12 @@ fun SunlithApp(vm: SunlithViewModel) {
                             Screen.Settings -> settingsState.SaveableStateProvider("settings") { SettingsScreen(vm) }
                             Screen.WidgetSettings -> SettingsScreen(vm, initialPage = "widget")
                             Screen.Calendars -> CalendarsScreen(vm)
+                            Screen.SchoolSchedule -> {
+                                val context = LocalContext.current
+                                val controller = remember(context.applicationContext) { SchoolScheduleManager.get(context) }
+                                LaunchedEffect(controller) { controller.onOpen() }
+                                SchoolScheduleScreen(controller, onBack = vm::back, onChooseCalendars = vm::back)
+                            }
                             Screen.DeviceLink -> DeviceLinkScreen(vm)
                             Screen.Editor -> EventEditorScreen(vm)
                             is Screen.Details -> DetailsScreen(vm, screen.event)

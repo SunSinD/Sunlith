@@ -63,6 +63,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CalendarViewDay
@@ -242,10 +243,35 @@ fun rememberMotion(enabled: Boolean): Boolean {
     return enabled && !systemOff
 }
 
-/** Whether the visible part of the agenda is away from today. Only scrolling sets it; the selected date never changes from scrolling. */
+internal enum class TodayDirection { Up, Down }
+
+internal fun todayDirection(today: LocalDate, first: LocalDate, last: LocalDate): TodayDirection? = when {
+    today.isBefore(first) -> TodayDirection.Up
+    today.isAfter(last) -> TodayDirection.Down
+    else -> null
+}
+
+/** Scrolling reports visible dates without changing the selected date. Only the active page owns the report. */
 @Stable
 private class AgendaViewport {
-    var away by mutableStateOf(false)
+    var direction by mutableStateOf<TodayDirection?>(null)
+        private set
+    var reporting by mutableStateOf(false)
+        private set
+    private var owner: Any? = null
+
+    fun report(source: Any, value: TodayDirection?) {
+        owner = source
+        direction = value
+        reporting = true
+    }
+
+    fun release(source: Any) {
+        if (owner !== source) return
+        owner = null
+        direction = null
+        reporting = false
+    }
 }
 
 /** First date of the three-day timeline. It only moves when the selected date leaves the three shown days. */
@@ -405,12 +431,13 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
         CalendarContext(vm, f, dayMeasurer, today, motion, swipe, collapse, viewport, highlightToday, threeDays, threeStart, timelineScroll, timelineFocus, onFocusHandled)
     }
 
-    val periodHasToday = when (mode) {
-        ViewMode.Month -> vm.month == YearMonth.from(today)
-        ViewMode.Week -> if (vm.weekLayout == "timeline") today in c.timelineDays(0)
-            else weekStart(vm.selectedDate, vm.weekStartsMonday) == weekStart(today, vm.weekStartsMonday)
-        ViewMode.Day -> vm.selectedDate == today
+    val periodDirection = when (mode) {
+        ViewMode.Month -> todayDirection(today, vm.month.atDay(1), vm.month.atEndOfMonth())
+        ViewMode.Week -> if (vm.weekLayout == "timeline") c.timelineDays(0).let { todayDirection(today, it.first(), it.last()) }
+            else weekStart(vm.selectedDate, vm.weekStartsMonday).let { todayDirection(today, it, it.plusDays(6)) }
+        ViewMode.Day -> null
     }
+    val direction = if (viewport.reporting) viewport.direction else periodDirection
 
     Scaffold(
         modifier = modifier.semantics { testTagsAsResourceId = true },
@@ -436,7 +463,7 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
                     ViewMode.Day -> DayBody(c, Modifier.weight(1f))
                 }
             }
-            TodayPill(mode != ViewMode.Day && (!periodHasToday || viewport.away), motion, today, vm::goToday, Modifier.align(Alignment.BottomCenter))
+            TodayPill(direction.takeIf { mode != ViewMode.Day }, motion, vm::goToday, Modifier.align(Alignment.BottomCenter))
         }
     }
 
@@ -584,32 +611,37 @@ private fun ViewMenu(vm: SunlithViewModel, compact: Boolean, includeSearch: Bool
  * centred above the bottom edge, and keeps clear of the add button on the right.
  */
 @Composable
-private fun TodayPill(visible: Boolean, motion: Boolean, today: LocalDate, onClick: () -> Unit, modifier: Modifier) {
+private fun TodayPill(direction: TodayDirection?, motion: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    var lastDirection by remember { mutableStateOf(TodayDirection.Up) }
+    val arrow = direction ?: lastDirection
+    SideEffect { if (direction != null) lastDirection = direction }
     if (motion) {
         AnimatedVisibility(
-            visible, modifier,
+            direction != null, modifier,
             enter = fadeIn(tween(150)),
             exit = fadeOut(tween(120)),
-        ) { TodayPillContent(today, onClick) }
-    } else if (visible) {
-        Box(modifier) { TodayPillContent(today, onClick) }
+        ) { TodayPillContent(arrow, onClick) }
+    } else if (direction != null) {
+        Box(modifier) { TodayPillContent(arrow, onClick) }
     }
 }
 
 @Composable
-private fun TodayPillContent(today: LocalDate, onClick: () -> Unit) {
+private fun TodayPillContent(direction: TodayDirection, onClick: () -> Unit) {
     val p = LocalPalette.current
     val label = stringResource(R.string.action_today)
     val shape = RoundedCornerShape(50)
     Box(
         Modifier.padding(start = 88.dp, end = 88.dp, bottom = 20.dp).minimumInteractiveComponentSize()
+            .testTag(if (direction == TodayDirection.Down) "calendar_today_down" else "calendar_today_up")
             .shadow(3.dp, shape).clip(shape).background(p.surface).border(1.dp, p.line, shape)
             .clickable(role = Role.Button, onClick = onClick)
             .clearAndSetSemantics { contentDescription = label; role = Role.Button }
             .padding(horizontal = 18.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Outlined.ArrowUpward, contentDescription = null, tint = p.ink, modifier = Modifier.size(22.dp))
+        Icon(if (direction == TodayDirection.Down) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward,
+            contentDescription = null, tint = p.ink, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -620,7 +652,6 @@ private fun MonthBody(c: CalendarContext, modifier: Modifier) {
     val vm = c.vm
     if (vm.monthLayout == "full") {
         val onOpenDay: (LocalDate) -> Unit = remember(vm) { { vm.openDay(it) } }
-        val onAwayChanged: (Boolean) -> Unit = remember(c.viewport) { { c.viewport.away = it } }
         val textMeasurer = rememberTextMeasurer(cacheSize = 256)
         val density = LocalDensity.current
         val typography = MaterialTheme.typography
@@ -634,6 +665,11 @@ private fun MonthBody(c: CalendarContext, modifier: Modifier) {
                 PagedPeriod(c.swipe, c.period, Modifier.fillMaxSize()) { absolute ->
                     val d = rememberPeriodDate(c, absolute)
                     val active = absolute == c.period
+                    val source = remember { Any() }
+                    if (active) DisposableEffect(c.viewport) { onDispose { c.viewport.release(source) } }
+                    val onDirectionChanged: (TodayDirection?) -> Unit = remember(c.viewport, source, active) {
+                        { if (active) c.viewport.report(source, it) }
+                    }
                     val month = remember(d.year, d.monthValue) { YearMonth.from(d) }
                     val start = gridStart(month, vm.weekStartsMonday)
                     val eventsOn = rememberDayEvents(vm, start, start.plusDays(41))
@@ -641,7 +677,7 @@ private fun MonthBody(c: CalendarContext, modifier: Modifier) {
                         month, d, c.today, vm.weekStartsMonday, eventsOn, c.f, active && c.highlightToday,
                         onOpenDay = onOpenDay, row = row, number = number, chip = chip, viewportHeight = height, textMeasurer = textMeasurer,
                         todayRequest = vm.todayRequest, active = active,
-                        onAwayChanged = onAwayChanged,
+                        onTodayDirectionChanged = onDirectionChanged,
                     )
                 }
             }
@@ -1150,14 +1186,33 @@ private fun AgendaList(
     }
 
     if (active) {
-        LaunchedEffect(listState, rows, today) {
+        LaunchedEffect(listState, rows, from, to, today, c.viewport) {
             snapshotFlow {
-                val visible = listState.layoutInfo.visibleItemsInfo.filter { it.index < rows.size }
-                if (visible.isEmpty()) false
-                else today.isBefore(rows[visible.first().index].first) || today.isAfter(rows[visible.last().index].last)
-            }.collect { c.viewport.away = it }
+                val info = listState.layoutInfo
+                val visible = info.visibleItemsInfo.filter {
+                    it.index in rows.indices && rows[it.index] !is AgendaRow.Month &&
+                        it.offset + it.size > info.viewportStartOffset && it.offset < info.viewportEndOffset
+                }
+                if (visible.isEmpty()) null
+                else {
+                    val first = visible.first().index
+                    val last = visible.last().index
+                    var previous = first - 1
+                    while (previous >= 0 && rows[previous] is AgendaRow.Month) previous--
+                    var next = last + 1
+                    while (next < rows.size && rows[next] is AgendaRow.Month) next++
+                    // Events-only rows also represent the omitted empty dates beside them. Continuations
+                    // of the same date must keep that date until the first/last event is visible.
+                    val start = if (previous < 0) from else minOf(rows[first].first, rows[previous].last.plusDays(1))
+                    val end = if (next == rows.size) to else maxOf(rows[last].last, rows[next].first.minusDays(1))
+                    start to end
+                }
+            }.collect { dates ->
+                if (dates == null) c.viewport.release(listState)
+                else c.viewport.report(listState, todayDirection(today, dates.first, dates.second))
+            }
         }
-        DisposableEffect(Unit) { onDispose { c.viewport.away = false } }
+        DisposableEffect(c.viewport) { onDispose { c.viewport.release(listState) } }
     }
 
     var lastDirection by remember { mutableStateOf<Boolean?>(null) }

@@ -1,0 +1,21 @@
+<resources>
+    <string name="school_sync_managed_event">Cet événement suit votre horaire scolaire. Actualisez-le dans Horaire scolaire.</string>
+    <string name="school_sync_absence_notice">Avis d’absence de l’enseignant : %1$s</string>
+    <string name="school_sync_absent_title">Enseignant absent : %1$s</string>
+    <string name="school_sync_teacher_absent">L’enseignant est déclaré absent. Consultez l’avis de l’école pour les consignes.</string>
+    <string name="school_sync_course">Cours : %1$s · Groupe : %2$s</string>
+    <string name="school_sync_class_kind">Type de cours : %1$s</string>
+    <string name="school_sync_period">Période : %1$s</string>
+    <string name="school_sync_theory">Théorie</string>
+    <string name="school_sync_lab">Laboratoire</string>
+    <string name="school_sync_stage">Stage</string>
+    <string name="school_sync_teachers">Enseignants : %1$s</string>
+    <string name="school_sync_rooms">Locaux : %1$s</string>
+    <string name="school_sync_notification_title">Horaire scolaire</string>
+    <string name="school_sync_changes_channel">Changements à l’horaire</string>
+    <string name="school_sync_problems_channel">Problèmes de connexion</string>
+    <string name="school_sync_sign_in_notification">Votre connexion scolaire demande une action. Ouvrez Horaire scolaire pour vous connecter.</string>
+    <string name="school_sync_connection_notification">L’actualisation scolaire a échoué. Ouvrez Horaire scolaire pour les détails.</string>
+    <string name="school_sync_review_notification">Ouvrez Horaire scolaire pour vérifier les changements avant de les appliquer.</string>
+    <plurals name="school_sync_changes_count"><item quantity="one">%d événement scolaire modifié</item><item quantity="many">%d événements scolaires modifiés</item><item quantity="other">%d événements scolaires modifiés</item></plurals>
+</resources>

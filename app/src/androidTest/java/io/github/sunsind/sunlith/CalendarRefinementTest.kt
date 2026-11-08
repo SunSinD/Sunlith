@@ -17,6 +17,7 @@ import android.view.Choreographer
 import android.view.FrameMetrics
 import android.view.InputDevice
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +29,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -64,6 +67,9 @@ import io.github.sunsind.sunlith.ui.rememberPeriodSwipe
 import io.github.sunsind.sunlith.ui.awaitFocusStart
 import io.github.sunsind.sunlith.ui.scrollToFocus
 import io.github.sunsind.sunlith.ui.focusTarget
+import io.github.sunsind.sunlith.ui.Timeline
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
@@ -545,6 +551,108 @@ class CalendarRefinementTest {
     }
 
     @Test
+    fun nonzeroTodayMotionYieldsToVerticalTouchAndImmediateWeekPaging() {
+        val today = LocalDate.now()
+        val formats = Formats(english, Locale.ENGLISH)
+        listOf(3, 7).forEach { days ->
+            listOf(true, false).forEach { motion ->
+                var period by mutableLongStateOf(0)
+                var request by mutableIntStateOf(0)
+                val scrolls = mutableMapOf<Long, ScrollState>()
+                onMain {
+                    requireNotNull(activity).setContent {
+                        val swipe = rememberPeriodSwipe(true, motion) { period += it }
+                        PagedPeriod(swipe, period, Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) { absolute ->
+                            val scroll = rememberScrollState()
+                            SideEffect { scrolls[absolute] = scroll }
+                            val first = today.plusDays(absolute * days)
+                            Timeline((0L until days.toLong()).map(first::plusDays), { emptyList() }, today, today,
+                                formats, true, scroll, absolute == period, request, motion,
+                                onSelectDay = {}, onOpen = {}, onNew = {}, onOverflow = { _, _ -> },
+                                fallback = { Text("Unexpected timeline fallback") })
+                        }
+                    }
+                }
+                awaitState("The $days-day real timeline fixture must be scrollable") {
+                    scrolls[0]?.let { it.maxValue in 64 until Int.MAX_VALUE && !it.isScrollInProgress } == true
+                }
+                val scroll = requireNotNull(scrolls[0])
+                val target = scroll.value
+                val bounds = node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds
+                fun startSmallTodayMove() {
+                    val ready = java.util.concurrent.CountDownLatch(1)
+                    val requestedAt = SystemClock.uptimeMillis()
+                    instrumentation.runOnMainSync {
+                        val displaced = if (target >= 31) target - 31 else target + 31
+                        scroll.dispatchRawDelta((displaced - scroll.value).toFloat())
+                        assertEquals(31, abs(scroll.value - target))
+                        request++
+                        Choreographer.getInstance().postFrameCallback {
+                            Choreographer.getInstance().postFrameCallback { ready.countDown() }
+                        }
+                    }
+                    assertTrue(ready.await(2, java.util.concurrent.TimeUnit.SECONDS))
+                    assertTrue("Touch must start during the original 300 ms Today move", SystemClock.uptimeMillis() - requestedAt < 250)
+                }
+                startSmallTodayMove()
+                val distance = minOf(320, bounds.height() / 3)
+                val down = target > scroll.maxValue / 2
+                val center = Point(bounds.centerX(), bounds.centerY())
+                moveOnce(center, Point(center.x, center.y + if (down) distance else -distance), holdAfterMove = 350)
+                val dragged = scroll.value
+                assertTrue("A real vertical drag must interrupt Today in the $days-day timeline, motion=$motion", abs(dragged - target) > distance / 2)
+                SystemClock.sleep(350)
+                onMain { assertEquals("Today must not pull the timeline back after the finger releases", dragged, scroll.value) }
+                startSmallTodayMove()
+                horizontalSwipe(bounds, true)
+                awaitState("A small nonzero Today move must allow the first $days-day swipe, motion=$motion") { period == 1L }
+                horizontalSwipe(node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds, false)
+                awaitState("The $days-day timeline must reverse immediately, motion=$motion") { period == 0L }
+                val activeScroll = requireNotNull(scrolls[0])
+                onMain { activeScroll.dispatchRawDelta((activeScroll.maxValue / 2 - activeScroll.value).toFloat()) }
+                val beforeFling = activeScroll.value
+                val gesture = flingVertically(center, Point(center.x, center.y + distance))
+                val flingChecked = java.util.concurrent.CountDownLatch(1)
+                var flingObserved = false
+                instrumentation.runOnMainSync {
+                    val releasedAt = activeScroll.value
+                    val deadline = SystemClock.uptimeMillis() + 1000
+                    Choreographer.getInstance().postFrameCallback(object : Choreographer.FrameCallback {
+                        override fun doFrame(frameTimeNanos: Long) {
+                            if (activeScroll.isScrollInProgress && activeScroll.value != releasedAt) {
+                                flingObserved = true
+                                request++
+                                flingChecked.countDown()
+                            } else if (SystemClock.uptimeMillis() < deadline) {
+                                Choreographer.getInstance().postFrameCallback(this)
+                            } else flingChecked.countDown()
+                        }
+                    })
+                }
+                assertTrue(flingChecked.await(2, java.util.concurrent.TimeUnit.SECONDS))
+                if (!flingObserved) {
+                    device.takeScreenshot(File(context.filesDir, "today-fling-week$days-motion$motion-failure.png"))
+                    device.dumpWindowHierarchy(File(context.filesDir, "today-fling-week$days-motion$motion-failure.xml"))
+                }
+                assertTrue("The real vertical gesture must move after release with a fling running: days=$days motion=$motion " +
+                    "before=$beforeFling after=${activeScroll.value} max=${activeScroll.maxValue} target=$target " +
+                    "sameState=${activeScroll === scroll} gesture=$gesture", flingObserved)
+                instrumentation.sendStatus(0, Bundle().apply { putString("stream", "SUNLITH_FLING=$days:$motion:$gesture\n") })
+                awaitState("Today must finish after stopping the existing vertical fling") {
+                    abs(activeScroll.value - target) <= 1 && !activeScroll.isScrollInProgress
+                }
+                SystemClock.sleep(350)
+                onMain { assertTrue("The old fling must not move the timeline after Today", abs(activeScroll.value - target) <= 1) }
+                if (InstrumentationRegistry.getArguments().getString("captureMinor") == "true") {
+                    val prefix = InstrumentationRegistry.getArguments().getString("minorEvidencePrefix") ?: "minor-v0.6.3"
+                    device.takeScreenshot(File(context.filesDir, "$prefix-touch-week$days-motion$motion.png"))
+                    device.dumpWindowHierarchy(File(context.filesDir, "$prefix-touch-week$days-motion$motion.xml"))
+                }
+            }
+        }
+    }
+
+    @Test
     fun weekTimelinesAlreadyAtTodayAllowImmediateHorizontalPagingAndReversal() {
         listOf(3, 7).forEach { days ->
             onMain {
@@ -748,6 +856,33 @@ class CalendarRefinementTest {
         val right = bounds.right - bounds.width() / 6
         assertTrue(device.swipe(if (forward) right else left, bounds.centerY(), if (forward) left else right, bounds.centerY(), 24))
         device.waitForIdle()
+    }
+
+    private fun flingVertically(start: Point, end: Point): String {
+        val downTime = SystemClock.uptimeMillis()
+        val tracker = VelocityTracker.obtain()
+        val times = mutableListOf<Long>()
+        fun send(action: Int, fraction: Float) {
+            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action,
+                start.x + (end.x - start.x) * fraction, start.y + (end.y - start.y) * fraction, 0)
+            try {
+                times += event.eventTime - downTime
+                tracker.addMovement(event)
+                event.source = InputDevice.SOURCE_TOUCHSCREEN
+                assertTrue("The fling gesture must reach the app", instrumentation.uiAutomation.injectInputEvent(event, action == MotionEvent.ACTION_UP))
+            } finally { event.recycle() }
+        }
+        send(MotionEvent.ACTION_DOWN, 0f)
+        try {
+            repeat(6) { step ->
+                SystemClock.sleep(10)
+                send(MotionEvent.ACTION_MOVE, (step + 1) / 6f)
+            }
+        } finally { send(MotionEvent.ACTION_UP, 1f) }
+        return try {
+            tracker.computeCurrentVelocity(1000)
+            "eventsMs=$times velocityY=${tracker.yVelocity} elapsedMs=${SystemClock.uptimeMillis() - downTime}"
+        } finally { tracker.recycle() }
     }
 
     private fun moveOnce(start: Point, end: Point, holdAfterMove: Long = 120) {

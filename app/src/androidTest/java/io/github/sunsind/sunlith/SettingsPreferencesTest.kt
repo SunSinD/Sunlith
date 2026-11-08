@@ -111,6 +111,27 @@ class SettingsPreferencesTest {
     }
 
     @Test
+    fun inheritedAndCustomWeekTimelinesSurviveStoreRecreationWithoutMigration() {
+        val prefs = isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
+        listOf("planner", "custom", "sunlith").forEach { preset ->
+            listOf(3, 7).forEach { days ->
+                prefs.edit().clear().putBoolean("day_timeline_default_v1", true)
+                    .putString("month_layout", "full").putString("week_layout", "timeline")
+                    .putString("day_layout", "timeline").putInt("visible_week_days", days)
+                    .putString("layout_preset", preset).commit()
+                val before = prefs.all.toMap()
+                repeat(3) {
+                    val restored = SettingsStore(isolated)
+                    assertEquals("timeline", restored.weekLayout)
+                    assertEquals(days, restored.visibleWeekDays)
+                    assertEquals(preset, restored.layoutPreset)
+                    assertEquals(before, prefs.all)
+                }
+            }
+        }
+    }
+
+    @Test
     fun widgetControlsKeepValidRangesAndFivePercentOpacitySteps() {
         val settings = SettingsStore(isolated)
         listOf(-20 to 0, 2 to 0, 3 to 5, 97 to 95, 98 to 100, 120 to 100).forEach { (requested, expected) ->

@@ -110,6 +110,8 @@ test('remote errors are useful but never echo server text, addresses or authoriz
   }
   const blocked = await fixture(t, (_, res) => { res.statusCode = 422; res.end(JSON.stringify({ error: { code: 'blocked', reason: 'guests', message: token } })); });
   await assert.rejects(callDevice(blocked.config, 'get_current_time'), /has guests/);
+  const school = await fixture(t, (_, res) => { res.statusCode = 422; res.end(JSON.stringify({ error: { code: 'blocked', reason: 'school_managed', message: token } })); });
+  await assert.rejects(callDevice(school.config, 'get_current_time'), /school portal.*Disconnect the school schedule/);
   const series = await fixture(t, (_, res) => { res.statusCode = 400; res.end(JSON.stringify({ error: { code: 'bad_request', reason: 'series_scope_required', message: token } })); });
   await assert.rejects(callDevice(series.config, 'get_current_time'), /whole series/);
 });

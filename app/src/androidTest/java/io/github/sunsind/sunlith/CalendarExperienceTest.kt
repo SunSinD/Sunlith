@@ -994,9 +994,17 @@ class CalendarExperienceTest {
 
     private fun day(date: LocalDate): BySelector = By.pkg(context.packageName).descStartsWith(Formats(english, Locale.ENGLISH).dayLong(date) + ",")
 
-    private fun agenda(): UiObject2 = node(By.pkg(context.packageName).res("calendar_agenda")).apply {
-        val bounds = visibleBounds
-        setGestureMargins(bounds.width() / 20, bounds.height() / 20, bounds.width() * 3 / 5, bounds.height() / 20)
+    private fun agenda(): UiObject2 {
+        repeat(5) {
+            try {
+                return node(By.pkg(context.packageName).res("calendar_agenda")).apply {
+                    val bounds = visibleBounds
+                    setGestureMargins(bounds.width() / 20, bounds.height() / 20, bounds.width() * 3 / 5, bounds.height() / 20)
+                }
+            } catch (_: StaleObjectException) { device.waitForIdle() }
+        }
+        captureFailure()
+        error("The agenda accessibility node did not settle after replacement.")
     }
 
     private fun allAgendaTexts(): Set<String> {
@@ -1053,15 +1061,24 @@ class CalendarExperienceTest {
 
     private fun scrollToText(text: String): UiObject2 {
         val selector = By.pkg(context.packageName).text(text)
+        instrumentation.sendStatus(0, Bundle().apply { putString("stream", "SUNLITH_SETTINGS_TARGET=$text\n") })
+        refreshAccessibility()
         device.wait(Until.findObject(selector), 300)?.let { return it }
         repeat(12) {
-            node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.UP, 0.8f)
+            refreshAccessibility()
+            device.findObject(selector)?.let { return it }
+            val container = device.findObject(By.pkg(context.packageName).scrollable(true)) ?: return node(selector)
+            container.scroll(Direction.UP, 0.8f)
             device.wait(Until.findObject(selector), 200)?.let { return it }
         }
         repeat(18) {
-            node(By.pkg(context.packageName).scrollable(true)).scroll(Direction.DOWN, 0.65f)
+            refreshAccessibility()
+            device.findObject(selector)?.let { return it }
+            val container = device.findObject(By.pkg(context.packageName).scrollable(true)) ?: return node(selector)
+            container.scroll(Direction.DOWN, 0.65f)
             device.wait(Until.findObject(selector), 300)?.let { return it }
         }
+        captureFailure()
         error("Expected settings control was not reachable: $text")
     }
 

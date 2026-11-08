@@ -328,6 +328,7 @@ internal class DeviceLinkTools(context: Context, private val repository: Calenda
                 EditBlockReason.GUESTS -> throw DeviceLinkError.blocked("Events with guests must be changed in the calendar app so invitations stay correct.", "guests")
                 EditBlockReason.RECURRENCE_EXCEPTION -> throw DeviceLinkError.blocked("This repeating series has changed or separate occurrences. Change it in the calendar app.", "recurrence_exception")
                 EditBlockReason.INVALID_PROVIDER_DATA -> throw DeviceLinkError.blocked("This event has calendar data Sunlith cannot safely change.", "invalid_provider_data")
+                EditBlockReason.SCHOOL_MANAGED -> throw DeviceLinkError.blocked("This event is updated by the school portal. Disconnect the school schedule before editing it.", "school_managed")
             }
             if (expectedEtag != etag) throw DeviceLinkError.revisionMismatch()
             if (!stored.draft.rrule.isNullOrBlank() && !series) {

@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="school_title">Horaire scolaire</string>
+    <string name="school_intro">Connectez le compte Col.NET de votre établissement pour ajouter vos cours, examens et remises avec vos événements.</string>
+    <string name="school_provider_colnet">Col.NET</string>
+    <string name="school_institution">Établissement</string>
+    <string name="school_choose_institution">Choisir un établissement</string>
+    <string name="school_montmorency">Collège Montmorency</string>
+    <string name="school_other_colnet">Autre établissement Col.NET</string>
+    <string name="school_supported_note">Seul le Collège Montmorency a été testé. Les autres établissements doivent utiliser Col.NET.</string>
+    <string name="school_portal_help">Ouvrez la page de connexion Col.NET de votre établissement et collez son adresse ici. Les autres établissements n\'ont pas été testés.</string>
+    <string name="school_portal">Adresse du portail Col.NET</string>
+    <string name="school_portal_short">Portail</string>
+    <string name="school_username">Nom d\'utilisateur</string>
+    <string name="school_password">Mot de passe</string>
+    <string name="school_password_show">Afficher le mot de passe</string>
+    <string name="school_password_hide">Masquer le mot de passe</string>
+    <string name="school_private_note">Vos identifiants sont chiffrés et gardés sur ce téléphone seulement.</string>
+    <string name="school_destination">Ajouter les cours à</string>
+    <string name="school_destination_single">Les cours vont dans %1$s.</string>
+    <string name="school_no_calendar">Aucun calendrier ne peut encore recevoir les cours.</string>
+    <string name="school_connect">Connecter</string>
+    <string name="school_connecting">Connexion…</string>
+    <string name="school_more_options">Plus d\'options</string>
+    <string name="school_expanded">Développé</string>
+    <string name="school_collapsed">Réduit</string>
+    <string name="school_time_zone">Fuseau horaire</string>
+    <string name="school_time_zone_sub">Les heures de cours de votre école utilisent ce fuseau, même en voyage.</string>
+    <string name="school_time_zone_device">Ce téléphone : %1$s</string>
+    <string name="school_time_zone_search">Rechercher</string>
+    <string name="school_time_zone_none">Aucun résultat</string>
+
+    <string name="school_connected">Connecté</string>
+    <string name="school_updated">Mis à jour %1$s</string>
+    <string name="school_updated_now">Mis à jour à l\'instant</string>
+    <string name="school_never_updated">Pas encore mis à jour</string>
+    <string name="school_stale">Pas à jour. Dernière mise à jour : %1$s</string>
+    <string name="school_syncing">Mise à jour…</string>
+    <string name="school_sync_now">Synchroniser</string>
+    <string name="school_refresh_note">Vérifie les changements régulièrement et à l\'ouverture de l\'app.</string>
+    <plurals name="school_event_count">
+        <item quantity="one">%1$d événement scolaire dans %2$s</item>
+        <item quantity="many">%1$d événements scolaires dans %2$s</item>
+        <item quantity="other">%1$d événements scolaires dans %2$s</item>
+    </plurals>
+    <string name="school_sign_in_again">Se reconnecter</string>
+    <string name="school_open_android_settings">Ouvrir les paramètres Android</string>
+
+    <string name="school_error_portal">Vérifiez l\'adresse du portail.</string>
+    <string name="school_error_sign_in">Le nom d\'utilisateur ou le mot de passe ne fonctionne pas.</string>
+    <string name="school_error_mfa">Ce compte demande une étape de connexion de plus qui n\'est pas prise en charge.</string>
+    <string name="school_error_network">Impossible de joindre le portail. Vérifiez votre connexion.</string>
+    <string name="school_error_calendar_permission">L\'accès au calendrier est désactivé.</string>
+    <string name="school_error_data">Le portail a envoyé des données illisibles.</string>
+    <string name="school_error_unavailable">Le portail n\'est pas disponible pour le moment.</string>
+    <string name="school_error_storage">Impossible d\'enregistrer sur ce téléphone.</string>
+    <string name="school_storage_recovery">Vérifiez votre calendrier avant de réessayer. Si le problème persiste, déconnectez-vous en gardant les événements, puis reconnectez-vous.</string>
+    <string name="school_error_generic">Une erreur s\'est produite. Réessayez.</string>
+
+    <string name="school_review_title">Vérifier les changements</string>
+    <string name="school_link_title">Lier les cours déjà dans votre calendrier</string>
+    <plurals name="school_pending_linked">
+        <item quantity="one">%d cours déjà dans votre calendrier sera lié, sans doublon</item>
+        <item quantity="many">%d cours déjà dans votre calendrier seront liés, sans doublon</item>
+        <item quantity="other">%d cours déjà dans votre calendrier seront liés, sans doublon</item>
+    </plurals>
+    <plurals name="school_pending_added">
+        <item quantity="one">%d nouveau</item>
+        <item quantity="many">%d nouveaux</item>
+        <item quantity="other">%d nouveaux</item>
+    </plurals>
+    <plurals name="school_pending_updated">
+        <item quantity="one">%d modifié</item>
+        <item quantity="many">%d modifiés</item>
+        <item quantity="other">%d modifiés</item>
+    </plurals>
+    <plurals name="school_pending_removed">
+        <item quantity="one">%d retiré</item>
+        <item quantity="many">%d retirés</item>
+        <item quantity="other">%d retirés</item>
+    </plurals>
+    <string name="school_pending_hold">Rien ne change tant que vous n\'appliquez pas.</string>
+    <string name="school_apply">Appliquer</string>
+
+    <string name="school_notifications_section">Notifications</string>
+    <string name="school_notifications">Notifications scolaires</string>
+    <string name="school_notifications_sub">Quand quelque chose change dans votre horaire</string>
+    <string name="school_notifications_blocked">Les notifications sont désactivées pour cette app.</string>
+    <string name="school_group_classes">Cours</string>
+    <string name="school_group_notices">Avis de l\'école</string>
+    <string name="school_group_connection">Connexion</string>
+    <string name="school_alert_class_times">Changements d\'heure</string>
+    <string name="school_alert_rooms">Changements de local</string>
+    <string name="school_alert_teachers">Changements d\'enseignant</string>
+    <string name="school_alert_added">Cours ajoutés</string>
+    <string name="school_alert_removed">Cours retirés</string>
+    <string name="school_alert_teacher_absences">Absences d\'enseignants</string>
+    <string name="school_alert_assessments">Examens et remises</string>
+    <string name="school_alert_school_days">Changements de journées de cours</string>
+    <string name="school_alert_connection">Problèmes de synchronisation</string>
+
+    <string name="school_change_connection">Se reconnecter</string>
+    <string name="school_disconnect">Déconnecter</string>
+    <string name="school_disconnect_title">Déconnecter l\'horaire scolaire ?</string>
+    <string name="school_disconnect_body">Les cours déjà ajoutés restent dans votre calendrier comme des événements normaux.</string>
+    <plurals name="school_disconnect_remove">
+        <item quantity="one">Retirer aussi %d événement scolaire</item>
+        <item quantity="many">Retirer aussi %d événements scolaires</item>
+        <item quantity="other">Retirer aussi %d événements scolaires</item>
+    </plurals>
+    <string name="school_disconnect_remove_note">Vos événements personnels et les événements scolaires modifiés dans une autre application sont conservés.</string>
+    <string name="school_disconnect_remove_confirm">Déconnecter et retirer</string>
+    <string name="school_error_existing_classes">Certains cours existants n\'ont pas pu être liés. Vérifiez les cours importés en double, puis réessayez.</string>
+    <string name="school_settings_managed_event">Mis à jour par votre portail scolaire.</string>
+    <string name="school_link_managed">Votre école mettra ces cours à jour. Déconnectez l\'horaire pour les modifier vous-même.</string>
+    <string name="school_not_now">Pas maintenant</string>
+    <string name="school_error_calendar_changed">Des événements scolaires ont été déplacés ou remplacés dans une autre application. Déconnectez et reconnectez l’horaire scolaire.</string>
+</resources>

@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.sunsind.sunlith.system.CalendarHandoff
 import io.github.sunsind.sunlith.system.LauncherIcons
+import io.github.sunsind.sunlith.school.SchoolScheduleManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import io.github.sunsind.sunlith.system.readCalendarHandoff
@@ -152,6 +153,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         registerObserver()
+        SchoolScheduleManager.get(applicationContext).onForeground()
     }
 
     override fun onResume() {
@@ -161,6 +163,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        SchoolScheduleManager.get(applicationContext).onBackground()
         observer?.let { runCatching { contentResolver.unregisterContentObserver(it) } }
         observer = null
         super.onStop()
@@ -194,6 +197,14 @@ class MainActivity : ComponentActivity() {
         }
         if (intent.action != null && intent.action != Intent.ACTION_MAIN) return
         runCatching {
+            val schoolDate = intent.getStringExtra(EXTRA_SCHOOL_DATE)?.let(LocalDate::parse)
+            val schoolSettings = intent.getBooleanExtra(EXTRA_SCHOOL_SETTINGS, false)
+            intent.removeExtra(EXTRA_SCHOOL_DATE)
+            intent.removeExtra(EXTRA_SCHOOL_SETTINGS)
+            if (schoolDate != null || schoolSettings) {
+                viewModel.handleSchoolLink(schoolDate)
+                return
+            }
             val eventId = intent.getLongExtra(EXTRA_EVENT_ID, -1L)
             val begin = intent.getLongExtra(EXTRA_EVENT_BEGIN, -1L)
             val create = intent.getBooleanExtra(EXTRA_CREATE_EVENT, false)
@@ -214,5 +225,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_EVENT_BEGIN = "event_begin"
         const val EXTRA_CREATE_EVENT = "create_event"
         const val EXTRA_CREATE_DATE = "create_date"
+        const val EXTRA_SCHOOL_DATE = "school_event_date"
+        const val EXTRA_SCHOOL_SETTINGS = "school_open_settings"
     }
 }

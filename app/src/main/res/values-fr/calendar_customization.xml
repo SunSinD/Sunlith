@@ -9,7 +9,7 @@
     <string name="layout_preset_schedule">Horaire</string>
     <string name="layout_preset_schedule_desc">Le mois et l\'agenda, avec un horaire quotidien compact.</string>
     <string name="layout_preset_planner">Planificateur</string>
-    <string name="layout_preset_planner_desc">Le mois complet, avec une grille horaire pour la semaine et la journée.</string>
+    <string name="layout_preset_planner_desc">Le mois complet, avec une liste pour la semaine et une grille horaire pour la journée.</string>
     <string name="custom_navigation">Navigation</string>
     <string name="custom_agenda">Agenda</string>
     <string name="custom_month_layout">Disposition du mois</string>

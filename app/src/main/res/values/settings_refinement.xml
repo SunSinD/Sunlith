@@ -8,7 +8,7 @@
     <string name="launcher_icon_notice_body">Sunlith will close and reopen.</string>
     <string name="launcher_icon_apply">Apply and reopen</string>
     <string name="settings_widget_shared">Applies to all Sunlith widgets</string>
-    <string name="settings_layout">Layout</string>
+    <string name="settings_layout">Month layout</string>
     <string name="settings_week_list">List</string>
     <string name="settings_week_timeline3">3-day timeline</string>
     <string name="settings_week_timeline7">7-day timeline</string>

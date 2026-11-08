@@ -8,7 +8,7 @@
     <string name="launcher_icon_notice_body">Sunlith va se fermer et se rouvrir.</string>
     <string name="launcher_icon_apply">Appliquer et rouvrir</string>
     <string name="settings_widget_shared">S’applique à tous les widgets Sunlith</string>
-    <string name="settings_layout">Disposition</string>
+    <string name="settings_layout">Disposition du mois</string>
     <string name="settings_week_list">Liste</string>
     <string name="settings_week_timeline3">Grille de 3 jours</string>
     <string name="settings_week_timeline7">Grille de 7 jours</string>

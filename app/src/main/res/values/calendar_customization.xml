@@ -9,7 +9,7 @@
     <string name="layout_preset_schedule">Schedule</string>
     <string name="layout_preset_schedule_desc">Month and agenda, with a compact daily schedule.</string>
     <string name="layout_preset_planner">Planner</string>
-    <string name="layout_preset_planner_desc">Full month grid, with hourly week and day views.</string>
+    <string name="layout_preset_planner_desc">Full month grid, with a week list and hourly day view.</string>
     <string name="custom_navigation">Navigation</string>
     <string name="custom_agenda">Agenda</string>
     <string name="custom_month_layout">Month layout</string>

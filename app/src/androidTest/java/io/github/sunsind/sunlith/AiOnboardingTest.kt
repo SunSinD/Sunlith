@@ -123,7 +123,7 @@ class AiOnboardingTest {
         val settings = SettingsStore(context)
         assertEquals("planner", settings.layoutPreset)
         assertEquals("full", settings.monthLayout)
-        assertEquals("timeline", settings.weekLayout)
+        assertEquals("list", settings.weekLayout)
         assertEquals("timeline", settings.dayLayout)
     }
 

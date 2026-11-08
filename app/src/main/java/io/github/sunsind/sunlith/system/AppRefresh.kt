@@ -13,6 +13,7 @@ import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 import io.github.sunsind.sunlith.widget.AgendaWidgetReceiver
+import io.github.sunsind.sunlith.school.SchoolScheduleManager
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ConcurrentHashMap
@@ -82,6 +83,7 @@ class CalendarChangeJobService : JobService() {
 class CalendarRefreshReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pending = goAsync()
+        SchoolScheduleManager.get(context).scheduleIfConnected()
         AppRefresh.refresh(context) { pending.finish() }
     }
 }

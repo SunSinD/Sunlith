@@ -1,6 +1,9 @@
 package io.github.sunsind.sunlith.ui
 
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animate
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -74,6 +77,7 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -238,14 +242,31 @@ internal fun Timeline(
                 scroll.scrollTo((anchor * hourPx).roundToInt())
             }
             val handled = remember { intArrayOf(todayRequest) }
-            LaunchedEffect(todayRequest) {
-                if (todayRequest == handled[0] || !autoScroll) return@LaunchedEffect
+            LaunchedEffect(todayRequest, autoScroll, scroll) {
+                if (todayRequest == handled[0]) return@LaunchedEffect
                 handled[0] = todayRequest
+                if (!autoScroll) return@LaunchedEffect
                 if (!awaitScrollable(scroll)) return@LaunchedEffect
+                scroll.stopScroll()
                 val target = ((LocalTime.now().hour - 1).coerceAtLeast(0) * hourPx).roundToInt()
                     .coerceIn(0, scroll.maxValue)
                 if (target != scroll.value) {
-                    if (motion) scroll.animateScrollTo(target, tween(300)) else scroll.scrollTo(target)
+                    if (!motion) scroll.scrollTo(target)
+                    else {
+                        val animation = coroutineContext[kotlinx.coroutines.Job]!!
+                        val interruption = launch {
+                            scroll.interactionSource.interactions.first { it is DragInteraction.Start }
+                            animation.cancel()
+                        }
+                        try {
+                            // Holding the scroll lock through the tween makes verticalScroll claim the next down,
+                            // even when it starts a horizontal page swipe. This programmatic move leaves touch free.
+                            animate(scroll.value.toFloat(), target.toFloat(), animationSpec = tween(300)) { value, _ ->
+                                val position = value.coerceIn(0f, scroll.maxValue.toFloat())
+                                scroll.dispatchRawDelta(position - scroll.value)
+                            }
+                        } finally { interruption.cancel() }
+                    }
                 }
             }
             LaunchedEffect(focus, autoScroll) {
