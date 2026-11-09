@@ -121,7 +121,10 @@ internal fun packTimeline(events: List<CalendarEvent>, day: LocalDate, zone: Zon
         val s = Instant.ofEpochMilli(e.startMillis).atZone(zone)
         val en = Instant.ofEpochMilli(max(e.endMillis, e.startMillis)).atZone(zone)
         val start = if (s.toLocalDate().isBefore(day)) 0 else s.hour * 60 + s.minute
-        val end = if (en.toLocalDate().isAfter(day)) DAY_MINUTES else en.hour * 60 + en.minute
+        val wallEnd = if (en.toLocalDate().isAfter(day)) DAY_MINUTES else en.hour * 60 + en.minute
+        // When clocks go back, the wall-clock end can come before the start; keep the real length instead.
+        val elapsed = if (s.toLocalDate() == day) ((en.toInstant().toEpochMilli() - e.startMillis) / 60_000L).toInt() else 0
+        val end = max(wallEnd, start + elapsed)
         TimelineBlock(e, start, max(end, start + 1).coerceAtMost(DAY_MINUTES))
     }.sortedWith(compareBy<TimelineBlock> { it.start }.thenByDescending { it.end }.thenBy { it.event.title.lowercase() })
     val starts = blocks.map { it.start }.distinct()
@@ -158,6 +161,21 @@ internal fun packTimeline(events: List<CalendarEvent>, day: LocalDate, zone: Zon
     }
     close()
     return clusters
+}
+
+/** How one overlap group shares a day column: [shown] event lanes of width [lane], then [chooser] width for "+N". */
+internal class OverflowLanes(val shown: Int, val lane: Dp, val chooser: Dp)
+
+/**
+ * Lanes that fit at [minLane] each. When the group needs more, the last lane becomes the chooser. A column that fits
+ * only one lane still shows the first event and keeps a narrow chooser beside it, so a day never becomes only "+N".
+ */
+internal fun overflowLanes(width: Dp, minLane: Dp, cols: Int, chooserMin: Dp): OverflowLanes {
+    val fit = (width / minLane).toInt().coerceAtLeast(1)
+    if (cols <= fit) return OverflowLanes(cols, width / cols, 0.dp)
+    if (fit >= 2) return OverflowLanes(fit - 1, width / fit, width / fit)
+    val chooser = minOf(chooserMin, width / 2)
+    return OverflowLanes(1, width - chooser, chooser)
 }
 
 internal fun timelineOverflowThreshold(dayCount: Int, titleSize: Dp, fontScale: Float = 1f): Dp = when {
@@ -649,14 +667,17 @@ internal fun DayColumn(
         modifier.then(if (tint) Modifier.background(p.ink.copy(alpha = if (p.dark) 0.04f else 0.03f)) else Modifier)
             .clickable(onClickLabel = addLabel, role = Role.Button) { onNew(day) },
     ) {
-        val maxCols = (maxWidth / minBlockWidth).toInt().coerceAtLeast(1)
+        val chooserStyle = MaterialTheme.typography.labelMedium
+        val measurer = rememberTextMeasurer()
+        val untitled = stringResource(R.string.untitled)
+        val context = LocalContext.current
         clusters.forEach { cluster ->
-            val overflow = cluster.cols > maxCols
-            val cols = if (overflow) maxCols else cluster.cols
-            val width = maxWidth / cols
+            val chooserText = with(density) { measurer.measure("+${cluster.blocks.size}", chooserStyle, maxLines = 1).size.width.toDp() }
+            val lanes = overflowLanes(maxWidth, minBlockWidth, cluster.cols, maxOf(24.dp, chooserText + 8.dp))
+            val width = lanes.lane
             val hidden = mutableListOf<TimelineBlock>()
             cluster.blocks.forEach { b ->
-                if (overflow && b.col >= maxCols - 1) {
+                if (b.col >= lanes.shown) {
                     hidden += b
                 } else {
                     EventBlock(
@@ -669,11 +690,16 @@ internal fun DayColumn(
             if (hidden.isNotEmpty()) {
                 val start = hidden.minOf { it.start }
                 val end = hidden.maxOf { it.end }
+                val only = hidden.singleOrNull()?.event
                 OverflowBlock(
                     hidden.size,
-                    Modifier.offset(x = width * (maxCols - 1), y = with(density) { yAxis.minuteToY(start).toDp() })
-                        .width(width).height(with(density) { (yAxis.minuteToY(end) - yAxis.minuteToY(start)).toDp() }),
-                ) { onOverflow(day, hidden.map { it.event }) }
+                    only?.let { e ->
+                        listOf(e.displayTitle().ifBlank { untitled }, context.timeLabel(e, day, zone, f), e.location.takeIf { it.isNotBlank() })
+                            .filterNotNull().joinToString(", ")
+                    },
+                    Modifier.offset(x = maxWidth - lanes.chooser, y = with(density) { yAxis.minuteToY(start).toDp() })
+                        .width(lanes.chooser).height(with(density) { (yAxis.minuteToY(end) - yAxis.minuteToY(start)).toDp() }),
+                ) { if (hidden.size == 1) onOpen(hidden.single().event) else onOverflow(day, hidden.map { it.event }) }
             }
         }
     }
@@ -793,16 +819,21 @@ private fun EventBlock(
 }
 
 @Composable
-private fun OverflowBlock(count: Int, modifier: Modifier, onClick: () -> Unit) {
+private fun OverflowBlock(count: Int, single: String?, modifier: Modifier, onClick: () -> Unit) {
     val p = LocalPalette.current
-    val label = LocalContext.current.resources.getQuantityString(R.plurals.event_count, count, count)
-    Box(
+    val label = single ?: LocalContext.current.resources.getQuantityString(R.plurals.event_count, count, count)
+    val style = MaterialTheme.typography.labelMedium
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(
         modifier.padding(1.dp).clip(RoundedCornerShape(6.dp)).border(1.dp, p.line, RoundedCornerShape(6.dp)).background(p.surface)
             .clickable(role = Role.Button, onClick = onClick)
             .clearAndSetSemantics { contentDescription = label; role = Role.Button },
         contentAlignment = Alignment.Center,
     ) {
-        Text("+$count", color = p.ink, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        val full = "+$count"
+        val room = with(LocalDensity.current) { (maxWidth - 2.dp).roundToPx() }
+        val fits = remember(full, style, room) { measurer.measure(full, style, maxLines = 1, softWrap = false).size.width <= room }
+        Text(if (fits) full else "+", color = p.ink, style = style, maxLines = 1, softWrap = false)
     }
 }
 

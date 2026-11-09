@@ -166,4 +166,43 @@ class TimelinePackingTest {
         assertNull(timelineTodayDirection(axis, 1440, 234, 100))
         assertNull(timelineTodayDirection(axis, 600, 0, 0))
     }
+
+    @Test
+    fun narrowColumnKeepsFirstEventBesideTheChooser() {
+        val clusters = packTimeline(listOf(event(1, 865, 1080), event(2, 1020, 1050)), date, zone, 30)
+        assertEquals(2, clusters.single().cols)
+        val lanes = overflowLanes(56.dp, 40.dp, 2, 24.dp)
+        assertEquals(1, lanes.shown)
+        assertEquals(32.dp, lanes.lane)
+        assertEquals(24.dp, lanes.chooser)
+        assertEquals(1, clusters.single().blocks.count { it.col >= lanes.shown })
+    }
+
+    @Test
+    fun overflowLanesKeepEqualWidthsWhenSeveralFit() {
+        val fits = overflowLanes(120.dp, 40.dp, 2, 24.dp)
+        assertEquals(2, fits.shown)
+        assertEquals(60.dp, fits.lane)
+        assertEquals(0.dp, fits.chooser)
+        val crowded = overflowLanes(120.dp, 40.dp, 5, 24.dp)
+        assertEquals(2, crowded.shown)
+        assertEquals(40.dp, crowded.lane)
+        assertEquals(40.dp, crowded.chooser)
+        val tiny = overflowLanes(30.dp, 40.dp, 2, 24.dp)
+        assertEquals(1, tiny.shown)
+        assertEquals(15.dp, tiny.chooser)
+    }
+
+    @Test
+    fun fallBackEventKeepsItsRealLengthAndOverlaps() {
+        val day = LocalDate.of(2026, 11, 1)
+        fun at(h: Int, m: Int, offset: Int) = java.time.ZonedDateTime.ofLocal(day.atTime(h, m), zone, java.time.ZoneOffset.ofHours(offset))
+            .toInstant().toEpochMilli()
+        val a = CalendarEvent(1, 1, "A", "", "", at(1, 45, -4), at(1, 15, -5), false, zone.id)
+        val b = CalendarEvent(2, 1, "B", "", "", at(1, 46, -4), at(1, 56, -4), false, zone.id)
+        val clusters = packTimeline(listOf(a, b), day, zone, 1)
+        assertEquals(1, clusters.size)
+        assertEquals(2, clusters.single().cols)
+        assertEquals(135, clusters.single().blocks.first { it.event.id == 1L }.end)
+    }
 }

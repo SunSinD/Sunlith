@@ -8,6 +8,8 @@
 - Center event labels vertically, give Day more room, and open full titles and times from a shortcut for short events, including tiny adjacent slots that cannot fit text.
 - Point Today toward earlier or later periods horizontally, with mirrored arrows in right-to-left layouts.
 - Keep the same visible hour while paging grouped timelines and use a responsive spring when a page settles.
+- Keep the first overlapping event visible in narrow timeline columns, with a slim chooser for the rest, instead of hiding every event behind one count. A single hidden event opens directly and is announced by name.
+- Keep the real length of events that cross the hour repeated when clocks go back, so their overlaps are laid out correctly.
 
 ## 0.6.4
 
