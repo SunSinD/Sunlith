@@ -88,7 +88,7 @@ internal fun ContinuousTimeline(
     val hour = maxOf(88.dp, lineSize * 5.5f)
     val hourPx = with(density) { hour.toPx() }
     val minMinutes = ceil(maxOf(24.dp, lineSize + 6.dp) / hour * 60f).toInt()
-    val minBlockWidth = maxOf(32.dp, titleSize * 2.6f)
+    val minBlockWidth = timelineMinLaneWidth(titleSize)
     val compact = remember(f) { CompactTimes(f.locale, f.is24Hour, f::range) }
     val labels = remember(f, compact) { (0..24).map {
         if (it == 24 && f.is24Hour) String.format(f.locale, "%02d:%02d", 24, 0)

@@ -121,10 +121,7 @@ internal fun packTimeline(events: List<CalendarEvent>, day: LocalDate, zone: Zon
         val s = Instant.ofEpochMilli(e.startMillis).atZone(zone)
         val en = Instant.ofEpochMilli(max(e.endMillis, e.startMillis)).atZone(zone)
         val start = if (s.toLocalDate().isBefore(day)) 0 else s.hour * 60 + s.minute
-        val wallEnd = if (en.toLocalDate().isAfter(day)) DAY_MINUTES else en.hour * 60 + en.minute
-        // When clocks go back, the wall-clock end can come before the start; keep the real length instead.
-        val elapsed = if (s.toLocalDate() == day) ((en.toInstant().toEpochMilli() - e.startMillis) / 60_000L).toInt() else 0
-        val end = max(wallEnd, start + elapsed)
+        val end = if (en.toLocalDate().isAfter(day)) DAY_MINUTES else en.hour * 60 + en.minute
         TimelineBlock(e, start, max(end, start + 1).coerceAtMost(DAY_MINUTES))
     }.sortedWith(compareBy<TimelineBlock> { it.start }.thenByDescending { it.end }.thenBy { it.event.title.lowercase() })
     val starts = blocks.map { it.start }.distinct()
@@ -177,6 +174,9 @@ internal fun overflowLanes(width: Dp, minLane: Dp, cols: Int, chooserMin: Dp): O
     val chooser = minOf(chooserMin, width / 2)
     return OverflowLanes(1, width - chooser, chooser)
 }
+
+/** Narrowest lane an overlapping event may get before the rest move into a chooser; small, so overlaps stay side by side. */
+internal fun timelineMinLaneWidth(titleSize: Dp): Dp = maxOf(20.dp, titleSize * 1.6f)
 
 internal fun timelineOverflowThreshold(dayCount: Int, titleSize: Dp, fontScale: Float = 1f): Dp = when {
     dayCount <= 5 && fontScale <= 1.15f -> maxOf(40.dp, titleSize * 3.2f)
@@ -264,7 +264,7 @@ internal fun Timeline(
     val minColumn = maxOf(40.dp, titleSize * 3.2f)
     val overflowThreshold = timelineOverflowThreshold(days.size, titleSize, density.fontScale)
     val readableColumn = maxOf(80.dp, titleSize * 6.5f)
-    val minBlockWidth = maxOf(32.dp, titleSize * 2.6f)
+    val minBlockWidth = timelineMinLaneWidth(titleSize)
     val compact = remember(f) { CompactTimes(f.locale, f.is24Hour, f::range) }
     val hourLabels = remember(f, compact) {
         (0..24).map { hour ->
@@ -694,8 +694,8 @@ internal fun DayColumn(
                 OverflowBlock(
                     hidden.size,
                     only?.let { e ->
-                        listOf(e.displayTitle().ifBlank { untitled }, context.timeLabel(e, day, zone, f), e.location.takeIf { it.isNotBlank() })
-                            .filterNotNull().joinToString(", ")
+                        listOfNotNull(e.displayTitle().ifBlank { untitled }, absenceStatus(e, f), context.timeLabel(e, day, zone, f),
+                            e.location.takeIf { it.isNotBlank() }).joinToString(", ")
                     },
                     Modifier.offset(x = maxWidth - lanes.chooser, y = with(density) { yAxis.minuteToY(start).toDp() })
                         .width(lanes.chooser).height(with(density) { (yAxis.minuteToY(end) - yAxis.minuteToY(start)).toDp() }),

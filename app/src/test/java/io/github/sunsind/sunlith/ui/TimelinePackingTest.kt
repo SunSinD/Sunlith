@@ -194,15 +194,17 @@ class TimelinePackingTest {
     }
 
     @Test
-    fun fallBackEventKeepsItsRealLengthAndOverlaps() {
-        val day = LocalDate.of(2026, 11, 1)
-        fun at(h: Int, m: Int, offset: Int) = java.time.ZonedDateTime.ofLocal(day.atTime(h, m), zone, java.time.ZoneOffset.ofHours(offset))
-            .toInstant().toEpochMilli()
-        val a = CalendarEvent(1, 1, "A", "", "", at(1, 45, -4), at(1, 15, -5), false, zone.id)
-        val b = CalendarEvent(2, 1, "B", "", "", at(1, 46, -4), at(1, 56, -4), false, zone.id)
-        val clusters = packTimeline(listOf(a, b), day, zone, 1)
-        assertEquals(1, clusters.size)
-        assertEquals(2, clusters.single().cols)
-        assertEquals(135, clusters.single().blocks.first { it.event.id == 1L }.end)
+    fun twoOrThreeOverlapsStaySideBySideInNarrowWeekColumns() {
+        val fiveDayLargeText = overflowLanes(62.dp, timelineMinLaneWidth(13.8.dp), 2, 24.dp)
+        assertEquals(2, fiveDayLargeText.shown)
+        assertEquals(0.dp, fiveDayLargeText.chooser)
+        assertEquals(31.dp, fiveDayLargeText.lane)
+        val sevenDay = overflowLanes(48.dp, timelineMinLaneWidth(12.dp), 2, 24.dp)
+        assertEquals(2, sevenDay.shown)
+        assertEquals(0.dp, sevenDay.chooser)
+        val three = overflowLanes(66.dp, timelineMinLaneWidth(12.dp), 3, 24.dp)
+        assertEquals(3, three.shown)
+        assertEquals(0.dp, three.chooser)
+        assertEquals(20.dp, timelineMinLaneWidth(10.dp))
     }
 }

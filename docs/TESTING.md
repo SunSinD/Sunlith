@@ -2,6 +2,45 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.6 side-by-side overlap verification, 2026-11-09
+
+The tested distribution APK is version 0.6.6/code 17, nondebuggable and
+R8-minified, signed with the existing certificate.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Distribution APK | `806512b42fb25a32214bd01f7504b70ee0acc0a614c4164c8390ce83e1b770af` |
+| Test APK | `1f7e465366d8d38971155dc566ef16d2419e810f4e68978a7d049bfa5094525a` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+
+| Check | API 36 | API 30 |
+| --- | --- | --- |
+| Full instrumentation | 285 passed, 0 failed, 7 skipped; 1625.7s | 282 passed, 0 failed, 6 skipped; 1459.2s |
+| Upgrade from published 0.6.5 | Installs in place; settings file byte-identical | Not repeated |
+
+Both emulators ran read-only with default animation scales and the device
+clock set to 13:00. Earlier attempts are not counted: one reused a script that
+turned animations off, which made seven tests that observe an unfinished
+animation fail; they passed once animations were back on. One of them,
+`enteringDayFocusSupersedesAnUnfinishedWeekTodayRequest`, also fails late in
+the evening because its marker one hour before now cannot scroll into the
+upper half of the timeline; it passed with the clock at 15:00.
+
+A manual check reproduced the reported case at 1.15 font scale in the 5-day
+paged Week: "Diagnostic de circuits" 2:25 to 6 PM overlapping "Course
+Registration" 5 to 5:30 PM. Published 0.6.5 showed only a "+2" box. After the
+in-place update, 0.6.6 showed both events side by side. Both events also stayed
+side by side at 1.3 font scale, in 7-day Week and in Continuous Week.
+
+Local checks passed 84 JVM tests and 44 desktop tests with one external opt-in
+skip. Lint reported zero errors. The companion dependency audit found zero
+production vulnerabilities. Code reviews by Opus 5.5 and GPT 6.1 Sol traced
+paged Week, Continuous Week and Day, including large text and RTL.
+
+Known limits: lanes can narrow to 20dp, so short overlapping events may show
+only a few letters; full titles and times stay in Details and accessibility
+labels. No physical Fold5 check and no frame-timing claim.
+
 ## 0.6.5 continuous Week and grouped hours verification, 2026-11-08
 
 The tested distribution APK is version 0.6.5/code 16, nondebuggable and
