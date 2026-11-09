@@ -26,8 +26,9 @@ repeat consumed focus requests. Back restores the parent calendar.
 Continuous agenda loading waits for user scrolling: programmatic positioning must not
 extend the date range and restart its own focus request. A distant-date regression
 covers this interaction with many all-day entries above the timed event.
-Day has no floating return-to-today control. Month and Week retain an up arrow with an
-explicit accessible Today label. A week-wide current-time line and restrained shading
+Day has no floating return-to-today control. Month and Week point toward an offscreen
+period horizontally, or an offscreen time vertically, with an explicit accessible Today
+label. A week-wide current-time line and restrained shading
 identify the current day without changing event colors.
 Bounded agendas save their last handled Today request alongside their scroll position.
 Returning to today's page after a new request moves to today; ordinary navigation and
@@ -178,3 +179,50 @@ TalkBack descriptions retain full titles and times. Emulator checks do not estab
 comfort on every phone, launcher behavior, or TalkBack interaction quality.
 
 Build, regression and integration results belong in [TESTING.md](TESTING.md).
+
+
+## 0.6.5: continuous dates and compact time
+
+Continuous timeline is a separate Week choice. A single LazyRow owns horizontal
+motion; fixed date and all-day bands project its item positions during placement.
+This follows [Compose lazy-list guidance](https://developer.android.com/develop/ui/compose/lists)
+and [deferred state reads](https://developer.android.com/develop/ui/compose/performance/bestpractices).
+Epoch-day keys keep dates stable. Scrolling reports the viewport without selecting
+a date; explicit date navigation and Today move the strip. Queries run at rest and
+retain a bounded event window. Unloaded dates show a loading label. This is an
+implementation choice based on the reported two-stage week swipe, not a prescribed
+Android calendar design. Continuous columns prioritize readable width and can show
+partial dates; the fitted five-day option retains five at normal text sizes.
+
+Group empty hours is off by default and applies only to Week timelines. Empty runs
+of at least three hours are shown as labeled bands, with an hour of context around
+occupied hours. An entirely empty grouped date range keeps the ordinary 24-hour axis.
+Paged views use their displayed dates. Continuous views group hours shared by the
+bounded loaded window, so entering dates cannot fall into a compressed band and
+swipes do not repeatedly expand and compact the grid. An event on a loaded date
+outside the viewport can therefore keep an hour expanded. Loading a new window or
+changing the setting preserves the minute at the top after layout. Paged timelines share a minute anchor rather than a pixel offset. The
+continuous all-day strip reserves a compact stable height to avoid shifting the
+time grid when a new date enters. Tiny-event shortcuts reserve another row only
+when relevant short events exist in the loaded window.
+Width changes preserve a saved date and fractional column offset. During an explicit
+navigation request, resize compensation waits for navigation to finish or be interrupted
+by the user, then records the final position rather than cancelling that navigation.
+Paged timelines keep Today request ownership in the ViewModel outside individual
+pages, so a restored or newly loaded page can finish the request. The request and its
+handled counter reset together with a fresh ViewModel. New date selections and Day
+focus supersede an older Today request; a newer Today request also cancels older
+Day focus. A changed time axis restarts an unfinished
+Today or event-focus scroll; a deliberate touch interruption still ends the request.
+
+Event text is vertically centered. Day uses more space per hour and a larger title
+style; room codes remain whole and secondary fields are shown only in full. Short
+labels may use free time below their exact start, stopping at the next event or
+midnight. Adjacent tiny events retain their geometry and have a separate readable
+shortcut opening full titles and times. Narrow overviews still shorten titles;
+Details and list views retain full content. These choices reflect
+[Android paragraph layout](https://developer.android.com/develop/ui/compose/text/style-paragraph)
+and the practical limits described by
+[WCAG text resizing](https://www.w3.org/WAI/WCAG22/Understanding/resize-text.html).
+No claim of zero stutter or physical Fold5 behavior follows from source review.
+Runtime and image evidence belong in TESTING.md.

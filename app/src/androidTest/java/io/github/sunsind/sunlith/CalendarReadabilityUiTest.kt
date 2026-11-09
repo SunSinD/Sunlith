@@ -327,9 +327,10 @@ class CalendarReadabilityUiTest {
         assertEquals(at(friday, 16 * 60 + 10), event.endMillis)
         assertEquals(1, vm.eventsByDay[friday].orEmpty().count { it.school?.course == "109-GYM" })
         val ordinary = vm.eventsByDay[friday].orEmpty().single { it.school?.course == "243-C0" }
-        val ordinaryHeight = eventNode(ordinary).visibleBounds.height()
+        val ordinaryHeight = unclippedHeight(ordinary)
+        val blockHeight = unclippedHeight(event)
         val block = eventNode(event)
-        assertTrue("The 160-minute group must occupy more than twice a 50-minute block", block.visibleBounds.height() > ordinaryHeight * 2)
+        assertTrue("The 160-minute group must occupy more than twice a 50-minute block", blockHeight > ordinaryHeight * 2)
         assertTrue(block.contentDescription.contains(gymTitle))
         assertTrue(block.contentDescription.contains(formats.timeRange(event.startMillis, event.endMillis)))
         assertTrue(block.contentDescription.contains(text(R.string.calendar_teacher_absent_range,
@@ -668,6 +669,23 @@ class CalendarReadabilityUiTest {
     }
 
     private fun eventNode(event: CalendarEvent): UiObject2 = scrollTo(By.res("timeline_event_${event.id}"))
+
+    // Visible bounds are clipped at the viewport edge, so nudge the event fully into view before measuring it.
+    private fun unclippedHeight(event: CalendarEvent): Int {
+        eventNode(event)
+        val step = device.displayHeight / 10
+        repeat(8) {
+            val area = node(By.res("calendar_timeline")).visibleBounds
+            val bounds = readFresh { requireNotNull(device.findObject(By.res("timeline_event_${event.id}"))).visibleBounds }
+            val clippedTop = bounds.top <= area.top + 2
+            val clippedBottom = bounds.bottom >= area.bottom - 2
+            if (!clippedTop && !clippedBottom) return bounds.height()
+            check(!(clippedTop && clippedBottom)) { "The event is taller than the timeline viewport" }
+            device.swipe(area.centerX(), area.centerY(), area.centerX(), area.centerY() + if (clippedTop) step else -step, 40)
+            idle()
+        }
+        error("The whole timeline event could not be shown")
+    }
     private fun scrollTo(selector: BySelector): UiObject2 {
         fun viewport(): Rect? = readFresh {
             (device.findObject(By.res("calendar_timeline"))

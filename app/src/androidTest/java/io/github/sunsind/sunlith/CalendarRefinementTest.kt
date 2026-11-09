@@ -923,7 +923,12 @@ class CalendarRefinementTest {
             .sortedBy { it.second.top }.also { assertTrue("The fixture must have visible agenda rows.", it.isNotEmpty()) }
     }
 
-    private fun gridBounds(): Rect = requireNotNull(stableBounds(By.pkg(context.packageName).res("calendar_grid")))
+    private fun gridBounds(): Rect {
+        val selector = By.pkg(context.packageName).res("calendar_grid")
+        // A layout change can still be composing on slower devices.
+        device.wait(Until.hasObject(selector), 10_000)
+        return requireNotNull(stableBounds(selector)) { "The full month grid must be shown" }
+    }
 
     private fun agendaBounds(): Rect = requireNotNull(stableBounds(By.pkg(context.packageName).res("calendar_agenda")))
 

@@ -8,4 +8,13 @@
     <string name="calendar_period_room">%1$s · %2$s</string>
     <string name="details_school_periods">Class periods</string>
     <string name="details_teacher_absence">Teacher absence</string>
+    <string name="settings_week_continuous">Continuous timeline</string>
+    <string name="settings_group_empty_hours">Group empty hours in Week</string>
+    <string name="timeline_empty_hours">No events</string>
+    <string name="timeline_loading_day">Loading events</string>
+    <string name="settings_group_empty_hours_summary">Week only. Long empty stretches share a compact time band.</string>
+    <plurals name="timeline_short_event_count">
+        <item quantity="one">%1$d short event</item>
+        <item quantity="other">%1$d short events</item>
+    </plurals>
 </resources>

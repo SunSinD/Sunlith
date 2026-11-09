@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.core.content.ContextCompat
@@ -127,6 +128,11 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var agendaRange by mutableStateOf(settings.agendaRange); private set
     var monthLayout by mutableStateOf(settings.monthLayout); private set
     var weekLayout by mutableStateOf(settings.weekLayout); private set
+    var groupEmptyHours by mutableStateOf(settings.groupEmptyHours); private set
+    var timelineViewportStart by mutableStateOf<LocalDate?>(null); private set
+    var timelineViewportEnd by mutableStateOf<LocalDate?>(null); private set
+    var timelineNavigationRequest by mutableStateOf(0); private set
+    var handledTimelineNavigation by mutableStateOf(0); private set
     var dayLayout by mutableStateOf(settings.dayLayout); private set
     var visibleWeekDays by mutableStateOf(settings.visibleWeekDays); private set
     var courseColorSlots by mutableStateOf(settings.courseColorSlots); private set
@@ -148,6 +154,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Bumped by [goToday] so the calendar can re-center and confirm the action even when today is already selected. */
     var todayRequest by mutableStateOf(0); private set
+    internal val pagedTimelineTodayHandled = mutableIntStateOf(0)
 
     val stack = mutableStateListOf<Screen>()
     var editor by mutableStateOf<EditorState?>(null); private set
@@ -276,22 +283,33 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
 
     // region loading
 
+    private val gridMonth: YearMonth get() = if (continuousTimeline()) YearMonth.from(timelineViewportStart ?: selectedDate) else month
+
+    fun continuousTimeline() = viewMode == ViewMode.Week && weekLayout == "continuous"
+
+    fun timelineActionDate(): LocalDate {
+        val first = timelineViewportStart ?: return selectedDate
+        val last = timelineViewportEnd ?: first
+        return if (selectedDate in first..last) selectedDate else first
+    }
+
     private fun gridRange(): Pair<LocalDate, LocalDate> {
-        val start = gridStart(month, weekStartsMonday)
+        val start = gridStart(gridMonth, weekStartsMonday)
         return start to start.plusDays(41)
     }
 
     private fun bufferedGridRange(): Pair<LocalDate, LocalDate> =
-        gridStart(month.minusMonths(2), weekStartsMonday) to gridStart(month.plusMonths(2), weekStartsMonday).plusDays(41)
+        gridStart(gridMonth.minusMonths(2), weekStartsMonday) to gridStart(gridMonth.plusMonths(2), weekStartsMonday).plusDays(41)
 
     private fun requiredGridRange(): Pair<LocalDate, LocalDate> =
-        gridStart(month.minusMonths(1), weekStartsMonday) to gridStart(month.plusMonths(1), weekStartsMonday).plusDays(41)
+        gridStart(gridMonth.minusMonths(1), weekStartsMonday) to gridStart(gridMonth.plusMonths(1), weekStartsMonday).plusDays(41)
 
-    private fun continuousAgenda() = (viewMode == ViewMode.Month && monthLayout != "full" && agendaRange == "continuous") ||
+    private fun continuousAgenda() = continuousTimeline() || (viewMode == ViewMode.Month && monthLayout != "full" && agendaRange == "continuous") ||
         (viewMode == ViewMode.Day && dayLayout == "schedule")
 
     private fun initialWindow(): Pair<LocalDate, LocalDate> = if (continuousAgenda()) {
-        selectedDate.minusDays(60) to selectedDate.plusDays(120)
+        val anchor = if (continuousTimeline()) timelineViewportStart ?: selectedDate else selectedDate
+        anchor.minusDays(60) to anchor.plusDays(120)
     } else gridRange()
 
     private fun wantedRange(): Pair<LocalDate, LocalDate> {
@@ -310,7 +328,8 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         start != null && end != null && !start.isAfter(from) && !end.isBefore(to)
 
     private fun ensureLoaded() {
-        if (continuousAgenda() && !containsRange(targetWindow?.first, targetWindow?.second, selectedDate, selectedDate)) {
+        val anchor = if (continuousTimeline()) timelineViewportStart ?: selectedDate else selectedDate
+        if (continuousAgenda() && !containsRange(targetWindow?.first, targetWindow?.second, anchor, anchor)) {
             targetWindow = initialWindow()
         }
         val (from, to) = wantedRange()
@@ -494,12 +513,39 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun select(date: LocalDate) {
+        pagedTimelineTodayHandled.intValue = todayRequest
+        if (continuousTimeline()) timelineNavigationRequest++
         selectedDate = date
         ensureLoaded()
     }
 
+    fun consumeTimelineNavigation(request: Int) {
+        if (request == timelineNavigationRequest) handledTimelineNavigation = request
+    }
+
+    fun selectTimelineDay(date: LocalDate) {
+        selectedDate = date
+        ensureLoaded()
+    }
+
+    fun showTimelineRange(first: LocalDate, last: LocalDate, load: Boolean = true) {
+        if (!continuousTimeline()) return
+        timelineViewportStart = first
+        timelineViewportEnd = last
+        if (!load || coversRange(first.minusDays(14), last.plusDays(14))) return
+        targetWindow = first.minusDays(60) to last.plusDays(120)
+        if (loadingEvents || loadError != null) return
+        reload()
+    }
+
+    fun changeGroupEmptyHours(value: Boolean) {
+        settings.groupEmptyHours = value
+        groupEmptyHours = value
+    }
+
     fun goToday() {
         refreshCurrentDate()
+        consumeDayFocus(dayFocusRequest)
         select(today)
         todayRequest++
     }
@@ -511,7 +557,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
                 val next = month.plusMonths(delta.toLong())
                 select(if (next == YearMonth.from(today)) today else next.atDay(1))
             }
-            ViewMode.Week -> select(selectedDate.plusWeeks(delta.toLong()))
+            ViewMode.Week -> select((if (continuousTimeline()) timelineViewportStart ?: selectedDate else selectedDate).plusWeeks(delta.toLong()))
             ViewMode.Day -> select(selectedDate.plusDays(delta.toLong()))
         }
     }
@@ -522,7 +568,9 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         dayParent = null
         Snapshot.withMutableSnapshot {
             if (!keepSelectedDate) selectedDate = today
+            pagedTimelineTodayHandled.intValue = todayRequest
             viewMode = mode
+            if (continuousTimeline()) { timelineViewportStart = selectedDate; timelineViewportEnd = selectedDate }
             if (mode == ViewMode.Day) dayFocusRequest++
             targetWindow = initialWindow()
         }
@@ -544,6 +592,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         if (viewMode != ViewMode.Day) dayParent = viewMode to selectedDate
         Snapshot.withMutableSnapshot {
             viewMode = ViewMode.Day
+            pagedTimelineTodayHandled.intValue = todayRequest
             selectedDate = date
             targetWindow = initialWindow()
             dayFocusRequest++
@@ -571,6 +620,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
             val parent = dayParent ?: return
             dayParent = null
             Snapshot.withMutableSnapshot {
+                pagedTimelineTodayHandled.intValue = todayRequest
                 viewMode = parent.first
                 selectedDate = parent.second
                 targetWindow = initialWindow()
@@ -920,11 +970,14 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     fun changeWeekLayout(value: String) {
         settings.weekLayout = value
         weekLayout = settings.weekLayout
+        if (continuousTimeline()) { timelineViewportStart = selectedDate; timelineViewportEnd = selectedDate }
+        targetWindow = initialWindow()
         markCustomLayout()
         ensureLoaded()
     }
 
     fun changeDayLayout(value: String) {
+        if (viewMode == ViewMode.Day) pagedTimelineTodayHandled.intValue = todayRequest
         settings.dayLayout = value
         dayLayout = settings.dayLayout
         if (viewMode == ViewMode.Day) dayFocusRequest++

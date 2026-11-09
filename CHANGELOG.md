@@ -1,5 +1,14 @@
 # Changes
 
+## 0.6.5
+
+- Add Continuous timeline in Week, with horizontal date scrolling and no week-page boundaries.
+- Keep five normal-text date columns fitted on narrow cover-screen layouts. Large text can still scroll sideways.
+- Add optional Group empty hours in Week, off by default, with labeled boundaries shared by all visible days.
+- Center event labels vertically, give Day more room, and open full titles and times from a shortcut for short events, including tiny adjacent slots that cannot fit text.
+- Point Today toward earlier or later periods horizontally, with mirrored arrows in right-to-left layouts.
+- Keep the same visible hour while paging grouped timelines and use a responsive spring when a page settles.
+
 ## 0.6.4
 
 - Give school courses consistent colors, with readable text and the same colors across calendar views.

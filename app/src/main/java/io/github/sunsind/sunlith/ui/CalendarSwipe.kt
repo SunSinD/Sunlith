@@ -2,6 +2,8 @@ package io.github.sunsind.sunlith.ui
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -314,7 +316,7 @@ internal fun PagedPeriod(
         beyondViewportPageCount = 1,
         flingBehavior = PagerDefaults.flingBehavior(
             state = pager,
-            snapAnimationSpec = if (state.motion) tween(280, easing = FastOutSlowInEasing) else snap(),
+            snapAnimationSpec = if (state.motion) spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy) else snap(),
             snapPositionalThreshold = 0.25f,
         ),
     ) { page ->

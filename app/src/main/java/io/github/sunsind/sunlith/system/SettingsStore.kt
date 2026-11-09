@@ -99,8 +99,12 @@ class SettingsStore(context: Context) {
         set(value) { saveChoice("month_layout", value, setOf("split", "full")) }
 
     var weekLayout: String
-        get() = choice("week_layout", "list", setOf("list", "timeline"))
-        set(value) { saveChoice("week_layout", value, setOf("list", "timeline")) }
+        get() = choice("week_layout", "list", setOf("list", "timeline", "continuous"))
+        set(value) { saveChoice("week_layout", value, setOf("list", "timeline", "continuous")) }
+
+    var groupEmptyHours: Boolean
+        get() = prefs.getBoolean("group_empty_hours", false)
+        set(value) { prefs.edit().putBoolean("group_empty_hours", value).apply() }
 
     var dayLayout: String
         get() = choice("day_layout", "timeline", setOf("cards", "timeline", "schedule"))

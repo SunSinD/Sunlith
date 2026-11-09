@@ -179,21 +179,23 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                         }
                         DropdownRow(
                             stringResource(R.string.view_week),
-                            if (vm.weekLayout == "timeline") "timeline${vm.visibleWeekDays}" else "list",
+                            if (vm.weekLayout == "timeline") "timeline${vm.visibleWeekDays}" else vm.weekLayout,
                             listOf(
                                 "list" to stringResource(R.string.settings_week_list),
                                 "timeline3" to stringResource(R.string.settings_week_timeline3),
                                 "timeline5" to stringResource(R.string.settings_week_timeline5),
                                 "timeline7" to stringResource(R.string.settings_week_timeline7),
+                                "continuous" to stringResource(R.string.settings_week_continuous),
                             ),
                         ) { choice ->
-                            if (choice == "list") vm.changeWeekLayout("list")
+                            if (choice == "list" || choice == "continuous") vm.changeWeekLayout(choice)
                             else {
                                 val days = when (choice) { "timeline3" -> 3; "timeline5" -> 5; else -> 7 }
                                 if (vm.visibleWeekDays != days) vm.changeVisibleWeekDays(days)
                                 if (vm.weekLayout != "timeline") vm.changeWeekLayout("timeline")
                             }
                         }
+                        ToggleRow(stringResource(R.string.settings_group_empty_hours), stringResource(R.string.settings_group_empty_hours_summary), vm.groupEmptyHours, vm::changeGroupEmptyHours)
                         ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
                         SectionTitle(stringResource(R.string.custom_colors))
                         DropdownRow(

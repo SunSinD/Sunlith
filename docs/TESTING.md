@@ -2,6 +2,48 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.5 continuous Week and grouped hours verification, 2026-11-08
+
+The tested distribution APK is version 0.6.5/code 16, nondebuggable and
+R8-minified, signed with the existing certificate.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Distribution APK | `2d6a83421212aeaf34f6dd7daeac6b85dd76a4a7e81e1b479781767b2f232fad` |
+| Final test APK | `4402b9f512343f85b9b193f60cece125990fecdd16426d55a1bfe4b061b25638` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+
+| Check | API 36 | API 30 |
+| --- | --- | --- |
+| Full instrumentation | 285 passed, 0 failed, 7 skipped; 1500.8s | 282 passed, 0 failed, 6 skipped; 1274.9s |
+| Upgrade from published 0.6.4 | Event, onboarding and Grid layout kept; grouping stays off | Installs and launches without crashes |
+
+Both emulators ran read-only, so their saved disks were not changed. The first
+full runs found five test-only problems, each checked by screen recording or by
+hand before changing the test. A Day scroll covered less than a viewport on the
+taller hour layout; the overlap chooser helper trusted UiAutomator's end-of-list
+signal, although a manual swipe reached and opened the 64th event; a height
+check measured an event clipped at the viewport edge; a month helper read the
+grid before it was composed; and a connection restart was a one-off timing miss
+that passed on reruns. App code was not changed for these. The API 36 run used
+the test APK before the month-grid wait was added; that wait only affects the
+test helper.
+
+A manual French check in Continuous Week with grouping on showed "Toute la
+journée" on two whole lines and compact "Aucun événement" bands for 11 h to
+17 h and 21 h to 24 h. Grouping is off by default after a fresh install and
+after the upgrade.
+
+Local checks passed 81 JVM tests, distribution app/test builds and 44 desktop
+tests with one external opt-in skip. Lint reported zero errors. The companion
+dependency audit found zero production vulnerabilities. Earlier display runs
+for this version, reviewed by Opus 5.5 and GPT 6.1 Sol, passed at normal,
+narrow, wide, landscape, large-text and RTL layouts.
+
+Known limits: no physical Fold5 fold/unfold check and no frame-timing claim
+for swipes. Narrow overview titles can still shorten; Details and lists show
+full text.
+
 ## 0.6.4 calendar readability verification, 2026-11-08
 
 The tested distribution APK is version 0.6.4/code 15, nondebuggable and

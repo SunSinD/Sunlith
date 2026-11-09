@@ -73,7 +73,6 @@ import androidx.compose.material.icons.outlined.Settings as SettingsIcon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -91,7 +90,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.key
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -244,7 +246,13 @@ fun rememberMotion(enabled: Boolean): Boolean {
     return enabled && !systemOff
 }
 
-internal enum class TodayDirection { Up, Down }
+internal enum class TodayDirection { Up, Down, Previous, Next }
+
+internal fun horizontalTodayDirection(today: LocalDate, first: LocalDate, last: LocalDate): TodayDirection? = when {
+    today < first -> TodayDirection.Previous
+    today > last -> TodayDirection.Next
+    else -> null
+}
 
 internal fun todayDirection(today: LocalDate, first: LocalDate, last: LocalDate): TodayDirection? = when {
     today.isBefore(first) -> TodayDirection.Up
@@ -319,6 +327,8 @@ private class CalendarContext(
     val rollingDays: Int,
     val rollingStart: LocalDate,
     val timelineScroll: ScrollState,
+    val timelineMinute: MutableFloatState,
+    val timelineTodayHandled: MutableIntState,
     val timelineFocus: TimelineFocus?,
     val onFocusHandled: (TimelineFocus) -> Unit,
 ) {
@@ -400,8 +410,8 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
     }
     var showPicker by rememberSaveable { mutableStateOf(false) }
     var highlightToday by remember { mutableStateOf(false) }
-    var handledToday by rememberSaveable { mutableIntStateOf(vm.todayRequest) }
-    LaunchedEffect(vm.todayRequest) {
+    var handledToday by remember(vm) { mutableIntStateOf(vm.todayRequest) }
+    LaunchedEffect(vm, vm.todayRequest) {
         if (vm.todayRequest <= handledToday) return@LaunchedEffect
         handledToday = vm.todayRequest
         launch {
@@ -430,7 +440,14 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
     LaunchedEffect(mode, vm.monthLayout, vm.weekLayout, vm.dayLayout, vm.swipeNavigation) { swipe.cancel() }
     val viewport = remember { AgendaViewport() }
     val timelineScroll = rememberSaveable(mode, saver = ScrollState.Saver) { ScrollState(0) }
-    var timelineFocus by remember(mode, vm.dayFocusRequest) {
+    val timelineMinute = rememberSaveable(mode) { mutableFloatStateOf(0f) }
+    val timelineTodayHandled = vm.pagedTimelineTodayHandled
+    LaunchedEffect(mode, vm.weekLayout, vm.dayLayout, vm.todayRequest) {
+        val pagedTimeline = (mode == ViewMode.Week && vm.weekLayout == "timeline") ||
+            (mode == ViewMode.Day && vm.dayLayout == "timeline")
+        if (!pagedTimeline) timelineTodayHandled.intValue = vm.todayRequest
+    }
+    var timelineFocus by remember(mode, vm.dayFocusRequest, vm.todayRequest) {
         val request = vm.dayFocusRequest
         mutableStateOf(if (vm.pendingDayFocus) TimelineFocus(vm.selectedDate, request) { vm.consumeDayFocus(request) } else null)
     }
@@ -444,18 +461,21 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
         { if (timelineFocus === it) { vm.consumeDayFocus(it.request); timelineFocus = null } }
     }
     val dayMeasurer = rememberTextMeasurer(cacheSize = 128)
-    val c = remember(vm, f, dayMeasurer, today, motion, swipe, collapse, viewport, highlightToday, windowDays, windowStart, timelineScroll, timelineFocus, onFocusHandled) {
-        CalendarContext(vm, f, dayMeasurer, today, motion, swipe, collapse, viewport, highlightToday, windowDays, windowStart, timelineScroll, timelineFocus, onFocusHandled)
+    val c = remember(vm, f, dayMeasurer, today, motion, swipe, collapse, viewport, highlightToday, windowDays, windowStart, timelineScroll, timelineMinute, timelineFocus, onFocusHandled) {
+        CalendarContext(vm, f, dayMeasurer, today, motion, swipe, collapse, viewport, highlightToday, windowDays, windowStart, timelineScroll, timelineMinute, timelineTodayHandled, timelineFocus, onFocusHandled)
     }
     val courseColors = rememberCourseColors(vm.eventsByDay, vm.courseColorSlots)
 
-    val periodDirection = when (mode) {
-        ViewMode.Month -> todayDirection(today, vm.month.atDay(1), vm.month.atEndOfMonth())
-        ViewMode.Week -> if (vm.weekLayout == "timeline") c.timelineDays(0).let { todayDirection(today, it.first(), it.last()) }
-            else weekStart(vm.selectedDate, vm.weekStartsMonday).let { todayDirection(today, it, it.plusDays(6)) }
+    val periodDirection by remember(vm, mode, c, today) { derivedStateOf { when (mode) {
+        ViewMode.Month -> horizontalTodayDirection(today, vm.month.atDay(1), vm.month.atEndOfMonth())
+        ViewMode.Week -> when (vm.weekLayout) {
+            "continuous" -> horizontalTodayDirection(today, vm.timelineViewportStart ?: vm.selectedDate, vm.timelineViewportEnd ?: vm.selectedDate)
+            "timeline" -> c.timelineDays(0).let { horizontalTodayDirection(today, it.first(), it.last()) }
+            else -> weekStart(vm.selectedDate, vm.weekStartsMonday).let { horizontalTodayDirection(today, it, it.plusDays(6)) }
+        }
         ViewMode.Day -> null
-    }
-    val direction = if (viewport.reporting) viewport.direction else periodDirection
+    } } }
+    val direction = periodDirection ?: if (viewport.reporting) viewport.direction else null
 
     CompositionLocalProvider(LocalCourseColors provides courseColors) {
     Scaffold(
@@ -463,19 +483,19 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
         containerColor = p.background,
         topBar = {
             Column(Modifier.background(p.background).statusBarsPadding()) {
-                Header(vm, f, onTitle = { showPicker = true }, onStep = swipe::animateStep)
+                Header(vm, f, onTitle = { showPicker = true }, onStep = { if (vm.continuousTimeline()) vm.step(it) else swipe.animateStep(it) })
             }
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { vm.newEvent() },
+                onClick = { vm.newEvent(if (vm.continuousTimeline()) vm.timelineActionDate() else vm.selectedDate) },
                 containerColor = p.accent, contentColor = p.onAccent, shape = RoundedCornerShape(16.dp),
             ) { Icon(Icons.Outlined.Add, stringResource(R.string.action_new_event)) }
         },
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad).semantics { testTagsAsResourceId = true }) {
             Column(Modifier.fillMaxSize().onSizeChanged { if (swipe.width != it.width) swipe.cancel(); swipe.width = it.width }
-                .periodSwipe(swipe, allowChildHorizontalScroll = mode == ViewMode.Week && vm.weekLayout == "timeline")) {
+                .then(if (vm.continuousTimeline()) Modifier else Modifier.periodSwipe(swipe, allowChildHorizontalScroll = mode == ViewMode.Week && vm.weekLayout == "timeline"))) {
                 if (mode != ViewMode.Day) StatusCards(vm, Modifier.padding(horizontal = 12.dp))
                 when (mode) {
                     ViewMode.Month -> MonthBody(c, Modifier.weight(1f))
@@ -488,12 +508,7 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
     }
     }
 
-    if (showPicker) DatePick(vm.selectedDate, { showPicker = false }) { vm.selectAndFocus(it) }
-}
-
-/** Opens a day while retaining the parent period for Back. */
-private fun openDay(vm: SunlithViewModel, date: LocalDate) {
-    vm.openDay(date)
+    if (showPicker) DatePick(if (vm.continuousTimeline()) vm.timelineActionDate() else vm.selectedDate, { showPicker = false }) { vm.selectAndFocus(it) }
 }
 
 /** Events per day for [from]..[to]. Days that are not loaded yet give no events, never stale ones from another range. */
@@ -530,6 +545,9 @@ private fun stepLabels(vm: SunlithViewModel): Pair<Int, Int> = when (vm.viewMode
 @Composable
 private fun Header(vm: SunlithViewModel, f: Formats, onTitle: () -> Unit, onStep: (Int) -> Unit) {
     val p = LocalPalette.current
+    val shownMonth by remember(vm) { derivedStateOf {
+        if (vm.continuousTimeline()) YearMonth.from(vm.timelineViewportStart ?: vm.selectedDate) else vm.month
+    } }
     val jumpLabel = stringResource(R.string.action_jump_to_date)
     val (prev, next) = stepLabels(vm)
     val prevLabel = stringResource(prev)
@@ -550,17 +568,17 @@ private fun Header(vm: SunlithViewModel, f: Formats, onTitle: () -> Unit, onStep
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .semantics {
                         heading()
-                        contentDescription = if (vm.viewMode == ViewMode.Day) f.dayLong(vm.selectedDate) else f.monthYear(vm.month)
+                        contentDescription = if (vm.viewMode == ViewMode.Day) f.dayLong(vm.selectedDate) else f.monthYear(shownMonth)
                         customActions = listOf(
                             CustomAccessibilityAction(prevLabel) { onStep(-1); true },
                             CustomAccessibilityAction(nextLabel) { onStep(1); true },
                         )
                     },
             ) {
-                Text(vm.month.year.toString(), Modifier.clearAndSetSemantics {}, color = p.muted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                Text(shownMonth.year.toString(), Modifier.clearAndSetSemantics {}, color = p.muted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                 BoxWithConstraints {
-                    val full = if (vm.viewMode == ViewMode.Day) f.dayMonth(vm.selectedDate) else f.monthName(vm.month)
-                    val compact = if (vm.viewMode == ViewMode.Day) f.numericDayMonth(vm.selectedDate) else f.shortMonth(vm.month)
+                    val full = if (vm.viewMode == ViewMode.Day) f.dayMonth(vm.selectedDate) else f.monthName(shownMonth)
+                    val compact = if (vm.viewMode == ViewMode.Day) f.numericDayMonth(vm.selectedDate) else f.shortMonth(shownMonth)
                     val regular = MaterialTheme.typography.titleLarge
                     val width = with(density) { maxWidth.toPx() }
                     val title = if (titleMeasurer.measure(full, regular, softWrap = false, maxLines = 1).size.width <= width) full else compact
@@ -660,14 +678,19 @@ private fun TodayPillContent(direction: TodayDirection, onClick: () -> Unit) {
     val shape = RoundedCornerShape(50)
     Box(
         Modifier.padding(start = 88.dp, end = 88.dp, bottom = 20.dp).minimumInteractiveComponentSize()
-            .testTag(if (direction == TodayDirection.Down) "calendar_today_down" else "calendar_today_up")
+            .testTag("calendar_today_${direction.name.lowercase()}")
             .shadow(3.dp, shape).clip(shape).background(p.surface).border(1.dp, p.line, shape)
             .clickable(role = Role.Button, onClick = onClick)
             .clearAndSetSemantics { contentDescription = label; role = Role.Button }
             .padding(horizontal = 18.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(if (direction == TodayDirection.Down) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward,
+        Icon(when (direction) {
+            TodayDirection.Up -> Icons.Outlined.ArrowUpward
+            TodayDirection.Down -> Icons.Outlined.ArrowDownward
+            TodayDirection.Previous -> Icons.AutoMirrored.Outlined.KeyboardArrowLeft
+            TodayDirection.Next -> Icons.AutoMirrored.Outlined.KeyboardArrowRight
+        },
             contentDescription = null, tint = p.ink, modifier = Modifier.size(22.dp))
     }
 }
@@ -752,6 +775,14 @@ private fun MonthHeader(c: CalendarContext, date: LocalDate, active: Boolean) {
 private fun WeekBody(c: CalendarContext, modifier: Modifier) {
     val vm = c.vm
     val p = LocalPalette.current
+    if (vm.weekLayout == "continuous") {
+        val owner = remember { Any() }
+        DisposableEffect(c.viewport) { onDispose { c.viewport.release(owner) } }
+        ContinuousTimeline(vm, c.f, c.today, c.motion, c.timelineScroll, modifier,
+            onOpen = { vm.open(Screen.Details(it)) },
+            onDirectionChanged = { c.viewport.report(owner, it) })
+        return
+    }
     if (vm.weekLayout == "timeline") {
         val n = c.rollingDays.toLong()
         key(n, if (n > 0) Math.floorMod(c.rollingStart.toEpochDay(), n) else 0L) {
@@ -843,43 +874,31 @@ private fun TimelinePeriod(c: CalendarContext, days: List<LocalDate>, k: Int, sh
         }
         if (k == 0) LaunchedEffect(scroll) {
             snapshotFlow { scroll.value }.collect { c.timelineScroll.scrollTo(it) }
-        } else LaunchedEffect(scroll, c.swipe) {
-            snapshotFlow { c.swipe.pager?.isScrollInProgress == true }.collect { moving ->
-                if (moving) scroll.scrollTo(c.timelineScroll.value)
-            }
         }
         var overflowEvents by remember { mutableStateOf(emptyList<CalendarEvent>()) }
+        val owner = remember { Any() }
+        DisposableEffect(c.viewport, k) { onDispose { c.viewport.release(owner) } }
         Timeline(
             days, eventsOn, vm.selectedDate, c.today, c.f, showHeaders, scroll,
             autoScroll = k == 0, todayRequest = vm.todayRequest, motion = c.motion,
             onSelectDay = vm::selectAndFocus,
             onOpen = { vm.open(Screen.Details(it)) },
             onNew = { vm.newEvent(it) },
-            onOverflow = { day, hidden -> if (days.size > 1) openDay(vm, day) else overflowEvents = hidden },
+            onOverflow = { _, hidden -> overflowEvents = hidden },
             focus = if (k == 0) c.readyFocus else null,
             onFocusHandled = c.onFocusHandled,
             // Columns stay readable even when period swiping is disabled.
             allowHorizontalScroll = true,
+            groupEmptyHours = showHeaders && vm.groupEmptyHours,
+            sharedMinute = c.timelineMinute,
+            handledTodayRequest = c.timelineTodayHandled,
+            onDirectionChanged = { if (k == 0 && showHeaders) c.viewport.report(owner, it) },
         ) {
             val selected = vm.selectedDate.coerceIn(first, last)
             Agenda(c, first, last, "all", selected, continuous = false, active = k == 0, compact = vm.viewMode == ViewMode.Day)
         }
-        if (overflowEvents.isNotEmpty()) {
-            AlertDialog(
-                onDismissRequest = { overflowEvents = emptyList() },
-                title = { Text(LocalContext.current.resources.getQuantityString(R.plurals.event_count, overflowEvents.size, overflowEvents.size)) },
-                text = {
-                    Column(Modifier.verticalScroll(rememberScrollState())) {
-                        overflowEvents.forEach { event ->
-                            TextButton(onClick = { overflowEvents = emptyList(); vm.open(Screen.Details(event)) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                                Text(event.title.ifBlank { stringResource(R.string.untitled) }, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-                },
-                confirmButton = { TextButton(onClick = { overflowEvents = emptyList() }) { Text(stringResource(R.string.action_close)) } },
-            )
-        }
+        if (overflowEvents.isNotEmpty()) TimelineEventList(overflowEvents, c.f,
+            onOpen = { vm.open(Screen.Details(it)) }, onClose = { overflowEvents = emptyList() })
     }
 }
 

@@ -15,6 +15,13 @@ class TodayDirectionTest {
     }
 
     @Test
+    fun horizontalPeriodsPointBackToToday() {
+        assertEquals(TodayDirection.Next, horizontalTodayDirection(today, today.minusMonths(2), today.minusDays(1)))
+        assertEquals(TodayDirection.Previous, horizontalTodayDirection(today, today.plusDays(1), today.plusYears(1)))
+        assertNull(horizontalTodayDirection(today, today.minusDays(2), today.plusDays(2)))
+    }
+
+    @Test
     fun todayAtEitherEdgeOrInsideACompactEmptyRangeNeedsNoArrow() {
         assertNull(todayDirection(today, today, today.plusDays(6)))
         assertNull(todayDirection(today, today.minusDays(6), today))

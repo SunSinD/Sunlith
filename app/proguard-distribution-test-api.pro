@@ -3,6 +3,7 @@
 # Regenerate after adding test calls; this distribution intentionally retains this test API.
 -keep,allowoptimization,allowobfuscation class androidx.activity.ComponentActivity {
     void addContentView(android.view.View,android.view.ViewGroup$LayoutParams);
+    androidx.lifecycle.ViewModelStore getViewModelStore();
 }
 -keep,allowoptimization,allowobfuscation class androidx.activity.compose.ComponentActivityKt {
     void setContent$default(androidx.activity.ComponentActivity,androidx.compose.runtime.CompositionContext,kotlin.jvm.functions.Function2,int,java.lang.Object);
@@ -20,13 +21,18 @@
 }
 -keep,allowoptimization,allowobfuscation class androidx.annotation.RestrictTo$Scope {
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.foundation.BackgroundKt {
+    androidx.compose.ui.Modifier background-bw27NRU$default(androidx.compose.ui.Modifier,long,androidx.compose.ui.graphics.Shape,int,java.lang.Object);
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.foundation.ScrollKt {
     androidx.compose.foundation.ScrollState rememberScrollState(int,androidx.compose.runtime.Composer,int,int);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.foundation.ScrollState {
+    <init>(int);
     float dispatchRawDelta(float);
     int getMaxValue();
     int getValue();
+    int getViewportSize();
     boolean isScrollInProgress();
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.foundation.layout.Arrangement {
@@ -45,6 +51,10 @@
     androidx.compose.ui.Modifier fillMaxSize$default(androidx.compose.ui.Modifier,float,int,java.lang.Object);
     androidx.compose.ui.Modifier fillMaxWidth$default(androidx.compose.ui.Modifier,float,int,java.lang.Object);
     androidx.compose.ui.Modifier height-3ABfNKs(androidx.compose.ui.Modifier,float);
+    androidx.compose.ui.Modifier width-3ABfNKs(androidx.compose.ui.Modifier,float);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.foundation.layout.WindowInsetsPadding_androidKt {
+    androidx.compose.ui.Modifier safeDrawingPadding(androidx.compose.ui.Modifier);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.foundation.lazy.LazyDslKt {
     void LazyColumn(androidx.compose.ui.Modifier,androidx.compose.foundation.lazy.LazyListState,androidx.compose.foundation.layout.PaddingValues,boolean,androidx.compose.foundation.layout.Arrangement$Vertical,androidx.compose.ui.Alignment$Horizontal,androidx.compose.foundation.gestures.FlingBehavior,boolean,androidx.compose.foundation.OverscrollEffect,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int,int);
@@ -115,6 +125,7 @@
     boolean changed(long);
     boolean changed(java.lang.Object);
     boolean changedInstance(java.lang.Object);
+    java.lang.Object consume(androidx.compose.runtime.CompositionLocal);
     void createNode(kotlin.jvm.functions.Function0);
     void endNode();
     void endReplaceGroup();
@@ -139,6 +150,8 @@
     void sourceInformationMarkerStart(androidx.compose.runtime.Composer,int,java.lang.String);
     void traceEventEnd();
     void traceEventStart(int,int,int,java.lang.String);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.CompositionLocal {
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.CompositionLocalKt {
     void CompositionLocalProvider(androidx.compose.runtime.ProvidedValue,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int);
@@ -166,10 +179,15 @@
     java.lang.Object withFrameNanos(kotlin.jvm.functions.Function1,kotlin.coroutines.Continuation);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.MutableIntState {
+    int getIntValue();
     void setIntValue(int);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.MutableLongState {
     void setLongValue(long);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.MutableState {
+    java.lang.Object getValue();
+    void setValue(java.lang.Object);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.ProvidableCompositionLocal {
     androidx.compose.runtime.ProvidedValue provides(java.lang.Object);
@@ -182,6 +200,13 @@
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.SnapshotLongStateKt {
     androidx.compose.runtime.MutableLongState mutableLongStateOf(long);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.SnapshotStateKt {
+    androidx.compose.runtime.MutableState mutableStateOf$default(java.lang.Object,androidx.compose.runtime.SnapshotMutationPolicy,int,java.lang.Object);
+    kotlinx.coroutines.flow.Flow snapshotFlow(kotlin.jvm.functions.Function0);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.State {
+    java.lang.Object getValue();
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.Updater {
     androidx.compose.runtime.Composer constructor-impl(androidx.compose.runtime.Composer);
@@ -261,6 +286,7 @@
     androidx.compose.ui.text.TextMeasurer rememberTextMeasurer(int,androidx.compose.runtime.Composer,int,int);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.TextStyle {
+    long getLineHeight-XSAIIZE();
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.font.FontFamily {
 }
@@ -273,11 +299,20 @@
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.ConstraintsKt {
     long Constraints$default(int,int,int,int,int,java.lang.Object);
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.Density {
+    float toPx-0680j_4(float);
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.DensityKt {
     androidx.compose.ui.unit.Density Density(float,float);
+    androidx.compose.ui.unit.Density Density$default(float,float,int,java.lang.Object);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.Dp {
+    androidx.compose.ui.unit.Dp box-impl(float);
     float constructor-impl(float);
+    float unbox-impl();
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.FontScaling {
+    float toDp-GaN1DYA(long);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.unit.IntSize {
     long unbox-impl();
@@ -390,6 +425,7 @@
     int event_count;
     int school_disconnect_remove;
     int school_sync_changes_count;
+    int timeline_short_event_count;
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.R$string {
     int about_source;
@@ -515,10 +551,12 @@
     int settings_day_view;
     int settings_export;
     int settings_general;
+    int settings_group_empty_hours;
     int settings_import;
     int settings_keep_date;
     int settings_reminders_toggle;
     int settings_theme;
+    int settings_week_continuous;
     int settings_widget_opacity;
     int settings_widget_shared;
     int theme_dark;
@@ -1016,6 +1054,7 @@
     boolean getCollapseCalendarOnScroll();
     java.util.Map getCourseColorSlots();
     java.lang.String getDayLayout();
+    boolean getGroupEmptyHours();
     boolean getHasChosenCalendars();
     boolean getKeepSelectedDate();
     java.lang.String getLayoutPreset();
@@ -1039,6 +1078,7 @@
     void setCollapseCalendarOnScroll(boolean);
     void setCourseColorSlots(java.util.Map);
     void setDayLayout(java.lang.String);
+    void setGroupEmptyHours(boolean);
     void setHasChosenCalendars(boolean);
     void setKeepSelectedDate(boolean);
     void setLayoutPreset(java.lang.String);
@@ -1075,7 +1115,10 @@
     io.github.sunsind.sunlith.ui.PeriodSwipeState rememberPeriodSwipe(boolean,boolean,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.CalendarTimelineKt {
-    void Timeline(java.util.List,kotlin.jvm.functions.Function1,java.time.LocalDate,java.time.LocalDate,io.github.sunsind.sunlith.ui.Formats,boolean,androidx.compose.foundation.ScrollState,boolean,int,boolean,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function2,androidx.compose.ui.Modifier,io.github.sunsind.sunlith.ui.TimelineFocus,kotlin.jvm.functions.Function1,boolean,boolean,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int,int,int);
+    void Timeline(java.util.List,kotlin.jvm.functions.Function1,java.time.LocalDate,java.time.LocalDate,io.github.sunsind.sunlith.ui.Formats,boolean,androidx.compose.foundation.ScrollState,boolean,int,boolean,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function2,androidx.compose.ui.Modifier,io.github.sunsind.sunlith.ui.TimelineFocus,kotlin.jvm.functions.Function1,boolean,boolean,boolean,androidx.compose.runtime.MutableFloatState,androidx.compose.runtime.MutableIntState,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int,int,int,int);
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.ContinuousTimelineKt {
+    void ContinuousTimeline(io.github.sunsind.sunlith.ui.SunlithViewModel,io.github.sunsind.sunlith.ui.Formats,java.time.LocalDate,boolean,androidx.compose.foundation.ScrollState,androidx.compose.ui.Modifier,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int,int);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.EditorState {
     io.github.sunsind.sunlith.ui.EditorState copy$default(io.github.sunsind.sunlith.ui.EditorState,java.lang.Long,java.lang.Long,boolean,java.lang.String,java.lang.String,java.lang.String,boolean,java.time.LocalDate,java.time.LocalTime,java.time.LocalDate,java.time.LocalTime,java.lang.String,java.lang.String,java.lang.String,java.util.List,io.github.sunsind.sunlith.data.EventDraft,int,java.lang.Object);
@@ -1132,6 +1175,7 @@
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.SunlithPalette {
     long getAccent-0d7_KjU();
+    long getBackground-0d7_KjU();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.SunlithViewModel {
     int $stable;
@@ -1141,11 +1185,13 @@
     void changeAgendaRange(java.lang.String);
     void changeCollapseCalendarOnScroll(boolean);
     void changeDayLayout(java.lang.String);
+    void changeGroupEmptyHours(boolean);
     void changeKeepSelectedDate(boolean);
     void changeMaterialYou(boolean);
     void changeMonthLayout(java.lang.String);
     void changeNavigationAnimation(boolean);
     void changeShowNavigationArrows(boolean);
+    void changeStartView(java.lang.String);
     void changeSwipeNavigation(boolean);
     void changeViewMode(io.github.sunsind.sunlith.ui.ViewMode);
     void changeVisibleWeekDays(int);
@@ -1170,6 +1216,8 @@
     boolean getExtendingAgenda();
     java.time.LocalDate getGridLoadedFrom();
     java.time.LocalDate getGridLoadedTo();
+    boolean getGroupEmptyHours();
+    int getHandledTimelineNavigation();
     boolean getHasDayParent();
     boolean getHasPermission();
     io.github.sunsind.sunlith.ui.ImportUi getImportUi();
@@ -1184,7 +1232,9 @@
     boolean getLoadingEvents();
     java.time.YearMonth getMonth();
     java.lang.String getMonthLayout();
+    boolean getNavigationAnimation();
     boolean getNeedsNotificationStep();
+    androidx.compose.runtime.MutableIntState getPagedTimelineTodayHandled$app_distribution();
     boolean getPendingDayFocus();
     boolean getSearchLoading();
     java.util.List getSearchResults();
@@ -1192,6 +1242,9 @@
     boolean getShowNavigationArrows();
     androidx.compose.runtime.snapshots.SnapshotStateList getStack();
     boolean getSwipeNavigation();
+    int getTimelineNavigationRequest();
+    java.time.LocalDate getTimelineViewportEnd();
+    java.time.LocalDate getTimelineViewportStart();
     java.time.LocalDate getToday();
     int getTodayRequest();
     io.github.sunsind.sunlith.ui.ViewMode getViewMode();
@@ -1220,6 +1273,13 @@
     void SunlithTheme(java.lang.String,boolean,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int,int);
     io.github.sunsind.sunlith.ui.SunlithPalette getDarkPalette();
     io.github.sunsind.sunlith.ui.SunlithPalette getLightPalette();
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.TimelineAxis {
+    <init>(float,java.util.List,boolean,float);
+    float minuteToY(int);
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.TimelineFocus {
+    <init>(java.time.LocalDate,int,kotlin.jvm.functions.Function0,int,kotlin.jvm.internal.DefaultConstructorMarker);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.ViewMode {
     io.github.sunsind.sunlith.ui.ViewMode Day;
@@ -1375,6 +1435,7 @@
     int compareValues(java.lang.Comparable,java.lang.Comparable);
 }
 -keep,allowoptimization,allowobfuscation class kotlin.comparisons.ComparisonsKt___ComparisonsJvmKt {
+    java.lang.Comparable maxOf(java.lang.Comparable,java.lang.Comparable);
     java.lang.Comparable minOf(java.lang.Comparable,java.lang.Comparable);
 }
 -keep,allowoptimization,allowobfuscation class kotlin.coroutines.Continuation {
@@ -1455,6 +1516,7 @@
 -keep,allowoptimization,allowobfuscation class kotlin.jvm.functions.Function4 {
 }
 -keep,allowoptimization,allowobfuscation class kotlin.jvm.internal.FunctionReferenceImpl {
+    <init>(int,java.lang.Class,java.lang.String,java.lang.String,int);
     <init>(int,java.lang.Object,java.lang.Class,java.lang.String,java.lang.String,int);
 }
 -keep,allowoptimization,allowobfuscation class kotlin.jvm.internal.Intrinsics {
@@ -1478,6 +1540,10 @@
     boolean element;
     <init>();
 }
+-keep,allowoptimization,allowobfuscation class kotlin.jvm.internal.Ref$FloatRef {
+    float element;
+    <init>();
+}
 -keep,allowoptimization,allowobfuscation class kotlin.jvm.internal.Ref$IntRef {
     int element;
     <init>();
@@ -1492,6 +1558,11 @@
 }
 -keep,allowoptimization,allowobfuscation class kotlin.jvm.internal.StringCompanionObject {
     kotlin.jvm.internal.StringCompanionObject INSTANCE;
+}
+-keep,allowoptimization,allowobfuscation class kotlin.math.MathKt {
+}
+-keep,allowoptimization,allowobfuscation class kotlin.math.MathKt__MathJVMKt {
+    int roundToInt(float);
 }
 -keep,allowoptimization,allowobfuscation class kotlin.ranges.IntProgression {
     int getFirst();

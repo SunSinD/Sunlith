@@ -8,4 +8,13 @@
     <string name="calendar_period_room">%1$s · %2$s</string>
     <string name="details_school_periods">Périodes de cours</string>
     <string name="details_teacher_absence">Absence de l’enseignant</string>
+    <string name="settings_week_continuous">Grille continue</string>
+    <string name="settings_group_empty_hours">Regrouper les heures vides dans Semaine</string>
+    <string name="timeline_empty_hours">Aucun événement</string>
+    <string name="timeline_loading_day">Chargement des événements</string>
+    <string name="settings_group_empty_hours_summary">Semaine seulement. Les longues plages vides sont regroupées dans une bande compacte.</string>
+    <plurals name="timeline_short_event_count">
+        <item quantity="one">%1$d événement court</item>
+        <item quantity="other">%1$d événements courts</item>
+    </plurals>
 </resources>

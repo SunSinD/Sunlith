@@ -29,12 +29,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -42,6 +47,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +66,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -83,8 +90,10 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withTimeoutOrNull
 
 private const val DAY_MINUTES = 24 * 60
@@ -104,21 +113,23 @@ internal class TimelineBlock(val event: CalendarEvent, val start: Int, val end: 
 internal class TimelineCluster(val blocks: List<TimelineBlock>, val cols: Int)
 
 /**
- * Places timed events by their local wall-clock time on [day]. Each event takes at least [minMinutes] so short
- * events stay readable and tappable; that minimum also counts when deciding overlaps, so blocks never cover each
- * other. Overlapping events are packed into the fewest columns, first come first placed.
+ * Keeps exact local starts. Short labels may extend into free time, up to [minMinutes], but never past the next
+ * start or midnight. Only real overlaps require extra lanes; adjacent short events keep their full column width.
  */
 internal fun packTimeline(events: List<CalendarEvent>, day: LocalDate, zone: ZoneId, minMinutes: Int): List<TimelineCluster> {
     val blocks = events.map { e ->
         val s = Instant.ofEpochMilli(e.startMillis).atZone(zone)
         val en = Instant.ofEpochMilli(max(e.endMillis, e.startMillis)).atZone(zone)
-        var start = if (s.toLocalDate().isBefore(day)) 0 else s.hour * 60 + s.minute
+        val start = if (s.toLocalDate().isBefore(day)) 0 else s.hour * 60 + s.minute
         val end = if (en.toLocalDate().isAfter(day)) DAY_MINUTES else en.hour * 60 + en.minute
-        var shownEnd = max(end, start + minMinutes).coerceAtMost(DAY_MINUTES)
-        if (shownEnd - start < minMinutes) start = (shownEnd - minMinutes).coerceAtLeast(0)
-        if (shownEnd <= start) shownEnd = (start + 1).coerceAtMost(DAY_MINUTES)
-        TimelineBlock(e, start, shownEnd)
+        TimelineBlock(e, start, max(end, start + 1).coerceAtMost(DAY_MINUTES))
     }.sortedWith(compareBy<TimelineBlock> { it.start }.thenByDescending { it.end }.thenBy { it.event.title.lowercase() })
+    val starts = blocks.map { it.start }.distinct()
+    val nextStarts = starts.zipWithNext().toMap()
+    val shownBlocks = blocks.map { block ->
+        val labelEnd = (block.start + minMinutes.coerceAtLeast(1)).coerceAtMost(nextStarts[block.start] ?: DAY_MINUTES)
+        TimelineBlock(block.event, block.start, max(block.end, labelEnd))
+    }
 
     val clusters = mutableListOf<TimelineCluster>()
     var current = mutableListOf<TimelineBlock>()
@@ -132,7 +143,7 @@ internal fun packTimeline(events: List<CalendarEvent>, day: LocalDate, zone: Zon
         current = mutableListOf()
         columnEnds.clear()
     }
-    for (b in blocks) {
+    for (b in shownBlocks) {
         if (current.isNotEmpty() && b.start >= clusterEnd) close()
         val free = columnEnds.indexOfFirst { it <= b.start }
         if (free >= 0) {
@@ -147,6 +158,22 @@ internal fun packTimeline(events: List<CalendarEvent>, day: LocalDate, zone: Zon
     }
     close()
     return clusters
+}
+
+internal fun timelineOverflowThreshold(dayCount: Int, titleSize: Dp, fontScale: Float = 1f): Dp = when {
+    dayCount <= 5 && fontScale <= 1.15f -> maxOf(40.dp, titleSize * 3.2f)
+    dayCount <= 5 -> maxOf(48.dp, titleSize * 4f)
+    else -> maxOf(60.dp, titleSize * 5f)
+}
+
+internal fun timelineTodayDirection(axis: TimelineAxis, minute: Int, scrollY: Int, viewportHeight: Int): TodayDirection? {
+    if (viewportHeight <= 0) return null
+    val y = axis.minuteToY(minute)
+    return when {
+        y < scrollY -> TodayDirection.Up
+        y > scrollY + viewportHeight -> TodayDirection.Down
+        else -> null
+    }
 }
 
 /** Width for a column of time labels: the widest label plus a little room, kept within a share of the screen. */
@@ -175,7 +202,7 @@ internal fun dayDescription(context: android.content.Context, f: Formats, day: L
  * [focus] is a one-time request: when its date is one of [days] and this is the active page ([autoScroll]), the
  * timeline scrolls to that date's most relevant event (see [focusTarget]), briefly rings it, and reports
  * [onFocusHandled]. Without a request, the first open scrolls to the current hour (today) or [DEFAULT_START_HOUR].
- * Reloads never move the timeline on their own. [tintToday] shades today's column slightly.
+ * Reloads preserve the viewed time. [tintToday] shades today's column slightly.
  */
 @Composable
 internal fun Timeline(
@@ -198,6 +225,10 @@ internal fun Timeline(
     onFocusHandled: (TimelineFocus) -> Unit = {},
     tintToday: Boolean = true,
     allowHorizontalScroll: Boolean = false,
+    groupEmptyHours: Boolean = false,
+    sharedMinute: MutableFloatState? = null,
+    handledTodayRequest: MutableIntState? = null,
+    onDirectionChanged: (TodayDirection?) -> Unit = {},
     fallback: @Composable () -> Unit,
 ) {
     val p = LocalPalette.current
@@ -205,15 +236,15 @@ internal fun Timeline(
     val zone = ZoneId.systemDefault()
     val typography = MaterialTheme.typography
     val railStyle = typography.labelSmall
-    val titleStyle = typography.labelMedium
+    val titleStyle = if (days.size == 1) typography.bodyMedium else typography.labelMedium
     // Scale the actual text size before multiplying; sp conversion is non-linear at large font sizes.
     val titleSize = with(density) { titleStyle.fontSize.toDp() }
     val titleLine = with(density) { titleStyle.lineHeight.toDp() }
-    val hour = if (days.size > 1) maxOf(88.dp, titleLine * 5.5f) else maxOf(64.dp, titleLine * 3.4f)
-    val minBlock = maxOf(56.dp, titleLine + 14.dp)
+    val hour = if (days.size > 1) maxOf(88.dp, titleLine * 5.5f) else maxOf(96.dp, titleLine * 5.5f)
+    val minBlock = maxOf(24.dp, titleLine + 6.dp)
     val minMinutes = ceil(minBlock / hour * 60f).toInt()
     val minColumn = maxOf(40.dp, titleSize * 3.2f)
-    val overflowThreshold = maxOf(60.dp, titleSize * 5f)
+    val overflowThreshold = timelineOverflowThreshold(days.size, titleSize, density.fontScale)
     val readableColumn = maxOf(80.dp, titleSize * 6.5f)
     val minBlockWidth = maxOf(32.dp, titleSize * 2.6f)
     val compact = remember(f) { CompactTimes(f.locale, f.is24Hour, f::range) }
@@ -224,7 +255,77 @@ internal fun Timeline(
         }
     }
     val allDayLabel = stringResource(R.string.all_day)
-    val allDay = days.map { d -> eventsOn(d).filter { it.isTimelineBanner() } }
+    val emptyHoursLabel = stringResource(R.string.timeline_empty_hours)
+    val dayEvents = days.map(eventsOn)
+    val allDay = dayEvents.map { events -> events.filter { it.isTimelineBanner() } }
+    val timed = dayEvents.map { events -> events.filter { !it.isTimelineBanner() } }
+    val shortEvents = remember(timed, days, zone, minMinutes) {
+        days.mapIndexed { i, day -> shortTimelineEvents(timed[i], day, zone, minMinutes) }
+    }
+    val hourPx = with(density) { hour.toPx() }
+    val gapPx = with(density) { maxOf(48.dp, titleLine * 3f).toPx() }
+    val axis = remember(days, timed, zone, minMinutes, hourPx, gapPx, groupEmptyHours) {
+        val occupied = days.flatMapIndexed { index, day ->
+            packTimeline(timed[index], day, zone, minMinutes).flatMap { cluster -> cluster.blocks.map { it.start to it.end } }
+        }
+        TimelineAxis(hourPx, occupied, groupEmpty = groupEmptyHours, gapPx = gapPx)
+    }
+    val timelineHeight = with(density) { axis.totalHeight.toDp() }
+    val reportDirection by rememberUpdatedState(onDirectionChanged)
+    val currentMinute by produceState(LocalTime.now().let { it.hour * 60 + it.minute }) {
+        while (true) {
+            delay(30_000)
+            value = LocalTime.now().let { it.hour * 60 + it.minute }
+        }
+    }
+    LaunchedEffect(scroll, autoScroll, days, today, axis, currentMinute) {
+        if (!autoScroll) return@LaunchedEffect
+        if (today !in days) {
+            reportDirection(null)
+            return@LaunchedEffect
+        }
+        snapshotFlow { timelineTodayDirection(axis, currentMinute, scroll.value, scroll.viewportSize) }
+            .distinctUntilChanged().collect { reportDirection(it) }
+    }
+    var previousAxis by remember { mutableStateOf(axis) }
+    LaunchedEffect(axis, scroll) {
+        if (previousAxis.gaps != axis.gaps || previousAxis.hourPx != axis.hourPx) {
+            val minute = previousAxis.yToMinute(scroll.value.toFloat())
+            if (awaitScrollable(scroll)) {
+                withFrameNanos { }
+                val target = axis.minuteToY(minute).coerceIn(0f, scroll.maxValue.toFloat())
+                scroll.dispatchRawDelta(target - scroll.value)
+            }
+        }
+        previousAxis = axis
+    }
+    var sharedPositioned by remember {
+        mutableStateOf(sharedMinute == null || (scroll.value == 0 && sharedMinute.floatValue == 0f))
+    }
+    LaunchedEffect(scroll) {
+        if (!sharedPositioned) {
+            try {
+                if (awaitScrollable(scroll)) {
+                    withFrameNanos { }
+                    scroll.scrollTo(axis.minuteToY(sharedMinute!!.floatValue).roundToInt())
+                }
+            } finally { sharedPositioned = true }
+        }
+    }
+    LaunchedEffect(scroll, autoScroll, axis, sharedMinute) {
+        if (sharedMinute == null) return@LaunchedEffect
+        if (autoScroll) {
+            snapshotFlow { if (sharedPositioned && previousAxis === axis) axis.yToMinute(scroll.value.toFloat()) else null }
+                .collect { if (it != null) sharedMinute.floatValue = it }
+        } else {
+            snapshotFlow { sharedMinute.floatValue }.collect { minute ->
+                if (awaitScrollable(scroll)) {
+                    withFrameNanos { }
+                    scroll.scrollTo(axis.minuteToY(minute).roundToInt())
+                }
+            }
+        }
+    }
     val gutterLabels = if (allDay.any { it.isNotEmpty() }) {
         hourLabels + listOf(allDayLabel.substringBeforeLast(' '), allDayLabel.substringAfterLast(' '))
     } else hourLabels
@@ -264,45 +365,53 @@ internal fun Timeline(
             fallback()
         } else {
             val allDayHeight = maxHeight / 4
-            val hourPx = with(density) { hour.toPx() }
             var initialPositioned by rememberSaveable { mutableStateOf(false) }
-            LaunchedEffect(scroll, autoScroll) {
+            LaunchedEffect(scroll, autoScroll, axis) {
                 if (initialPositioned) return@LaunchedEffect
                 initialPositioned = true
                 if (!autoScroll || !showHeaders || scroll.value != 0 || focus != null) return@LaunchedEffect
                 if (!awaitScrollable(scroll)) return@LaunchedEffect
                 val anchor = if (today in days) (LocalTime.now().hour - 1).coerceAtLeast(0) else DEFAULT_START_HOUR
-                scroll.scrollTo((anchor * hourPx).roundToInt())
+                scroll.scrollTo(axis.minuteToY(anchor * 60).roundToInt().coerceIn(0, scroll.maxValue))
             }
-            val handled = remember { intArrayOf(todayRequest) }
-            LaunchedEffect(todayRequest, autoScroll, scroll) {
-                if (todayRequest == handled[0]) return@LaunchedEffect
-                handled[0] = todayRequest
-                if (!autoScroll) return@LaunchedEffect
-                if (!awaitScrollable(scroll)) return@LaunchedEffect
-                scroll.stopScroll()
-                val target = ((LocalTime.now().hour - 1).coerceAtLeast(0) * hourPx).roundToInt()
-                    .coerceIn(0, scroll.maxValue)
-                if (target != scroll.value) {
-                    if (!motion) scroll.scrollTo(target)
-                    else {
-                        val animation = coroutineContext[kotlinx.coroutines.Job]!!
-                        val interruption = launch {
-                            scroll.interactionSource.interactions.first { it is DragInteraction.Start }
-                            animation.cancel()
-                        }
-                        try {
-                            // Holding the scroll lock through the tween makes verticalScroll claim the next down,
-                            // even when it starts a horizontal page swipe. This programmatic move leaves touch free.
-                            animate(scroll.value.toFloat(), target.toFloat(), animationSpec = tween(300)) { value, _ ->
-                                val position = value.coerceIn(0f, scroll.maxValue.toFloat())
-                                scroll.dispatchRawDelta(position - scroll.value)
+            val handled = handledTodayRequest ?: remember { mutableIntStateOf(todayRequest) }
+            LaunchedEffect(todayRequest, handled.intValue, autoScroll, scroll, axis, focus) {
+                if (autoScroll && focus != null) {
+                    handled.intValue = todayRequest
+                    return@LaunchedEffect
+                }
+                if (todayRequest == handled.intValue || !autoScroll || today !in days) return@LaunchedEffect
+                var touchInterrupted = false
+                try {
+                    if (!awaitScrollable(scroll)) return@LaunchedEffect
+                    withFrameNanos { }
+                    scroll.stopScroll()
+                    val target = axis.minuteToY((LocalTime.now().hour - 1).coerceAtLeast(0) * 60).roundToInt()
+                        .coerceIn(0, scroll.maxValue)
+                    if (target != scroll.value) {
+                        if (!motion) scroll.scrollTo(target)
+                        else {
+                            val animation = coroutineContext[kotlinx.coroutines.Job]!!
+                            val interruption = launch {
+                                scroll.interactionSource.interactions.first { it is DragInteraction.Start }
+                                touchInterrupted = true
+                                animation.cancel()
                             }
-                        } finally { interruption.cancel() }
+                            try {
+                                // Holding the scroll lock through the tween makes verticalScroll claim the next down,
+                                // even when it starts a horizontal page swipe. This programmatic move leaves touch free.
+                                animate(scroll.value.toFloat(), target.toFloat(), animationSpec = tween(300)) { value, _ ->
+                                    val position = value.coerceIn(0f, scroll.maxValue.toFloat())
+                                    scroll.dispatchRawDelta(position - scroll.value)
+                                }
+                            } finally { interruption.cancel() }
+                        }
                     }
+                } finally {
+                    if (coroutineContext.isActive || touchInterrupted) handled.intValue = todayRequest
                 }
             }
-            LaunchedEffect(focus, autoScroll) {
+            LaunchedEffect(focus, autoScroll, axis) {
                 val request = focus ?: return@LaunchedEffect
                 if (!autoScroll || request.date !in days) return@LaunchedEffect
                 request.start()
@@ -312,7 +421,7 @@ internal fun Timeline(
                     val minute = if (target != null && !target.isTimelineBanner())
                         (startMinuteOn(target, request.date, zone) - 30).coerceAtLeast(0) else 0
                     if (awaitScrollable(scroll)) {
-                        val y = (minute / 60f * hourPx).roundToInt().coerceIn(0, scroll.maxValue)
+                        val y = axis.minuteToY(minute).roundToInt().coerceIn(0, scroll.maxValue)
                         val distance = (y - scroll.value).toFloat()
                         if (distance != 0f) {
                             if (motion) scroll.animateScrollTo(y, tween(focusScrollDuration(distance, scroll.viewportSize)))
@@ -320,15 +429,29 @@ internal fun Timeline(
                         }
                     }
                     highlighted = target?.key()
-                } finally { reportFocus(request) }
+                } finally { if (coroutineContext.isActive) reportFocus(request) }
             }
             Column(Modifier.fillMaxSize()) {
                 if (showHeaders) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                         Spacer(Modifier.width(gutter))
-                        Row(Modifier.weight(1f).then(dayArea)) {
+                        Row(Modifier.weight(1f).testTag("calendar_timeline_headers").then(dayArea)) {
                             days.forEach { day ->
                                 TimelineDayHeader(day, day == selected, day == today, eventsOn(day).size, f, Modifier.width(column)) { onSelectDay(day) }
+                            }
+                        }
+                    }
+                }
+                if (shortEvents.any { it.isNotEmpty() }) {
+                    Row(Modifier.fillMaxWidth().height(48.dp).testTag("calendar_timeline_short_events")) {
+                        if (days.size > 1) Spacer(Modifier.width(gutter))
+                        Row(Modifier.weight(1f).then(dayArea)) {
+                            days.forEachIndexed { i, day ->
+                                Box(if (days.size > 1) Modifier.width(column) else Modifier.fillMaxWidth()) {
+                                    if (shortEvents[i].isNotEmpty()) TimelineShortEventButton(shortEvents[i].size, days.size == 1) {
+                                        onOverflow(day, shortEvents[i])
+                                    }
+                                }
                             }
                         }
                     }
@@ -353,32 +476,34 @@ internal fun Timeline(
                 }
                 HorizontalDivider(color = p.line)
                 Row(Modifier.weight(1f).fillMaxWidth().testTag("calendar_timeline").verticalScroll(scroll)) {
-                    HourRail(hourLabels, railStyle, hourPx, Modifier.width(gutter).height(hour * 24))
-                    Box(Modifier.weight(1f).height(hour * 24).then(dayArea)) {
+                    HourRail(hourLabels, railStyle, hourPx, Modifier.width(gutter).height(timelineHeight), axis)
+                    Box(Modifier.weight(1f).height(timelineHeight).then(dayArea)) {
                         val lineColor = p.line
                         Row(
                             Modifier.width(column * days.size).fillMaxHeight().drawBehind {
-                                val stroke = 1.dp.toPx()
-                                for (h in 1 until 24) {
-                                    val y = h * hourPx
-                                    drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
-                                }
-                                for (i in 1 until days.size) {
-                                    val x = startX(i * column.toPx())
-                                    drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
-                                }
+                                drawTimelineGrid(axis, column.toPx(), days.size, lineColor)
                             },
                         ) {
-                            days.forEach { day ->
-                                val timed = eventsOn(day).filter { !it.isTimelineBanner() }
+                            days.forEachIndexed { index, day ->
                                 DayColumn(
-                                    day, timed, zone, minMinutes, hour, minBlockWidth, day == today && tintToday, f, compact, titleStyle,
+                                    day, timed[index], zone, minMinutes, hour, minBlockWidth, day == today && tintToday, f, compact, titleStyle,
                                     highlighted, motion, Modifier.width(column).fillMaxHeight(), onOpen, onNew, onOverflow,
+                                    axis = axis,
                                 )
                             }
                         }
+                        axis.gaps.forEach { gap ->
+                            Box(
+                                Modifier.offset(y = with(density) { gap.y.toDp() }).width(column * days.size)
+                                    .height(with(density) { gap.height.toDp() }),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(emptyHoursLabel, Modifier.padding(horizontal = 4.dp), color = p.muted, style = railStyle,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
                         val todayIndex = days.indexOf(today)
-                        if (todayIndex >= 0) NowLine(column, todayIndex, days.size, hourPx, Modifier.width(column * days.size).fillMaxHeight())
+                        if (todayIndex >= 0) NowLine(column, todayIndex, days.size, hourPx, Modifier.width(column * days.size).fillMaxHeight(), axis)
                     }
                 }
             }
@@ -389,22 +514,51 @@ internal fun Timeline(
 /** Mirrors an x distance measured from the start edge, so lines follow the Row's order in right-to-left layouts. */
 private fun DrawScope.startX(fromStart: Float): Float = if (layoutDirection == LayoutDirection.Rtl) size.width - fromStart else fromStart
 
+internal fun DrawScope.drawTimelineGrid(axis: TimelineAxis, columnWidthPx: Float, dayCount: Int, color: Color) {
+    val stroke = 1.dp.toPx()
+    axis.normalHourMarkers.filter { it in 1 until DAY_MINUTES }.forEach { minute ->
+        val y = axis.minuteToY(minute)
+        drawLine(color, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
+    }
+    axis.gaps.forEach { gap ->
+        drawRect(color.copy(alpha = color.alpha * 0.18f), Offset(0f, gap.y), Size(size.width, gap.height))
+        listOf(gap.y, gap.y + gap.height).forEach { y ->
+            drawLine(color, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
+        }
+    }
+    for (i in 1 until dayCount) {
+        val x = startX(i * columnWidthPx)
+        drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+    }
+}
+
 /** Waits until the hourly area can scroll. Gives up (false) when it never needs to, such as on a very tall screen. */
 private suspend fun awaitScrollable(scroll: ScrollState): Boolean =
     withTimeoutOrNull(1_000) { snapshotFlow { scroll.maxValue }.first { it in 1 until Int.MAX_VALUE } } != null
 
 @Composable
-private fun HourRail(labels: List<String>, style: TextStyle, hourPx: Float, modifier: Modifier) {
+internal fun HourRail(
+    labels: List<String>, style: TextStyle, hourPx: Float, modifier: Modifier,
+    axis: TimelineAxis = TimelineAxis(hourPx, emptyList()),
+) {
     val p = LocalPalette.current
     val endPad = with(LocalDensity.current) { 6.dp.roundToPx() }
+    val markers = axis.normalHourMarkers
+    val positions = markers.map(axis::minuteToY) + axis.gaps.map { it.y + it.height / 2f }
     Layout(
-        content = { labels.forEach { Text(it, color = p.muted, style = style, maxLines = 1, softWrap = false) } },
+        content = {
+            markers.forEach { minute -> Text(labels[minute / 60], color = p.muted, style = style, maxLines = 1, softWrap = false) }
+            axis.gaps.forEach { gap ->
+                Text("${labels[gap.startMinute / 60]}\n\u22ee\n${labels[gap.endMinute / 60]}", color = p.muted,
+                    style = style, textAlign = TextAlign.End, maxLines = 3, softWrap = false)
+            }
+        },
         modifier = modifier.clearAndSetSemantics { },
     ) { measurables, constraints ->
         val placeables = measurables.map { it.measure(Constraints(maxWidth = constraints.maxWidth)) }
         layout(constraints.maxWidth, constraints.maxHeight) {
             placeables.forEachIndexed { i, placeable ->
-                val y = (i * hourPx - placeable.height / 2f).roundToInt()
+                val y = (positions[i] - placeable.height / 2f).roundToInt()
                     .coerceIn(0, (constraints.maxHeight - placeable.height).coerceAtLeast(0))
                 placeable.placeRelative((constraints.maxWidth - placeable.width - endPad).coerceAtLeast(0), y)
             }
@@ -417,7 +571,7 @@ private fun HourRail(labels: List<String>, style: TextStyle, hourPx: Float, modi
  * above a [dayCircle]-sized date), shrunk only when the column is narrower than the circle.
  */
 @Composable
-private fun TimelineDayHeader(day: LocalDate, isSelected: Boolean, isToday: Boolean, count: Int, f: Formats, modifier: Modifier, onClick: () -> Unit) {
+internal fun TimelineDayHeader(day: LocalDate, isSelected: Boolean, isToday: Boolean, count: Int, f: Formats, modifier: Modifier, onClick: () -> Unit) {
     val p = LocalPalette.current
     val context = LocalContext.current
     val description = dayDescription(context, f, day, isToday, count)
@@ -451,7 +605,7 @@ private fun TimelineDayHeader(day: LocalDate, isSelected: Boolean, isToday: Bool
 }
 
 @Composable
-private fun AllDayChip(event: CalendarEvent, day: LocalDate, f: Formats, highlight: Boolean, motion: Boolean, viewportHeight: Dp, onClick: () -> Unit) {
+internal fun AllDayChip(event: CalendarEvent, day: LocalDate, f: Formats, highlight: Boolean, motion: Boolean, viewportHeight: Dp, onClick: () -> Unit) {
     val context = LocalContext.current
     val title = event.displayTitle().ifBlank { stringResource(R.string.untitled) }
     val status = absenceStatus(event, f)
@@ -479,14 +633,18 @@ private fun AllDayChip(event: CalendarEvent, day: LocalDate, f: Formats, highlig
 }
 
 @Composable
-private fun DayColumn(
+internal fun DayColumn(
     day: LocalDate, events: List<CalendarEvent>, zone: ZoneId, minMinutes: Int, hour: Dp, minBlockWidth: Dp, tint: Boolean,
     f: Formats, compact: CompactTimes, style: TextStyle, highlighted: String?, motion: Boolean, modifier: Modifier,
     onOpen: (CalendarEvent) -> Unit, onNew: (LocalDate) -> Unit, onOverflow: (LocalDate, List<CalendarEvent>) -> Unit,
+    axis: TimelineAxis? = null,
 ) {
     val p = LocalPalette.current
     val addLabel = stringResource(R.string.action_add_event)
     val clusters = remember(events, day, zone, minMinutes) { packTimeline(events, day, zone, minMinutes) }
+    val density = LocalDensity.current
+    val hourPx = with(density) { hour.toPx() }
+    val yAxis = axis ?: remember(hourPx) { TimelineAxis(hourPx, emptyList()) }
     BoxWithConstraints(
         modifier.then(if (tint) Modifier.background(p.ink.copy(alpha = if (p.dark) 0.04f else 0.03f)) else Modifier)
             .clickable(onClickLabel = addLabel, role = Role.Button) { onNew(day) },
@@ -503,7 +661,8 @@ private fun DayColumn(
                 } else {
                     EventBlock(
                         b.event, day, zone, f, compact, style, highlighted == b.event.key(), motion, b.end - b.start,
-                        Modifier.offset(x = width * b.col, y = hour * (b.start / 60f)).width(width).height(hour * ((b.end - b.start) / 60f)),
+                        Modifier.offset(x = width * b.col, y = with(density) { yAxis.minuteToY(b.start).toDp() })
+                            .width(width).height(with(density) { (yAxis.minuteToY(b.end) - yAxis.minuteToY(b.start)).toDp() }),
                     ) { onOpen(b.event) }
                 }
             }
@@ -512,7 +671,8 @@ private fun DayColumn(
                 val end = hidden.maxOf { it.end }
                 OverflowBlock(
                     hidden.size,
-                    Modifier.offset(x = width * (maxCols - 1), y = hour * (start / 60f)).width(width).height(hour * ((end - start) / 60f)),
+                    Modifier.offset(x = width * (maxCols - 1), y = with(density) { yAxis.minuteToY(start).toDp() })
+                        .width(width).height(with(density) { (yAxis.minuteToY(end) - yAxis.minuteToY(start)).toDp() }),
                 ) { onOverflow(day, hidden.map { it.event }) }
             }
         }
@@ -529,10 +689,9 @@ private fun blockTime(context: android.content.Context, event: CalendarEvent, da
 }
 
 /**
- * A timed event as a solid block, read from the top: the title, any teacher absence, the time, then the rooms. The
- * title and absence take priority in narrow columns; a compact one-line time follows when space permits. The rest
- * of the title and the rooms fill what is left. Missed periods get a bar on the start edge covering the missed time. The spoken
- * description always has the full title, absence, time and rooms.
+ * Centers the available label vertically. Titles may be shortened; secondary fields appear only when they fit in
+ * full, and room codes never break. Very short slots keep a colored, accessible target at their exact start.
+ * Missed periods get a bar on the start edge. The spoken description always has every field.
  */
 @Composable
 private fun EventBlock(
@@ -560,7 +719,7 @@ private fun EventBlock(
     val bar = 4.dp
     val measurer = rememberTextMeasurer()
     BoxWithConstraints(
-        modifier.padding(1.dp).clip(shape).background(colors.container)
+        modifier.padding(horizontal = 1.dp).clip(shape).background(colors.container)
             .then(colors.border?.let { Modifier.border(2.dp, it, shape) } ?: Modifier)
             .then(if (missed.isEmpty()) Modifier else Modifier.drawBehind {
                 val width = bar.toPx()
@@ -576,50 +735,59 @@ private fun EventBlock(
     ) {
         val density = LocalDensity.current
         val wide = maxWidth >= 96.dp
-        val titleStyle = (if (wide) typography.labelLarge else style)
+        val preferredStyle = if (wide) typography.bodyMedium else style
+        val preferredHeight = measurer.measure("Ag", preferredStyle, maxLines = 1, softWrap = false).size.height
+        val titleStyle = (if (with(density) { maxHeight.toPx() - 6.dp.toPx() } >= preferredHeight) preferredStyle else style)
             .copy(fontWeight = FontWeight.SemiBold, hyphens = Hyphens.Auto, lineBreak = LineBreak.Paragraph,
                 localeList = LocaleList(f.locale.toLanguageTag()))
-        val detailStyle = if (wide) typography.labelMedium else typography.labelSmall
+        val detailStyle = if (wide) typography.bodySmall else typography.labelSmall
         val statusStyle = detailStyle.copy(fontWeight = FontWeight.Bold)
         val padH = if (maxWidth < 72.dp) 3.dp else 5.dp
         val padStart = padH + if (missed.isEmpty()) 0.dp else bar
-        val padV = 3.dp
+        val padV = if (maxHeight < 28.dp) 1.dp else 3.dp
         val innerWidth = with(density) { (maxWidth - padH - padStart).roundToPx().coerceAtLeast(1) }
         val innerHeight = with(density) { (maxHeight - padV * 2).toPx() }
         fun measureText(text: String, textStyle: TextStyle) = measurer.measure(text, textStyle, constraints = Constraints(maxWidth = innerWidth))
         val titleLayout = remember(title, titleStyle, innerWidth) { measureText(title, titleStyle) }
-        val shownTime = remember(time, event.startMillis, zone, compact, detailStyle, innerWidth, wide) {
-            if (wide || measureText(time, detailStyle).lineCount == 1) time
-            else if (event.span(zone).multiDay) ""
-            else compact.time(Instant.ofEpochMilli(event.startMillis).atZone(zone).toLocalTime())
-                .takeIf { measureText(it, detailStyle).lineCount == 1 }.orEmpty()
+        fun wholeField(text: String, textStyle: TextStyle) = measureText(text, textStyle).takeUnless { it.hasVisualOverflow }
+        val timeLayout = remember(time, detailStyle, innerWidth) { wholeField(time, detailStyle) }
+        val statusLayout = remember(status, statusStyle, innerWidth) { status?.let { wholeField(it, statusStyle) } }
+        val roomLayout = remember(rooms, detailStyle, innerWidth) {
+            rooms.takeIf { it.isNotEmpty() }?.let {
+                measurer.measure(it, detailStyle, softWrap = false, constraints = Constraints(maxWidth = innerWidth))
+                    .takeUnless { layout -> layout.hasVisualOverflow }
+            }
         }
-        val timeLayout = remember(shownTime, detailStyle, innerWidth) { measureText(shownTime, detailStyle) }
-        val statusLayout = remember(status, statusStyle, innerWidth) { status?.let { measureText(it, statusStyle) } }
-        val roomLayout = remember(rooms, detailStyle, innerWidth) { rooms.takeIf { it.isNotEmpty() }?.let { measureText(it, detailStyle) } }
-        var left = innerHeight
+        var left = innerHeight.coerceAtLeast(0f)
         fun take(lines: Int, height: Float): Int {
             val line = height / lines.coerceAtLeast(1)
             val n = minOf(lines, (left / line).toInt()).coerceAtLeast(0)
             left -= n * line
             return n
         }
-        val firstTitle = maxOf(1, take(1, titleLayout.size.height.toFloat() / titleLayout.lineCount.coerceAtLeast(1)))
-        val statusLines = statusLayout?.let { take(it.lineCount, it.size.height.toFloat()) } ?: 0
+        fun takeWhole(height: Int): Boolean {
+            if (height > left) return false
+            left -= height
+            return true
+        }
+        val firstTitle = take(1, titleLayout.size.height.toFloat() / titleLayout.lineCount.coerceAtLeast(1))
+        val showStatus = firstTitle > 0 && statusLayout?.let { takeWhole(it.size.height) } == true
         val titleLine = titleLayout.size.height.toFloat() / titleLayout.lineCount.coerceAtLeast(1)
         val priorityTitle = minOf(if (wide) 1 else 2, titleLayout.lineCount - firstTitle)
         var titleLines = firstTitle + take(priorityTitle, titleLine * priorityTitle)
-        val timeLines = if (shownTime.isEmpty()) 0 else take(timeLayout.lineCount, timeLayout.size.height.toFloat())
+        val showTime = firstTitle > 0 && timeLayout?.let { takeWhole(it.size.height) } == true
         titleLines += take(titleLayout.lineCount - titleLines, titleLine * (titleLayout.lineCount - titleLines))
-        val roomLines = roomLayout?.let { take(minOf(2, it.lineCount), it.size.height.toFloat() / it.lineCount.coerceAtLeast(1) * minOf(2, it.lineCount)) } ?: 0
-        Column(Modifier.fillMaxSize().padding(start = padStart, end = padH, top = padV, bottom = padV)) {
-            Text(title, Modifier.fillMaxWidth(), color = colors.content, style = titleStyle, maxLines = titleLines, overflow = TextOverflow.Ellipsis)
-            if (status != null && statusLines > 0) Text(status, Modifier.fillMaxWidth(), color = colors.content, style = statusStyle,
-                maxLines = statusLines, overflow = TextOverflow.Ellipsis)
-            if (timeLines > 0) Text(shownTime, Modifier.fillMaxWidth(), color = colors.content, style = detailStyle,
-                maxLines = timeLines, overflow = TextOverflow.Ellipsis)
-            if (roomLines > 0) Text(rooms, Modifier.fillMaxWidth(), color = colors.content, style = detailStyle,
-                maxLines = roomLines, overflow = TextOverflow.Ellipsis)
+        val showRooms = firstTitle > 0 && roomLayout?.let { takeWhole(it.size.height) } == true
+        Column(Modifier.fillMaxSize().padding(start = padStart, end = padH, top = padV, bottom = padV),
+            verticalArrangement = Arrangement.Center) {
+            if (titleLines > 0) Text(title, Modifier.fillMaxWidth(), color = colors.content, style = titleStyle,
+                maxLines = titleLines, overflow = TextOverflow.Ellipsis)
+            if (showStatus && status != null) Text(status, Modifier.fillMaxWidth(), color = colors.content, style = statusStyle,
+                maxLines = statusLayout!!.lineCount, overflow = TextOverflow.Clip)
+            if (showTime) Text(time, Modifier.fillMaxWidth(), color = colors.content, style = detailStyle,
+                maxLines = timeLayout!!.lineCount, overflow = TextOverflow.Clip)
+            if (showRooms) Text(rooms, Modifier.fillMaxWidth(), color = colors.content, style = detailStyle,
+                maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
         }
     }
 }
@@ -632,9 +800,9 @@ private fun OverflowBlock(count: Int, modifier: Modifier, onClick: () -> Unit) {
         modifier.padding(1.dp).clip(RoundedCornerShape(6.dp)).border(1.dp, p.line, RoundedCornerShape(6.dp)).background(p.surface)
             .clickable(role = Role.Button, onClick = onClick)
             .clearAndSetSemantics { contentDescription = label; role = Role.Button },
-        contentAlignment = Alignment.TopCenter,
+        contentAlignment = Alignment.Center,
     ) {
-        Text("+$count", Modifier.padding(top = 4.dp), color = p.ink, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        Text("+$count", color = p.ink, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }
 
@@ -643,7 +811,10 @@ private fun OverflowBlock(count: Int, modifier: Modifier, onClick: () -> Unit) {
  * column. It is drawn above the events and ignores touches and accessibility, like the grid lines.
  */
 @Composable
-private fun NowLine(column: Dp, todayIndex: Int, dayCount: Int, hourPx: Float, modifier: Modifier) {
+internal fun NowLine(
+    column: Dp, todayIndex: Int, dayCount: Int, hourPx: Float, modifier: Modifier,
+    axis: TimelineAxis = TimelineAxis(hourPx, emptyList()),
+) {
     val p = LocalPalette.current
     val now by produceState(LocalTime.now()) {
         while (true) {
@@ -654,7 +825,7 @@ private fun NowLine(column: Dp, todayIndex: Int, dayCount: Int, hourPx: Float, m
     val ink = p.ink
     Spacer(
         modifier.clearAndSetSemantics { }.drawBehind {
-            val y = (now.hour * 60 + now.minute) / 60f * hourPx
+            val y = axis.minuteToY(now.hour * 60 + now.minute)
             val left = 0f
             val col = column.toPx()
             drawLine(ink.copy(alpha = 0.45f), Offset(startX(left), y), Offset(startX(left + col * dayCount), y), strokeWidth = 1.dp.toPx())
@@ -663,4 +834,48 @@ private fun NowLine(column: Dp, todayIndex: Int, dayCount: Int, hourPx: Float, m
             drawCircle(ink, radius = 4.dp.toPx(), center = Offset(startX(from), y))
         },
     )
+}
+
+
+internal fun shortTimelineEvents(events: List<CalendarEvent>, day: LocalDate, zone: ZoneId, minMinutes: Int): List<CalendarEvent> =
+    packTimeline(events.filter { !it.isTimelineBanner() }, day, zone, 1).flatMap { it.blocks }
+        .filter { it.end - it.start < minMinutes }.map { it.event }
+
+@Composable
+internal fun TimelineShortEventButton(count: Int, fullLabel: Boolean = false, onClick: () -> Unit) {
+    val label = LocalContext.current.resources.getQuantityString(R.plurals.timeline_short_event_count, count, count)
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth().height(48.dp).testTag("timeline_short_events")
+        .clearAndSetSemantics {
+            contentDescription = label
+            role = Role.Button
+            onClick { onClick(); true }
+        }) {
+        Text(if (fullLabel) label else "\u22ef $count", color = LocalPalette.current.ink,
+            style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+internal fun TimelineEventList(events: List<CalendarEvent>, f: Formats, onOpen: (CalendarEvent) -> Unit, onClose: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(onDismissRequest = onClose,
+        title = { Text(context.resources.getQuantityString(R.plurals.event_count, events.size, events.size)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                events.forEach { event ->
+                    TextButton(onClick = { onClose(); onOpen(event) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(12.dp)) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(event.displayTitle().ifBlank { context.getString(R.string.untitled) })
+                            val zone = ZoneId.systemDefault()
+                            val startDay = Instant.ofEpochMilli(event.startMillis).atZone(zone).toLocalDate()
+                            val endDay = Instant.ofEpochMilli(event.endMillis).atZone(zone).toLocalDate()
+                            val time = if (startDay == endDay) f.range(f.time(event.startMillis), f.time(event.endMillis))
+                                else f.range("${f.dayLong(startDay)} ${f.time(event.startMillis)}", "${f.dayLong(endDay)} ${f.time(event.endMillis)}")
+                            Text(time, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }, confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.action_close)) } })
 }

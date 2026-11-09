@@ -74,7 +74,7 @@ internal fun FullMonthGrid(
     val density = LocalDensity.current
     val start = remember(month, mondayFirst) { gridStart(month, mondayFirst) }
     val dates = remember(start) { List(42) { start.plusDays(it.toLong()) } }
-    val monthDirection = todayDirection(today, month.atDay(1), month.atEndOfMonth())
+    val monthDirection = horizontalTodayDirection(today, month.atDay(1), month.atEndOfMonth())
     Column(modifier.fillMaxSize().padding(horizontal = 2.dp).testTag("calendar_full_month")) {
         Box(Modifier.weight(1f).fillMaxWidth().testTag("calendar_grid")) {
             val scrolls = row * 6 > viewportHeight
