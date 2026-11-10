@@ -1,5 +1,46 @@
 # Calendar usability refinement
 
+## 0.6.7: direct selection and timeline scale
+
+Day and Week start with List. The preset-owned Day timeline from earlier versions
+returns to List once; custom and retired Schedule layouts retain their choices.
+Appearance exposes Day layout and separate Day/Week timeline zoom levels from
+50% to 200%. The compact 100% scale is 64dp per hour for both timeline implementations.
+Zoom changes time spacing while retaining the system font size. The viewed minute is
+captured before measurement can clamp the old pixel offset to a shorter grid. The
+new axis restores that minute before revealing its events; explicit navigation keeps
+priority over an older remap. Narrow columns still
+shorten text; wide blocks have larger inner padding. Day omits the whole-column tint.
+
+Explicit date selection lands directly at its destination. Finger paging and flings
+retain their motion. Compose's
+[requestScrollToPage](https://developer.android.com/reference/kotlin/androidx/compose/foundation/pager/PagerState)
+and [requestScrollToItem](https://developer.android.com/reference/kotlin/androidx/compose/foundation/lazy/LazyListState)
+apply selection during measurement, keeping the date header and content aligned.
+Initial focus is positioned before revealing event content rather than scrolling past
+unrelated hours. Loading errors release the visibility gate and retain retry access.
+The older animated-focus implementation described below is superseded.
+
+Device checks also reproduced sideways diagonals scrolling the list vertically instead
+of changing its period. Bounded Month agendas, Week lists and Day lists use the existing
+Initial-pass direction handler: a clear sideways drag wins before the vertical child,
+while a vertical-first gesture keeps its ownership. Neighbors prepare ahead of a drag
+with motion enabled or disabled, and external date changes clear an unfinished offset
+before drawing. List paging settles with the same spring as the native grid pager;
+timelines retain their native pager so their readable columns can scroll sideways.
+Each list page retains its saveable state by absolute period, including after a far
+jump removes its composition, so returning restores the user's scroll position.
+
+Computer connection reports whether this phone has a VPN address in the range
+Tailscale uses. It refreshes while visible and pauses in the background using
+[repeatOnLifecycle](https://developer.android.com/topic/libraries/architecture/coroutines#repeatonlifecycle).
+[100.64.0.0/10](https://tailscale.com/docs/concepts/tailscale-ip-addresses) is shared
+address space, so the UI says VPN address detected rather than promising Tailscale
+identity, a reachable computer, or a working end-to-end connection.
+Emulator frame measurements cannot establish zero stutter on a physical Fold5.
+
+## Earlier design record
+
 Research and design decisions through 0.6.4, checked 2026-11-08. These are product decisions
 informed by documentation and the reported screenshots, not results of a user study.
 

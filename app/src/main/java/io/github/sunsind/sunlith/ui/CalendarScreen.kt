@@ -26,7 +26,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -735,7 +734,7 @@ private fun MonthBody(c: CalendarContext, modifier: Modifier) {
         return
     }
     if (vm.agendaRange != "continuous") {
-        PagedPeriod(c.swipe, c.period, modifier) { absolute ->
+        SlidingPeriod(c.swipe, c.period, modifier) { absolute ->
             val d = rememberPeriodDate(c, absolute)
             val active = absolute == c.period
             CollapsingHeader(c.collapse, Modifier.fillMaxSize(), header = { MonthHeader(c, d, active) }) {
@@ -797,7 +796,7 @@ private fun WeekBody(c: CalendarContext, modifier: Modifier) {
         }
         return
     }
-    PagedPeriod(c.swipe, c.period, modifier) { absolute ->
+    SlidingPeriod(c.swipe, c.period, modifier) { absolute ->
         val d = rememberPeriodDate(c, absolute)
         val active = absolute == c.period
         CollapsingHeader(c.collapse, Modifier.fillMaxSize(), header = {
@@ -817,6 +816,7 @@ private fun WeekBody(c: CalendarContext, modifier: Modifier) {
 @Composable
 private fun DayBody(c: CalendarContext, modifier: Modifier) {
     if (c.vm.dayLayout == "schedule") DayPeriod(c, modifier, c.vm.selectedDate, true)
+    else if (c.vm.dayLayout == "cards") SlidingPeriod(c.swipe, c.period, modifier) { absolute -> DayPeriod(c, Modifier.fillMaxSize(), rememberPeriodDate(c, absolute), absolute == c.period) }
     else PagedPeriod(c.swipe, c.period, modifier) { absolute -> DayPeriod(c, Modifier.fillMaxSize(), rememberPeriodDate(c, absolute), absolute == c.period) }
 }
 
@@ -848,7 +848,8 @@ private fun DayPeriod(c: CalendarContext, modifier: Modifier, date: LocalDate, a
 private fun DayCards(c: CalendarContext, day: LocalDate, active: Boolean) {
     val vm = c.vm
     if (!vm.coversRange(day, day)) {
-        if (active && vm.loadError == null) CalendarLoading() else Box(Modifier.fillMaxSize())
+        if (active && vm.loadError != null) StatusCards(vm, Modifier.padding(12.dp))
+        else if (active) CalendarLoading() else Box(Modifier.fillMaxSize())
         return
     }
     val eventsOn = rememberDayEvents(vm, day, day)
@@ -890,6 +891,8 @@ private fun TimelinePeriod(c: CalendarContext, days: List<LocalDate>, k: Int, sh
             // Columns stay readable even when period swiping is disabled.
             allowHorizontalScroll = true,
             groupEmptyHours = showHeaders && vm.groupEmptyHours,
+            zoomPercent = if (showHeaders) vm.weekTimelineZoom else vm.dayTimelineZoom,
+            tintToday = showHeaders,
             sharedMinute = c.timelineMinute,
             handledTodayRequest = c.timelineTodayHandled,
             onDirectionChanged = { if (k == 0 && showHeaders) c.viewport.report(owner, it) },
@@ -1173,6 +1176,7 @@ private fun AgendaList(
     }
     var focusTop by remember(scheduleFocus) { mutableFloatStateOf(Float.NaN) }
     var viewportTop by remember { mutableFloatStateOf(0f) }
+    var focusPositioned by remember(scheduleFocus) { mutableStateOf(scheduleFocus == null) }
     var focusedEvent by remember { mutableStateOf<String?>(null) }
     // A restored Today page must handle a newer request; other pages keep their saved scroll.
     var savedRequest by rememberSaveable { mutableIntStateOf(vm.todayRequest) }
@@ -1180,7 +1184,6 @@ private fun AgendaList(
         mutableStateOf(selected to if (selected == today && savedRequest < vm.todayRequest) savedRequest else vm.todayRequest)
     }
     var pending by remember { mutableStateOf<LocalDate?>(null) }
-    var animateNavigation by remember { mutableStateOf(c.motion) }
     val navigation = selected to vm.todayRequest
     val previousFrom = remember { arrayOf(from) }
     if (continuous && previousFrom[0] != from) {
@@ -1195,8 +1198,8 @@ private fun AgendaList(
             }
         }
     }
-    val focusLead = with(LocalDensity.current) { 48.dp.toPx() }
     LaunchedEffect(focusedEvent) { if (focusedEvent != null) { delay(1800); focusedEvent = null } }
+    val focusLead = with(LocalDensity.current) { 48.dp.toPx() }
     LaunchedEffect(scheduleFocus, focusReady) {
         val request = scheduleFocus ?: return@LaunchedEffect
         if (!focusReady) return@LaunchedEffect
@@ -1205,38 +1208,35 @@ private fun AgendaList(
         pending = null
         request.start()
         try {
-            awaitFocusStart(c.motion)
             if (focusEvent != null) {
                 val top = withTimeoutOrNull(1_500) { snapshotFlow { focusTop }.first { it.isFinite() } }
                 if (top == null) return@LaunchedEffect
-                val distance = (top - viewportTop - focusLead).coerceAtLeast(0f)
-                val viewport = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
-                if (c.motion) listState.animateScrollBy(distance, tween(focusScrollDuration(distance, viewport)))
-                else listState.scrollBy(distance)
+                listState.scrollBy((top - viewportTop - focusLead).coerceAtLeast(0f))
             }
+            focusPositioned = true
             focusedEvent = focusEvent?.key()
-        } finally { c.onFocusHandled(request) }
+        } finally { focusPositioned = true; c.onFocusHandled(request) }
     }
     if (active) {
         SideEffect { c.collapse.canExpand = { listState.firstVisibleItemIndex <= targetIndex(rows, selected).coerceAtLeast(0) } }
         DisposableEffect(c.collapse) { onDispose { c.collapse.canExpand = { true } } }
     }
 
-    LaunchedEffect(navigation) {
-        if (!active || navigation == handled) return@LaunchedEffect
-        animateNavigation = c.motion && !(continuous && vm.viewMode == ViewMode.Month &&
-            YearMonth.from(handled.first) != YearMonth.from(selected))
+    if (active && navigation != handled) SideEffect {
         handled = navigation
         savedRequest = navigation.second
-        pending = selected.takeIf { scheduleFocus == null }
+        val row = if (scheduleFocus == null && selected in from..to) targetIndex(rows, selected) else -1
+        if (row >= 0) {
+            // Selection is a change of date, not a scroll past every intervening event.
+            listState.requestScrollToItem(row)
+            pending = null
+        } else pending = selected.takeIf { scheduleFocus == null }
     }
-    LaunchedEffect(pending, rows, scheduleFocus) {
-        if (scheduleFocus != null) return@LaunchedEffect
-        val target = pending ?: return@LaunchedEffect
-        if (target.isBefore(from) || target.isAfter(to)) return@LaunchedEffect
+    val target = pending
+    if (target != null && scheduleFocus == null && target in from..to) SideEffect {
         val row = targetIndex(rows, target)
         if (row >= 0) {
-            if (animateNavigation) listState.animateScrollToItem(row) else listState.requestScrollToItem(row)
+            listState.requestScrollToItem(row)
         }
         pending = null
     }
@@ -1302,7 +1302,10 @@ private fun AgendaList(
     }
 
     val listContent: @Composable (Dp) -> Unit = { gutter ->
-        Box(Modifier.fillMaxSize().then(if (compact) Modifier.testTag("calendar_schedule") else Modifier)) {
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            alpha = if (focusPositioned || vm.loadError != null || !vm.hasPermission) 1f else 0f
+        }
+            .then(if (compact) Modifier.testTag("calendar_schedule") else Modifier)) {
             LazyColumn(
                 Modifier.fillMaxSize().testTag("calendar_agenda").onGloballyPositioned { viewportTop = it.positionInRoot().y }, state = listState,
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 104.dp),
@@ -1529,7 +1532,11 @@ private fun DayView(vm: SunlithViewModel, day: LocalDate, events: List<CalendarE
     val zone = ZoneId.systemDefault()
     val allDay = events.filter { it.allDay || it.span(zone).multiDay }
     val timed = events - allDay.toSet()
-    val listState = rememberLazyListState()
+    val focusEvent = remember(focus, events, day, zone) { focus?.let { focusTarget(events, day, zone) } }
+    val firstRow = (allDay + timed).indexOfFirst { it.key() == focusEvent?.key() }
+        .takeIf { it >= 0 && focusEvent?.isTimelineBanner() == false }
+        ?.let { it + if (showStatus) 2 else 1 } ?: 0
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = firstRow)
     var focusedEvent by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(focusedEvent) { if (focusedEvent != null) { delay(1800); focusedEvent = null } }
     LaunchedEffect(focus) {
@@ -1537,12 +1544,11 @@ private fun DayView(vm: SunlithViewModel, day: LocalDate, events: List<CalendarE
         if (request.date != day) return@LaunchedEffect
         request.start()
         try {
-            awaitFocusStart(motion)
             val target = focusTarget(events, day, zone)
             val index = (allDay + timed).indexOfFirst { it.key() == target?.key() }
             if (index >= 0 && target?.isTimelineBanner() == false) {
                 val row = index + if (showStatus) 2 else 1
-                listState.scrollToFocus(row, motion)
+                listState.scrollToItem(row)
                 focusedEvent = target?.key()
             }
         } finally { onFocusHandled(request) }

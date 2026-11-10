@@ -13,7 +13,7 @@
     <string name="connection_setup_step3_title">3. Send the connection file</string>
     <string name="connection_setup_step3_body">Tap Connect computer. Choose Tailscale, then your computer in the share list. Finish with the computer setup guide below.</string>
     <string name="connection_setup_address_one">This phone: %1$s (%2$s)</string>
-    <string name="connection_setup_address_tailscale">Tailscale</string>
+    <string name="connection_setup_address_tailscale">VPN (Tailscale range)</string>
     <string name="connection_setup_address_wifi">Local network</string>
     <string name="connection_setup_address_other_vpn">VPN</string>
     <string name="connection_setup_open_calendar">Open calendar</string>

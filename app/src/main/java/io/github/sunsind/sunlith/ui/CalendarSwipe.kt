@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -143,7 +144,7 @@ internal class PeriodSwipeState(private val scope: CoroutineScope) {
         job?.cancel()
         job = scope.launch {
             if (motion && offset != target) {
-                animate(offset, target, animationSpec = tween(220, easing = FastOutSlowInEasing)) { value, _ -> offset = value }
+                animate(offset, target, animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy)) { value, _ -> offset = value }
             }
             if (dir != 0) onCommit(dir)
             offset = 0f
@@ -245,9 +246,17 @@ internal fun SlidingPeriod(
     modifier: Modifier = Modifier,
     content: @Composable (Long) -> Unit,
 ) {
+    val savedPages = rememberSaveableStateHolder()
     var prepared by remember { mutableStateOf(setOf(period)) }
-    LaunchedEffect(period, state.enabled, state.motion) {
-        if (state.enabled && state.motion) {
+    val previousPeriod = remember(state) { longArrayOf(period) }
+    SideEffect {
+        if (previousPeriod[0] != period) {
+            previousPeriod[0] = period
+            if (state.offset != 0f) state.cancel()
+        }
+    }
+    LaunchedEffect(period, state.enabled) {
+        if (state.enabled) {
             for (next in listOf(period - 1, period + 1)) {
                 withFrameNanos { }
                 withFrameNanos { }
@@ -260,12 +269,14 @@ internal fun SlidingPeriod(
             val dir = (absolute - period).toInt()
             key(absolute) {
                 if (dir == 0 || state.peek == dir || absolute in prepared) {
-                    Box(
-                        (if (dir == 0) Modifier else Modifier.matchParentSize()).graphicsLayer {
-                            val side = if ((dir > 0) != state.rtl) 1f else -1f
-                            translationX = state.offset + if (dir == 0) 0f else side * state.width
-                        }.then(if (dir == 0) Modifier else Modifier.clearAndSetSemantics { }),
-                    ) { content(absolute) }
+                    savedPages.SaveableStateProvider(absolute) {
+                        Box(
+                            (if (dir == 0) Modifier else Modifier.matchParentSize()).graphicsLayer {
+                                val side = if ((dir > 0) != state.rtl) 1f else -1f
+                                translationX = state.offset + if (dir == 0) 0f else side * state.width
+                            }.then(if (dir == 0) Modifier else Modifier.clearAndSetSemantics { }),
+                        ) { content(absolute) }
+                    }
                 }
             }
         }
@@ -286,22 +297,27 @@ internal fun PagedPeriod(
     val pager = rememberPagerState(initialPage = expected, pageCount = { 2_000_001 })
     val accepted = remember(pager) { intArrayOf(expected) }
     val syncing = remember(pager) { booleanArrayOf(false) }
+    val firstSync = remember(pager) { booleanArrayOf(true) }
     DisposableEffect(state, pager) {
         state.pager = pager
         onDispose { if (state.pager === pager) state.pager = null }
     }
-    LaunchedEffect(period) {
-        if (expected != accepted[0]) {
+    SideEffect {
+        if (firstSync[0] || expected != accepted[0]) {
+            firstSync[0] = false
             syncing[0] = true
             accepted[0] = expected
             state.start()
-            pager.scrollToPage(expected)
-            syncing[0] = false
+            // A tapped date and its page must land in the same measure pass. A launched scroll can
+            // leave the previous page under the newly selected date for the first rendered frame.
+            pager.requestScrollToPage(expected)
         }
     }
     LaunchedEffect(pager) {
         snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { settled ->
-            if (!syncing[0]) {
+            if (syncing[0]) {
+                if (settled == accepted[0]) syncing[0] = false
+            } else {
                 val delta = settled - accepted[0]
                 accepted[0] = settled
                 if (delta != 0) state.onCommit(delta)

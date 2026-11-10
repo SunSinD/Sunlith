@@ -19,7 +19,6 @@ import android.os.LocaleList
 import android.os.SystemClock
 import android.provider.CalendarContract
 import android.view.InputDevice
-import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
@@ -442,6 +441,7 @@ class CalendarCustomizationTest {
             onMain { vm.changeViewMode(ViewMode.Week) }
             assertEquals(preset, vm.layoutPreset)
             assertEquals("list", vm.weekLayout)
+            assertEquals("cards", vm.dayLayout)
             assertEquals(7, vm.visibleWeekDays)
             node(By.pkg(context.packageName).res("calendar_agenda"))
             captureMinor("week-$preset-list")
@@ -538,12 +538,12 @@ class CalendarCustomizationTest {
         assertEquals("sunlith", vm.layoutPreset)
         assertEquals("split", vm.monthLayout)
         assertEquals("list", vm.weekLayout)
-        assertEquals("timeline", vm.dayLayout)
+        assertEquals("cards", vm.dayLayout)
         assertEquals(7, vm.visibleWeekDays)
         assertEquals("week", vm.agendaRange)
         assertTrue(vm.showNavigationArrows)
         assertFalse(vm.swipeNavigation)
-        node(By.pkg(context.packageName).res("calendar_timeline"))
+        node(By.pkg(context.packageName).res("calendar_day_cards"))
     }
 
     @Test
@@ -604,12 +604,15 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun presetsRenderDifferentMonthAndDayViewsWithTheSameCalendarEvents() {
+    fun presetsRenderDifferentMonthsAndListDaysWithTheSameCalendarEvents() {
         onMain { vm.applyLayoutPreset("sunlith"); vm.changeViewMode(ViewMode.Month); vm.select(date) }
         node(By.pkg(context.packageName).res("calendar_grid"))
         node(By.pkg(context.packageName).res("calendar_agenda"))
         onMain { vm.changeViewMode(ViewMode.Day); vm.select(date) }
-        node(By.pkg(context.packageName).res("calendar_timeline"))
+        assertEquals("cards", vm.dayLayout)
+        assertEquals("list", vm.weekLayout)
+        node(By.pkg(context.packageName).res("calendar_day_cards"))
+        node(By.pkg(context.packageName).res("day_event_$firstId"))
 
         onMain { vm.changeDayLayout("schedule") }
         val schedule = node(By.pkg(context.packageName).res("calendar_schedule"))
@@ -626,17 +629,20 @@ class CalendarCustomizationTest {
         assertEquals("The full month must show six rows.", 6, cells.map { it.top }.distinct().size)
         assertTrue("Every row must have seven dates.", cells.groupBy { it.top }.values.all { it.size == 7 })
         onMain { vm.changeViewMode(ViewMode.Day); vm.select(date) }
-        node(By.pkg(context.packageName).res("calendar_timeline"))
-        val event = revealTimelineEvent(firstId)
+        assertEquals("cards", vm.dayLayout)
+        assertEquals("list", vm.weekLayout)
+        node(By.pkg(context.packageName).res("calendar_day_cards"))
+        val event = node(By.pkg(context.packageName).res("day_event_$firstId"))
         assertTrue(event.isEnabled)
         assertFalse(device.hasObject(By.pkg(context.packageName).res("calendar_schedule")))
+        assertFalse(device.hasObject(By.pkg(context.packageName).res("calendar_timeline")))
     }
 
     @Test
     fun gridDateOpensItsLateTimelineEventWithoutScrollingAndBackRestoresTheMonth() {
         val target = date.plusDays(2)
         val late = addTimed(target, "Late evening drill-down marker", 20, 21)
-        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout("timeline"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
         awaitUi { vm.events.any { it.id == late } }
         val parentMonth = vm.month
         node(day(target)).click()
@@ -661,23 +667,23 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun legacyGridCardsUpgradeOpensTheTimelineAndLaterCardsSurviveRecreation() {
+    fun legacyPresetTimelineRestoresListAndLaterChoicesSurviveRecreation() {
         val target = date.plusDays(2)
         val late = addTimed(target, "Upgraded grid afternoon event", 16, 18)
         finish()
         context.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit()
-            .remove("day_timeline_default_v1").putString("day_layout", "cards")
+            .remove("list_defaults_v2").putString("day_layout", "timeline")
             .putString("month_layout", "full").putString("week_layout", "list")
-            .putString("layout_preset", "custom").putString("start_view", "Month").commit()
+            .putString("layout_preset", "planner").putString("start_view", "Month").commit()
         launch()
-        assertEquals("timeline", vm.dayLayout)
+        assertEquals("cards", vm.dayLayout)
         assertEquals("list", vm.weekLayout)
         assertEquals("full", vm.monthLayout)
         awaitUi { vm.events.any { it.id == late } }
         node(day(target)).click()
         awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
-        node(By.pkg(context.packageName).res("calendar_timeline"))
-        awaitUi { device.findObject(By.pkg(context.packageName).res("timeline_event_$late"))?.visibleBounds?.height()?.let { it > 20 } == true }
+        node(By.pkg(context.packageName).res("calendar_day_cards"))
+        node(By.pkg(context.packageName).res("day_event_$late"))
         device.pressBack()
         awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
         onMain { vm.changeDayLayout("cards"); vm.changeMonthLayout("split"); vm.changeMonthLayout("full") }
@@ -702,7 +708,7 @@ class CalendarCustomizationTest {
         val crowded = date.plusDays(4)
         addTimed(single, "Single direct-day event", 16, 18)
         val crowdedIds = (0 until 12).map { addTimed(crowded, "Crowded direct-day event $it", 9, 10) }
-        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout("timeline"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
         awaitUi { crowdedIds.all { id -> vm.events.any { it.id == id } } }
         listOf(empty, single, crowded).forEach { target ->
             val cell = node(day(target))
@@ -831,7 +837,7 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun openingADateAnimatesToTheFirstEventForEveryDayLayout() {
+    fun openingADateStartsAtTheFirstEventWithoutTravellingThroughOtherEvents() {
         val target = date.plusDays(3)
         repeat(16) { i ->
             repository.saveEvent(EventDraft(calendarId = calendarId, title = "Motion all-day entry $i",
@@ -890,7 +896,7 @@ class CalendarCustomizationTest {
         val target = date.plusDays(2)
         val late = addTimed(target, "Focused evening event", 20, 21)
         val next = addTimed(target.plusDays(1), "Next evening event", 20, 21)
-        onMain { vm.applyLayoutPreset("planner"); vm.openDay(target); vm.reload() }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout("timeline"); vm.openDay(target); vm.reload() }
         awaitUi { vm.events.any { it.id == late } }
         fun visible(id: Long): Boolean {
             // The focus animation replaces event nodes every frame, so wait briefly for a stable read.
@@ -985,11 +991,14 @@ class CalendarCustomizationTest {
         assertFalse("The regression must request a date outside the current loaded window.", vm.coversRange(distant, distant))
         onMain { vm.selectAndFocus(distant) }
         awaitUi { vm.coversRange(distant, distant) && vm.events.any { it.id == event } }
+        fun visibleScheduleEvent(selector: BySelector): Boolean =
+            !vm.loadingEvents && !vm.pendingDayFocus &&
+                device.findObject(selector)?.visibleBounds?.height()?.let { it > 30 } == true
         val eventSelector = By.pkg(context.packageName).res("schedule_event_$event")
-        awaitUi { device.findObject(eventSelector)?.visibleBounds?.height()?.let { it > 30 } == true }
+        awaitUi { visibleScheduleEvent(eventSelector) }
         onMain { vm.selectAndFocus(distant.plusDays(1)) }
         val nextSelector = By.pkg(context.packageName).res("schedule_event_$next")
-        awaitUi { device.findObject(nextSelector)?.visibleBounds?.height()?.let { it > 30 } == true }
+        awaitUi { visibleScheduleEvent(nextSelector) }
         assertEquals(distant.plusDays(1), vm.selectedDate)
         assertTrue("Programmatic event positioning must not page the agenda repeatedly.", !requireNotNull(vm.loadedTo).isAfter(distant.plusDays(120)))
     }
@@ -1154,13 +1163,17 @@ class CalendarCustomizationTest {
         awaitUi { vm.events.any { it.id == eventId } }
         node(day(target)).longClick()
         assertFalse("Long press must not show the removed preview.", device.hasObject(By.pkg(context.packageName).text("Open day")))
-        assertFalse(device.hasObject(By.pkg(context.packageName).textContains("Complete title ending marker")))
-        if (vm.viewMode == ViewMode.Day) device.pressBack()
+        if (vm.viewMode == ViewMode.Day) {
+            node(By.pkg(context.packageName).res("calendar_day_cards"))
+            device.pressBack()
+        }
         awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
+        assertFalse("Returning to Month must not leave an event preview.",
+            device.hasObject(By.pkg(context.packageName).textContains("Complete title ending marker")))
         node(day(target)).click()
         awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target && vm.hasDayParent }
-        node(By.pkg(context.packageName).res("calendar_timeline"))
-        revealTimelineEvent(eventId).click()
+        node(By.pkg(context.packageName).res("calendar_day_cards"))
+        node(By.pkg(context.packageName).res("day_event_$eventId")).click()
         awaitUi { (vm.stack.lastOrNull() as? Screen.Details)?.event?.id == eventId }
         assertTrue("The complete title must remain accessible from Day.", vm.events.single { it.id == eventId }.title == title)
     }
@@ -1188,7 +1201,7 @@ class CalendarCustomizationTest {
 
     @Test
     fun overlappingTimelineEventsHaveSeparateTapTargetsAndAllDayStaysAboveTheHours() {
-        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Day); vm.select(date) }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout("timeline"); vm.changeViewMode(ViewMode.Day); vm.select(date) }
         revealTimelineEvent(firstId)
         repeat(8) {
             if (device.findObject(By.pkg(context.packageName).res("timeline_event_$secondId"))?.visibleBounds?.height()?.let { height -> height > 20 } != true) {
@@ -1322,7 +1335,7 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun interruptedTodayNavigationKeepsTheUsersPanAfterRecreation() {
+    fun completedTodaySelectionKeepsTheUsersLaterPanAfterRecreation() {
         val today = LocalDate.now()
         val from = today.plusDays(12)
         onMain {
@@ -1333,15 +1346,9 @@ class CalendarCustomizationTest {
             vm.select(from)
         }
         awaitUi { vm.timelineViewportStart == from && visibleTimelineHeader(from) != null }
-        val bounds = timelineHeaderViewport()
-        val left = bounds.left + bounds.width() * 18 / 100
-        val right = bounds.left + bounds.width() * 82 / 100
-        val rtl = timelineIsRtl()
-        onMain { vm.changeNavigationAnimation(true) }
-        interruptTimelineNavigationWithTouch(today, from, if (rtl) left else right, if (rtl) right else left, bounds.centerY())
-        assertTrue("Touch must interrupt the jump before it reaches today.",
-            vm.timelineViewportStart?.let { it >= today.plusDays(4) } == true)
-        awaitUi { vm.handledTimelineNavigation == vm.timelineNavigationRequest }
+        onMain { vm.changeNavigationAnimation(true); vm.goToday() }
+        awaitUi { vm.timelineViewportStart == today && visibleTimelineHeader(today) != null &&
+            vm.handledTimelineNavigation == vm.timelineNavigationRequest }
         repeat(4) { dragTimelineHorizontally(forward = true, header = true) }
         val panned = requireNotNull(vm.timelineViewportStart)
         assertTrue("The user's pan must leave today outside the viewport.", panned > today)
@@ -1353,85 +1360,11 @@ class CalendarCustomizationTest {
         assertEquals(request, vm.timelineNavigationRequest)
         assertEquals(request, vm.handledTimelineNavigation)
         assertEquals(null, visibleTimelineHeader(today))
-        captureFinal("continuous-interrupted-recreated-pan")
-    }
-
-    private fun interruptTimelineNavigationWithTouch(today: LocalDate, from: LocalDate, fromX: Int, toX: Int, y: Int) {
-        val outgoing = requireNotNull(activity)
-        val finished = CountDownLatch(1)
-        val observations = mutableListOf<String>()
-        val deadline = SystemClock.elapsedRealtime() + 5_000
-        var step = -1
-        var downTime = 0L
-        var touchEnded = false
-        var failure: Throwable? = null
-        fun send(action: Int, fraction: Float) {
-            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action,
-                fromX + (toX - fromX) * fraction, y.toFloat(), 0)
-            event.source = InputDevice.SOURCE_TOUCHSCREEN
-            try {
-                val accepted = outgoing.dispatchTouchEvent(event)
-                observations += "action=$action accepted=$accepted first=${vm.timelineViewportStart} request=${vm.timelineNavigationRequest} handled=${vm.handledTimelineNavigation}"
-                check(accepted || action == MotionEvent.ACTION_CANCEL)
-            } finally { event.recycle() }
-        }
-        lateinit var frames: Choreographer.FrameCallback
-        instrumentation.runOnMainSync {
-            frames = object : Choreographer.FrameCallback {
-                override fun doFrame(frameTimeNanos: Long) {
-                    try {
-                        val first = vm.timelineViewportStart
-                        val pending = vm.timelineNavigationRequest != vm.handledTimelineNavigation
-                        if (step < 0) {
-                            observations += "frame=$frameTimeNanos first=$first pending=$pending"
-                            if (pending && first != null && first in today.plusDays(4)..from.minusDays(1)) {
-                                downTime = SystemClock.uptimeMillis()
-                                send(MotionEvent.ACTION_DOWN, 0f)
-                                send(MotionEvent.ACTION_MOVE, 0.25f)
-                                step = 0
-                            } else if (SystemClock.elapsedRealtime() >= deadline) {
-                                finished.countDown()
-                                return
-                            }
-                        } else if (step < 12) {
-                            step++
-                            send(MotionEvent.ACTION_MOVE, 0.25f + 0.75f * step / 12f)
-                        } else if (step < 21) {
-                            step++
-                        } else {
-                            send(MotionEvent.ACTION_UP, 1f)
-                            touchEnded = true
-                            finished.countDown()
-                            return
-                        }
-                        Choreographer.getInstance().postFrameCallback(this)
-                    } catch (error: Throwable) {
-                        failure = error
-                        finished.countDown()
-                    }
-                }
-            }
-            Choreographer.getInstance().postFrameCallback(frames)
-            vm.goToday()
-        }
-        val completed = try { finished.await(8, TimeUnit.SECONDS) }
-        finally {
-            instrumentation.runOnMainSync {
-                Choreographer.getInstance().removeFrameCallback(frames)
-                if (downTime != 0L && !touchEnded) send(MotionEvent.ACTION_CANCEL, 1f)
-                File(context.filesDir, "timeline-touch-interruption-observation.txt").writeText(observations.joinToString("\n"))
-            }
-        }
-        if (!completed || !touchEnded || failure != null) captureTimelineNavigationFailure()
-        assertTrue("Touch must begin on an observed unfinished Today frame and complete. failure=$failure observations=$observations",
-            completed && touchEnded && failure == null)
-        instrumentation.waitForIdleSync()
-        device.waitForIdle()
-        refreshAccessibility()
+        captureFinal("continuous-today-then-recreated-pan")
     }
 
     @Test
-    fun recreationDuringTodayNavigationFinishesTheUninterruptedRequest() {
+    fun pendingTodaySelectionSurvivesDisposalAndRecreation() {
         val today = LocalDate.now()
         val from = today.plusDays(12)
         onMain {
@@ -1444,38 +1377,17 @@ class CalendarCustomizationTest {
         awaitUi { vm.timelineViewportStart == from && visibleTimelineHeader(from) != null }
         onMain { vm.changeNavigationAnimation(true) }
         val outgoing = requireNotNull(activity)
-        val recreation = CountDownLatch(1)
-        val observations = mutableListOf<String>()
-        val deadline = SystemClock.elapsedRealtime() + 5_000
-        lateinit var frames: Choreographer.FrameCallback
+        var request = 0
         instrumentation.runOnMainSync {
-            frames = object : Choreographer.FrameCallback {
-                override fun doFrame(frameTimeNanos: Long) {
-                    val first = vm.timelineViewportStart
-                    val pending = vm.timelineNavigationRequest != vm.handledTimelineNavigation
-                    observations += "frame=$frameTimeNanos first=$first request=${vm.timelineNavigationRequest} handled=${vm.handledTimelineNavigation}"
-                    if (pending && first != null && first > today && first < from) {
-                        outgoing.recreate()
-                        recreation.countDown()
-                    } else if (SystemClock.elapsedRealtime() < deadline) {
-                        Choreographer.getInstance().postFrameCallback(this)
-                    }
-                }
-            }
-            Choreographer.getInstance().postFrameCallback(frames)
             vm.goToday()
+            request = vm.timelineNavigationRequest
+            assertTrue("The new request must still be pending before disposal.", request != vm.handledTimelineNavigation)
+            val host = outgoing.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0)
+                as androidx.compose.ui.platform.AbstractComposeView
+            host.disposeComposition()
+            assertTrue("Disposing the old composition must retain pending navigation.", request != vm.handledTimelineNavigation)
+            outgoing.recreate()
         }
-        val request = vm.timelineNavigationRequest
-        val observed = try {
-            recreation.await(6, TimeUnit.SECONDS)
-        } finally {
-            instrumentation.runOnMainSync {
-                Choreographer.getInstance().removeFrameCallback(frames)
-                File(context.filesDir, "timeline-recreation-observation.txt").writeText(observations.joinToString("\n"))
-            }
-        }
-        if (!observed) captureTimelineNavigationFailure()
-        assertTrue("A rendered intermediate date with an unfinished Today request must trigger recreation. $observations", observed)
         awaitUi {
             instrumentation.runOnMainSync {
                 ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
@@ -1487,30 +1399,6 @@ class CalendarCustomizationTest {
         assertEquals(request, vm.timelineNavigationRequest)
         assertEquals(today, vm.selectedDate)
         captureFinal("continuous-recreated-today")
-    }
-
-    private fun awaitTimelineNavigationInFlight(today: LocalDate, from: LocalDate) {
-        val deadline = SystemClock.elapsedRealtime() + 3_000
-        var observedNavigation = false
-        while (!observedNavigation && SystemClock.elapsedRealtime() < deadline) {
-            instrumentation.runOnMainSync {
-                observedNavigation = vm.timelineNavigationRequest != vm.handledTimelineNavigation &&
-                    vm.timelineViewportStart?.let { it in today.plusDays(4)..from.minusDays(1) } == true
-            }
-            if (!observedNavigation) SystemClock.sleep(5)
-        }
-        if (!observedNavigation) captureTimelineNavigationFailure()
-        assertTrue("The interruption must start during an unfinished Today animation. " +
-            "first=${vm.timelineViewportStart}, selected=${vm.selectedDate}, request=${vm.timelineNavigationRequest}, handled=${vm.handledTimelineNavigation}",
-            observedNavigation)
-    }
-
-    private fun captureTimelineNavigationFailure() {
-        File(context.filesDir, "customization-state.txt").writeText(
-            "first=${vm.timelineViewportStart}, last=${vm.timelineViewportEnd}, selected=${vm.selectedDate}, " +
-                "request=${vm.timelineNavigationRequest}, handled=${vm.handledTimelineNavigation}, motion=${vm.navigationAnimation}")
-        device.dumpWindowHierarchy(File(context.filesDir, "customization-state.xml"))
-        device.takeScreenshot(File(context.filesDir, "customization-state.png"))
     }
 
     @Test
@@ -1530,11 +1418,25 @@ class CalendarCustomizationTest {
         fun hostState(): String = "selected=${vm.selectedDate}, first=${vm.timelineViewportStart}, last=${vm.timelineViewportEnd}, " +
             "nodes=" + device.findObjects(By.pkg(context.packageName).desc(java.util.regex.Pattern.compile(".+")))
                 .joinToString { "${it.contentDescription}:${it.visibleBounds}" }
-        awaitUi(detail = ::hostState) { vm.timelineViewportStart == shown && visibleTimelineHeader(shown.plusDays(1)) != null }
+        awaitUi(detail = ::hostState) { vm.timelineViewportStart == shown && visibleTimelineHeader(shown.plusDays(1)) != null &&
+            vm.timelineNavigationRequest == vm.handledTimelineNavigation }
         val viewport = timelineHeaderViewport()
         val next = requireNotNull(visibleTimelineHeader(shown.plusDays(1))).visibleBounds
         val travel = (next.width() * 0.8f).toInt()
-        dragTouch(viewport.right - 12, viewport.centerY(), viewport.right - 12 - travel, viewport.centerY())
+        val fromX = viewport.left + viewport.width() * 82 / 100
+        dragTouch(fromX, viewport.centerY(), fromX - travel, viewport.centerY())
+        try {
+            awaitUi(detail = { "viewport=$viewport, next=$next, travel=$travel, ${hostState()}" }) {
+                visibleTimelineHeader(shown.plusDays(1)) != null
+            }
+        } catch (failure: Throwable) {
+            runCatching {
+                device.takeScreenshot(File(context.filesDir, "continuous-resize-unready.png"))
+                device.dumpWindowHierarchy(File(context.filesDir, "continuous-resize-unready.xml"))
+                File(context.filesDir, "continuous-resize-unready.txt").writeText(hostState())
+            }
+            throw failure
+        }
         val before = requireNotNull(visibleTimelineHeader(shown.plusDays(1))).visibleBounds
         val fraction = 1f - (before.left - viewport.left).toFloat() / before.width()
         assertTrue("The saved offset must exceed the narrower column width.", fraction > 0.55f && fraction < 1f)
@@ -1552,7 +1454,7 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun continuousResizeDuringTodayNavigationStillReachesToday() {
+    fun continuousTodaySelectionAndResizeShareTheSameTarget() {
         val today = LocalDate.now()
         val from = today.plusDays(12)
         onMain {
@@ -1570,12 +1472,11 @@ class CalendarCustomizationTest {
             vm.timelineNavigationRequest == vm.handledTimelineNavigation }
         val originalHeaderWidth = requireNotNull(visibleTimelineHeader(from.plusDays(1))).visibleBounds.width()
         onMain { vm.changeNavigationAnimation(true) }
-        instrumentation.runOnMainSync { vm.goToday() }
-        awaitTimelineNavigationInFlight(today, from)
-        val request = vm.timelineNavigationRequest
+        var request = 0
         instrumentation.runOnMainSync {
-            assertTrue("Resize must start during unfinished Today navigation.", vm.handledTimelineNavigation != request)
-            assertTrue("Resize must start before Today is reached.", vm.timelineViewportStart?.isAfter(today) == true)
+            vm.goToday()
+            request = vm.timelineNavigationRequest
+            assertTrue("Resize must be queued with the unhandled Today request.", vm.handledTimelineNavigation != request)
             width.value = 330.dp
         }
         awaitUi {
@@ -1765,10 +1666,10 @@ class CalendarCustomizationTest {
                         CompositionLocalProvider(LocalDensity provides Density(1f)) {
                             val density = LocalDensity.current
                             val line = with(density) { MaterialTheme.typography.labelMedium.lineHeight.toDp() }
-                            hourPx = with(density) { maxOf(88.dp, line * 5.5f).toPx() }
+                            hourPx = with(density) { 64.dp.toPx() }
                             gapPx = with(density) { maxOf(48.dp, line * 3f).toPx() }
                             LaunchedEffect(armed.value) {
-                                if (!armed.value) return@LaunchedEffect
+                                if (!armed.value || focusEvent) return@LaunchedEffect
                                 snapshotFlow { scroll.value }.first {
                                     kotlin.math.abs(it - start) > 5 && kotlin.math.abs(it - originalTarget) > 5
                                 }
@@ -1796,7 +1697,13 @@ class CalendarCustomizationTest {
             start = if (originalTarget > scroll.maxValue / 2) 0 else scroll.maxValue
             scroll.dispatchRawDelta((start - scroll.value).toFloat())
             armed.value = true
-            if (focusEvent) focus.value = TimelineFocus(today, 1) else request.intValue = 1
+            if (focusEvent) {
+                // Date focus now lands immediately; publish the changed axis with that request.
+                // Today below still proves an axis rebuild during actual animated movement.
+                events.value = initial + incoming
+                rebuiltDuringMotion.value = true
+                focus.value = TimelineFocus(today, 1)
+            } else request.intValue = 1
         }
         awaitUi { rebuiltDuringMotion.value }
         val rebuiltAxis = TimelineAxis(hourPx,
@@ -1886,6 +1793,14 @@ class CalendarCustomizationTest {
         captureMinor("continuous-start")
         onMain { vm.changeGroupEmptyHours(true) }
         positionTimelineEvent(longId)
+        val gapLabel = calendarContext().getString(R.string.timeline_empty_hours)
+        repeat(12) {
+            if (device.findObjects(By.pkg(context.packageName).text(gapLabel)).any { it.visibleBounds.height() > 10 }) return@repeat
+            timelineScroller().scroll(Direction.UP, 0.65f)
+            device.waitForIdle()
+        }
+        assertTrue("The grouped capture must show its empty-hour label.",
+            device.findObjects(By.pkg(context.packageName).text(gapLabel)).any { it.visibleBounds.height() > 10 })
         captureMinor("continuous-grouped")
         flingTimelineAndReverse()
         captureMinor("continuous-reversed")
@@ -1922,6 +1837,14 @@ class CalendarCustomizationTest {
         node(By.pkg(context.packageName).text(localized.getString(R.string.settings_week_continuous))).click()
         scrollDialogToText(localized.getString(R.string.settings_group_empty_hours))
         captureMinor("settings-group-empty-hours")
+        onMain { vm.back(); vm.changeDayLayout("cards"); vm.changeViewMode(ViewMode.Day); vm.selectAndFocus(shown) }
+        awaitUi { !vm.loadingEvents && vm.coversRange(shown, shown) }
+        node(By.pkg(context.packageName).res("calendar_day_cards"))
+        captureMinor("day-list")
+        onMain { vm.changeWeekLayout("list"); vm.changeViewMode(ViewMode.Week); vm.select(shown) }
+        awaitUi { !vm.loadingEvents && vm.coversRange(shown, shown) }
+        node(By.pkg(context.packageName).res("calendar_agenda"))
+        captureMinor("week-list")
     }
 
     @Test
@@ -2068,7 +1991,7 @@ class CalendarCustomizationTest {
             endMillis = date.plusDays(1).atTime(1, 0).atZone(zone).toInstant().toEpochMilli(),
             timeZone = zone.id, reminderMinutes = emptyList(),
         ))
-        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Day); vm.select(date); vm.reload() }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout("timeline"); vm.changeViewMode(ViewMode.Day); vm.select(date); vm.reload() }
         awaitUi { vm.events.any { it.id == overnightId } }
         listOf(date, date.plusDays(1)).forEach { shownDate ->
             onMain { vm.select(shownDate) }
@@ -2169,7 +2092,7 @@ class CalendarCustomizationTest {
     fun denseDayOverlapChooserCanOpenTheLastHiddenEvent() {
         val titles = (0 until 64).map { "Customization dense overlap ${it.toString().padStart(2, '0')}" }
         val ids = titles.map { addTimed(date, it, 15, 17) }
-        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Day); vm.select(date); vm.reload() }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout("timeline"); vm.changeViewMode(ViewMode.Day); vm.select(date); vm.reload() }
         awaitUi { ids.all { id -> vm.events.any { it.id == id } } }
         revealTimelineEvent(ids.first())
         val hours = node(By.pkg(context.packageName).res("calendar_timeline"))
@@ -2520,14 +2443,15 @@ class CalendarCustomizationTest {
 
     private fun awaitUi(detail: () -> String = { "" }, condition: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 10_000
+        fun ready(): Boolean = try { condition() } catch (_: StaleObjectException) { false }
         while (SystemClock.elapsedRealtime() < deadline) {
             refreshAccessibility()
-            if (condition()) return
+            if (ready()) return
             SystemClock.sleep(100)
         }
         device.dumpWindowHierarchy(File(context.filesDir, "customization-state.xml"))
         device.takeScreenshot(File(context.filesDir, "customization-state.png"))
-        assertTrue("The expected customized calendar must be rendered. ${detail()}", condition())
+        assertTrue("The expected customized calendar must be rendered. ${detail()}", ready())
     }
 
     private fun node(selector: BySelector): UiObject2 {

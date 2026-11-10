@@ -36,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.MutableIntState
@@ -55,6 +56,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
@@ -178,6 +180,9 @@ internal fun overflowLanes(width: Dp, minLane: Dp, cols: Int, chooserMin: Dp): O
 /** Narrowest lane an overlapping event may get before the rest move into a chooser; small, so overlaps stay side by side. */
 internal fun timelineMinLaneWidth(titleSize: Dp): Dp = maxOf(20.dp, titleSize * 1.6f)
 
+/** Zoom changes the time scale, never the user's font size. */
+internal fun timelineHourHeight(zoomPercent: Int): Dp = 64.dp * (zoomPercent.coerceIn(50, 200) / 100f)
+
 internal fun timelineOverflowThreshold(dayCount: Int, titleSize: Dp, fontScale: Float = 1f): Dp = when {
     dayCount <= 5 && fontScale <= 1.15f -> maxOf(40.dp, titleSize * 3.2f)
     dayCount <= 5 -> maxOf(48.dp, titleSize * 4f)
@@ -244,6 +249,7 @@ internal fun Timeline(
     tintToday: Boolean = true,
     allowHorizontalScroll: Boolean = false,
     groupEmptyHours: Boolean = false,
+    zoomPercent: Int = 100,
     sharedMinute: MutableFloatState? = null,
     handledTodayRequest: MutableIntState? = null,
     onDirectionChanged: (TodayDirection?) -> Unit = {},
@@ -258,7 +264,7 @@ internal fun Timeline(
     // Scale the actual text size before multiplying; sp conversion is non-linear at large font sizes.
     val titleSize = with(density) { titleStyle.fontSize.toDp() }
     val titleLine = with(density) { titleStyle.lineHeight.toDp() }
-    val hour = if (days.size > 1) maxOf(88.dp, titleLine * 5.5f) else maxOf(96.dp, titleLine * 5.5f)
+    val hour = timelineHourHeight(zoomPercent)
     val minBlock = maxOf(24.dp, titleLine + 6.dp)
     val minMinutes = ceil(minBlock / hour * 60f).toInt()
     val minColumn = maxOf(40.dp, titleSize * 3.2f)
@@ -305,15 +311,23 @@ internal fun Timeline(
         snapshotFlow { timelineTodayDirection(axis, currentMinute, scroll.value, scroll.viewportSize) }
             .distinctUntilChanged().collect { reportDirection(it) }
     }
-    var previousAxis by remember { mutableStateOf(axis) }
+    var previousAxis by remember(scroll) { mutableStateOf(axis) }
+    var pendingAxisMinute by remember(scroll) { mutableStateOf<Float?>(null) }
+    SideEffect {
+        if (pendingAxisMinute == null && (previousAxis.gaps != axis.gaps || previousAxis.hourPx != axis.hourPx)) {
+            // A shorter grid can clamp ScrollState during measure. Read its old minute first.
+            pendingAxisMinute = previousAxis.yToMinute(scroll.value.toFloat())
+        }
+    }
     LaunchedEffect(axis, scroll) {
-        if (previousAxis.gaps != axis.gaps || previousAxis.hourPx != axis.hourPx) {
-            val minute = previousAxis.yToMinute(scroll.value.toFloat())
-            if (awaitScrollable(scroll)) {
-                withFrameNanos { }
+        if (pendingAxisMinute != null) {
+            awaitScrollable(scroll)
+            withFrameNanos { }
+            pendingAxisMinute?.let { minute ->
                 val target = axis.minuteToY(minute).coerceIn(0f, scroll.maxValue.toFloat())
                 scroll.dispatchRawDelta(target - scroll.value)
             }
+            pendingAxisMinute = null
         }
         previousAxis = axis
     }
@@ -348,6 +362,19 @@ internal fun Timeline(
         hourLabels + listOf(allDayLabel.substringBeforeLast(' '), allDayLabel.substringAfterLast(' '))
     } else hourLabels
     val reportFocus by rememberUpdatedState(onFocusHandled)
+    var positionedFocus by remember { mutableStateOf<TimelineFocus?>(null) }
+    val focusPending = autoScroll && focus != null && focus.date in days && positionedFocus !== focus
+    if (focusPending) {
+        val request = requireNotNull(focus)
+        val target = focusTarget(eventsOn(request.date), request.date, zone)
+        val minute = if (target != null && !target.isTimelineBanner())
+            (startMinuteOn(target, request.date, zone) - 30).coerceAtLeast(0) else 0
+        SideEffect {
+            // New date pages use a fresh ScrollState. Prime it before measurement instead of
+            // drawing midnight and animating through unrelated events on the way to the target.
+            scroll.dispatchRawDelta(axis.minuteToY(minute) - scroll.value)
+        }
+    }
     val sideways = rememberScrollState()
     var highlighted by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(highlighted) {
@@ -386,11 +413,14 @@ internal fun Timeline(
             var initialPositioned by rememberSaveable { mutableStateOf(false) }
             LaunchedEffect(scroll, autoScroll, axis) {
                 if (initialPositioned) return@LaunchedEffect
-                initialPositioned = true
-                if (!autoScroll || !showHeaders || scroll.value != 0 || focus != null) return@LaunchedEffect
-                if (!awaitScrollable(scroll)) return@LaunchedEffect
-                val anchor = if (today in days) (LocalTime.now().hour - 1).coerceAtLeast(0) else DEFAULT_START_HOUR
-                scroll.scrollTo(axis.minuteToY(anchor * 60).roundToInt().coerceIn(0, scroll.maxValue))
+                try {
+                    if (autoScroll && showHeaders && scroll.value == 0 && focus == null && awaitScrollable(scroll)) {
+                        val anchor = if (today in days) (LocalTime.now().hour - 1).coerceAtLeast(0) else DEFAULT_START_HOUR
+                        scroll.scrollTo(axis.minuteToY(anchor * 60).roundToInt().coerceIn(0, scroll.maxValue))
+                    }
+                } finally {
+                    if (coroutineContext.isActive) initialPositioned = true
+                }
             }
             val handled = handledTodayRequest ?: remember { mutableIntStateOf(todayRequest) }
             LaunchedEffect(todayRequest, handled.intValue, autoScroll, scroll, axis, focus) {
@@ -434,22 +464,23 @@ internal fun Timeline(
                 if (!autoScroll || request.date !in days) return@LaunchedEffect
                 request.start()
                 try {
-                    awaitFocusStart(motion)
                     val target = focusTarget(eventsOn(request.date), request.date, zone)
                     val minute = if (target != null && !target.isTimelineBanner())
                         (startMinuteOn(target, request.date, zone) - 30).coerceAtLeast(0) else 0
                     if (awaitScrollable(scroll)) {
                         val y = axis.minuteToY(minute).roundToInt().coerceIn(0, scroll.maxValue)
-                        val distance = (y - scroll.value).toFloat()
-                        if (distance != 0f) {
-                            if (motion) scroll.animateScrollTo(y, tween(focusScrollDuration(distance, scroll.viewportSize)))
-                            else scroll.scrollTo(y)
-                        }
+                        scroll.scrollTo(y)
+                        // Completed focus owns this position, including a concurrent axis change.
+                        pendingAxisMinute = null
+                        previousAxis = axis
                     }
+                    positionedFocus = request
                     highlighted = target?.key()
                 } finally { if (coroutineContext.isActive) reportFocus(request) }
             }
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().graphicsLayer {
+                alpha = if (focusPending || !sharedPositioned || !initialPositioned || pendingAxisMinute != null) 0f else 1f
+            }) {
                 if (showHeaders) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                         Spacer(Modifier.width(gutter))
@@ -550,9 +581,12 @@ internal fun DrawScope.drawTimelineGrid(axis: TimelineAxis, columnWidthPx: Float
     }
 }
 
-/** Waits until the hourly area can scroll. Gives up (false) when it never needs to, such as on a very tall screen. */
-private suspend fun awaitScrollable(scroll: ScrollState): Boolean =
-    withTimeoutOrNull(1_000) { snapshotFlow { scroll.maxValue }.first { it in 1 until Int.MAX_VALUE } } != null
+/** Waits for measurement, including a measured area that already fits without scrolling. */
+internal suspend fun awaitScrollable(scroll: ScrollState): Boolean =
+    withTimeoutOrNull(1_000) {
+        snapshotFlow { scroll.viewportSize > 0 && scroll.maxValue != Int.MAX_VALUE }.first { it }
+        scroll.maxValue > 0
+    } ?: false
 
 @Composable
 internal fun HourRail(
@@ -768,7 +802,12 @@ private fun EventBlock(
                 localeList = LocaleList(f.locale.toLanguageTag()))
         val detailStyle = if (wide) typography.bodySmall else typography.labelSmall
         val statusStyle = detailStyle.copy(fontWeight = FontWeight.Bold)
-        val padH = if (maxWidth < 72.dp) 3.dp else 5.dp
+        val padH = when {
+            maxWidth < 40.dp -> 2.dp
+            maxWidth < 72.dp -> 4.dp
+            maxWidth < 160.dp -> 8.dp
+            else -> 12.dp
+        }
         val padStart = padH + if (missed.isEmpty()) 0.dp else bar
         val padV = if (maxHeight < 28.dp) 1.dp else 3.dp
         val innerWidth = with(density) { (maxWidth - padH - padStart).roundToPx().coerceAtLeast(1) }

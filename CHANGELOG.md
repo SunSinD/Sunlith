@@ -1,5 +1,16 @@
 # Changes
 
+## 0.6.7
+
+- Restore List as the default Day layout alongside Week. Existing custom layouts stay selected.
+- Add separate Day and Week timeline zoom settings in Appearance, from 50% to 200%, with a smaller default time scale.
+- Switch selected dates directly to their events, keeping the header, page and initial scroll position together.
+- Keep sideways diagonal swipes paging Month, Week and Day lists while vertical-first gestures keep scrolling the list.
+- Keep each list page's saved scroll position when returning after a distant date or Today jump.
+- Preserve the viewed time when zooming, reveal compact grouped weeks promptly, and retain Retry after a failed Day List load.
+- Give wider timeline blocks more text padding and remove the whole-column highlight in Day.
+- Show the phone’s local Tailscale-range VPN status in Computer connection, refresh it while the screen is open, and shorten connection help.
+
 ## 0.6.6
 
 - Show overlapping events side by side in narrow timeline columns, such as Week with larger text, instead of hiding them behind one count. Only crowded overlaps use a chooser; the first event stays visible, and a single hidden event opens directly and is announced by name.

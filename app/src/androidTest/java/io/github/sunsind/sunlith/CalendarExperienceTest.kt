@@ -251,7 +251,7 @@ class CalendarExperienceTest {
         scrollToText(english.getString(R.string.settings_day_view)).click()
         mapOf(
             "timeline" to R.string.settings_day_all_hours,
-            "cards" to R.string.settings_day_events_only,
+            "cards" to R.string.settings_week_list,
             "schedule" to R.string.custom_schedule,
         ).forEach { (choice, label) ->
             val option = node(By.pkg(context.packageName).res("settings_choice_$choice"))
@@ -281,7 +281,7 @@ class CalendarExperienceTest {
         scrollToText(english.getString(R.string.beta_settings_appearance)).click()
         captureSettings("appearance", R.string.layout_preset_grid)
         chooseSetting(R.string.view_week, "timeline3")
-        assertFalse("Day behavior belongs in General.", device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.settings_day_view))))
+        assertFalse("The detailed General Day label must not be duplicated in Appearance.", device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.settings_day_view))))
         scrollToText(english.getString(R.string.layout_preset_grid)).click()
         awaitUi { settings.monthLayout == "full" }
         assertEquals("timeline", settings.weekLayout)

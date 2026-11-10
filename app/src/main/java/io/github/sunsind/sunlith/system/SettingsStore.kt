@@ -14,10 +14,11 @@ class SettingsStore(context: Context) {
         set(value) { prefs.edit().putString("course_color_slots", JSONObject(value).toString()).apply() }
 
     init {
-        if (!prefs.getBoolean("day_timeline_default_v1", false)) {
-            // Older versions did not distinguish default Cards from an explicit choice.
-            val migration = prefs.edit().putBoolean("day_timeline_default_v1", true)
-            if (prefs.getString("day_layout", "cards") == "cards") migration.putString("day_layout", "timeline")
+        if (!prefs.getBoolean("list_defaults_v2", false)) {
+            val migration = prefs.edit().putBoolean("list_defaults_v2", true)
+            // Restore the preset default while retaining explicitly customized layouts.
+            if (prefs.getString("layout_preset", "sunlith") in setOf("sunlith", "planner") &&
+                prefs.getString("day_layout", "cards") == "timeline") migration.putString("day_layout", "cards")
             migration.apply()
         }
     }
@@ -107,8 +108,16 @@ class SettingsStore(context: Context) {
         set(value) { prefs.edit().putBoolean("group_empty_hours", value).apply() }
 
     var dayLayout: String
-        get() = choice("day_layout", "timeline", setOf("cards", "timeline", "schedule"))
+        get() = choice("day_layout", "cards", setOf("cards", "timeline", "schedule"))
         set(value) { saveChoice("day_layout", value, setOf("cards", "timeline", "schedule")) }
+
+    var dayTimelineZoom: Int
+        get() = prefs.getInt("day_timeline_zoom", 100).coerceIn(50, 200)
+        set(value) { prefs.edit().putInt("day_timeline_zoom", value.coerceIn(50, 200)).apply() }
+
+    var weekTimelineZoom: Int
+        get() = prefs.getInt("week_timeline_zoom", 100).coerceIn(50, 200)
+        set(value) { prefs.edit().putInt("week_timeline_zoom", value.coerceIn(50, 200)).apply() }
 
     var visibleWeekDays: Int
         get() = prefs.getInt("visible_week_days", 7).takeIf { it in setOf(3, 5, 7) } ?: 7

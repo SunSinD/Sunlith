@@ -94,7 +94,7 @@ class AiOnboardingTest {
         assertEquals("sunlith", settings.layoutPreset)
         assertEquals("split", settings.monthLayout)
         assertEquals("list", settings.weekLayout)
-        assertEquals("timeline", settings.dayLayout)
+        assertEquals("cards", settings.dayLayout)
         assertTrue(uiPrefs().getBoolean("layout_setup_done", false))
         assertFalse(uiPrefs().getBoolean("computer_setup_requested", false))
         finish()
@@ -124,7 +124,7 @@ class AiOnboardingTest {
         assertEquals("planner", settings.layoutPreset)
         assertEquals("full", settings.monthLayout)
         assertEquals("list", settings.weekLayout)
-        assertEquals("timeline", settings.dayLayout)
+        assertEquals("cards", settings.dayLayout)
     }
 
     @Test

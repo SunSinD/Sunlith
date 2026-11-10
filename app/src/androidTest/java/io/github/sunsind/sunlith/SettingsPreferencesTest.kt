@@ -39,7 +39,10 @@ class SettingsPreferencesTest {
 
     @After
     fun tearDown() {
-        if (::context.isInitialized) files.forEach(context::deleteSharedPreferences)
+        if (::context.isInitialized) files.forEach { name ->
+            context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
+            context.deleteSharedPreferences(name)
+        }
     }
 
     @Test
@@ -60,17 +63,21 @@ class SettingsPreferencesTest {
         assertEquals("continuous", settings.agendaRange)
         assertEquals("split", settings.monthLayout)
         assertEquals("list", settings.weekLayout)
-        assertEquals("timeline", settings.dayLayout)
+        assertEquals("cards", settings.dayLayout)
+        assertEquals(100, settings.dayTimelineZoom)
+        assertEquals(100, settings.weekTimelineZoom)
+        assertFalse(settings.groupEmptyHours)
         assertEquals(7, settings.visibleWeekDays)
         assertEquals("sunlith", settings.layoutPreset)
     }
 
     @Test
-    fun legacyCardsUpgradeOnceWithoutResettingIndependentLayoutsOrOtherSettings() {
+    fun legacyPresetTimelineDefaultsReturnToListWithoutResettingOtherSettings() {
         val prefs = isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
-        listOf("sunlith", "planner", "custom").forEach { preset ->
+        listOf("sunlith", "planner").forEach { preset ->
             prefs.edit().clear()
-                .putString("day_layout", "cards")
+                .putString("day_layout", "timeline")
+                .putBoolean("day_timeline_default_v1", true)
                 .putString("month_layout", "full")
                 .putString("week_layout", "list")
                 .putString("layout_preset", preset)
@@ -80,21 +87,23 @@ class SettingsPreferencesTest {
                 .putString("theme", "dark")
                 .commit()
             val previous = prefs.all.filterKeys { it != "day_layout" }
-            assertEquals("timeline", SettingsStore(isolated).dayLayout)
-            assertTrue(prefs.getBoolean("day_timeline_default_v1", false))
-            assertEquals(previous, prefs.all.filterKeys { it !in setOf("day_layout", "day_timeline_default_v1") })
-            assertEquals("timeline", SettingsStore(isolated).dayLayout)
+            assertEquals("cards", SettingsStore(isolated).dayLayout)
+            assertTrue(prefs.getBoolean("list_defaults_v2", false))
+            assertEquals(previous, prefs.all.filterKeys { it !in setOf("day_layout", "list_defaults_v2") })
+            assertEquals("cards", SettingsStore(isolated).dayLayout)
         }
     }
 
     @Test
     fun upgradePreservesExistingTimelineAndScheduleChoices() {
         val prefs = isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
-        listOf("timeline", "schedule").forEach { layout ->
-            prefs.edit().clear().putString("day_layout", layout).putString("layout_preset", "custom").commit()
-            assertEquals(layout, SettingsStore(isolated).dayLayout)
-            assertEquals(layout, SettingsStore(isolated).dayLayout)
-            assertEquals("custom", SettingsStore(isolated).layoutPreset)
+        listOf("custom", "schedule").forEach { preset ->
+            listOf("timeline", "schedule").forEach { layout ->
+                prefs.edit().clear().putString("day_layout", layout).putString("layout_preset", preset).commit()
+                assertEquals(layout, SettingsStore(isolated).dayLayout)
+                assertEquals(layout, SettingsStore(isolated).dayLayout)
+                assertEquals("custom", SettingsStore(isolated).layoutPreset)
+            }
         }
     }
 
@@ -103,7 +112,7 @@ class SettingsPreferencesTest {
         val prefs = isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
         prefs.edit().putString("day_layout", "cards").commit()
         val upgraded = SettingsStore(isolated)
-        assertEquals("timeline", upgraded.dayLayout)
+        assertEquals("cards", upgraded.dayLayout)
         listOf("cards", "schedule", "timeline", "cards").forEach { layout ->
             SettingsStore(isolated).dayLayout = layout
             repeat(3) { assertEquals(layout, SettingsStore(isolated).dayLayout) }
@@ -111,24 +120,69 @@ class SettingsPreferencesTest {
     }
 
     @Test
-    fun inheritedAndCustomWeekTimelinesSurviveStoreRecreationWithoutMigration() {
+    fun inheritedAndCustomWeekChoicesSurviveListDefaultMigration() {
         val prefs = isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
         listOf("planner", "custom", "sunlith").forEach { preset ->
-            listOf(3, 7).forEach { days ->
-                prefs.edit().clear().putBoolean("day_timeline_default_v1", true)
-                    .putString("month_layout", "full").putString("week_layout", "timeline")
-                    .putString("day_layout", "timeline").putInt("visible_week_days", days)
-                    .putString("layout_preset", preset).commit()
-                val before = prefs.all.toMap()
-                repeat(3) {
-                    val restored = SettingsStore(isolated)
-                    assertEquals("timeline", restored.weekLayout)
-                    assertEquals(days, restored.visibleWeekDays)
-                    assertEquals(preset, restored.layoutPreset)
-                    assertEquals(before, prefs.all)
+            listOf("list", "timeline", "continuous").forEach { week ->
+                listOf(3, 7).forEach { days ->
+                    prefs.edit().clear().putBoolean("day_timeline_default_v1", true)
+                        .putString("month_layout", "full").putString("week_layout", week)
+                        .putString("day_layout", "timeline").putInt("visible_week_days", days)
+                        .putString("layout_preset", preset).commit()
+                    val migrated = SettingsStore(isolated)
+                    assertEquals(if (preset == "custom") "timeline" else "cards", migrated.dayLayout)
+                    val afterMigration = prefs.all.toMap()
+                    repeat(3) {
+                        val restored = SettingsStore(isolated)
+                        assertEquals(week, restored.weekLayout)
+                        assertEquals(days, restored.visibleWeekDays)
+                        assertEquals(preset, restored.layoutPreset)
+                        assertEquals(afterMigration, prefs.all)
+                    }
                 }
             }
         }
+    }
+
+    @Test
+    fun dayAndWeekZoomPersistIndependently() {
+        val settings = SettingsStore(isolated)
+        settings.dayTimelineZoom = 75
+        assertEquals(75, SettingsStore(isolated).dayTimelineZoom)
+        assertEquals(100, SettingsStore(isolated).weekTimelineZoom)
+        settings.weekTimelineZoom = 150
+        repeat(3) {
+            val restored = SettingsStore(isolated)
+            assertEquals(75, restored.dayTimelineZoom)
+            assertEquals(150, restored.weekTimelineZoom)
+        }
+        SettingsStore(isolated).dayTimelineZoom = 200
+        assertEquals(150, SettingsStore(isolated).weekTimelineZoom)
+        SettingsStore(isolated).weekTimelineZoom = 50
+        assertEquals(200, SettingsStore(isolated).dayTimelineZoom)
+        assertEquals("cards", settings.dayLayout)
+        assertEquals("list", settings.weekLayout)
+    }
+
+    @Test
+    fun zoomClampsPersistedAndRequestedValuesWithoutAffectingTheOtherView() {
+        val settings = SettingsStore(isolated)
+        listOf(Int.MIN_VALUE to 50, 49 to 50, 50 to 50, 125 to 125, 200 to 200, 201 to 200, Int.MAX_VALUE to 200)
+            .forEach { (requested, expected) ->
+                settings.dayTimelineZoom = requested
+                assertEquals(expected, SettingsStore(isolated).dayTimelineZoom)
+                assertEquals(100, SettingsStore(isolated).weekTimelineZoom)
+            }
+        settings.dayTimelineZoom = 100
+        listOf(-1 to 50, 50 to 50, 175 to 175, 200 to 200, 250 to 200).forEach { (requested, expected) ->
+            settings.weekTimelineZoom = requested
+            assertEquals(expected, SettingsStore(isolated).weekTimelineZoom)
+            assertEquals(100, SettingsStore(isolated).dayTimelineZoom)
+        }
+        isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit()
+            .putInt("day_timeline_zoom", -500).putInt("week_timeline_zoom", 500).commit()
+        assertEquals(50, SettingsStore(isolated).dayTimelineZoom)
+        assertEquals(200, SettingsStore(isolated).weekTimelineZoom)
     }
 
     @Test
@@ -213,7 +267,7 @@ class SettingsPreferencesTest {
         assertEquals("continuous", settings.agendaRange)
         assertEquals("split", settings.monthLayout)
         assertEquals("list", settings.weekLayout)
-        assertEquals("timeline", settings.dayLayout)
+        assertEquals("cards", settings.dayLayout)
         assertEquals("sunlith", settings.layoutPreset)
         assertEquals(7, settings.visibleWeekDays)
         assertEquals("dark", settings.themeMode)

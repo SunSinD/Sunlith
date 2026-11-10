@@ -1,4 +1,10 @@
 <resources>
+    <string name="settings_day_zoom">Day timeline zoom</string>
+    <string name="settings_week_zoom">Week timeline zoom</string>
+    <string name="connection_tailscale">Tailscale / VPN</string>
+    <string name="connection_tailscale_detected">VPN address detected</string>
+    <string name="connection_tailscale_missing">Not detected</string>
+    <string name="connection_tailscale_checking">Checking…</string>
     <string name="calendar_prev_five_days">Previous 5 days</string>
     <string name="calendar_next_five_days">Next 5 days</string>
     <string name="calendar_teacher_absent">Teacher absent</string>

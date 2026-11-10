@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -45,9 +46,6 @@ import kotlinx.coroutines.isActive
 
 private const val TIMELINE_CENTER = 1_000_000
 private const val TIMELINE_DAYS = 2_000_001
-
-internal fun timelineApproachIndex(from: Int, target: Int, last: Int): Int =
-    (target + if (target < from) 2 else -2).coerceIn(0, last)
 
 internal class TimelinePanAnchor(var index: Int, var fraction: Float = 0f) {
     fun record(index: Int, offset: Int, width: Int) {
@@ -85,7 +83,7 @@ internal fun ContinuousTimeline(
     val railStyle = MaterialTheme.typography.labelSmall
     val titleSize = with(density) { titleStyle.fontSize.toDp() }
     val lineSize = with(density) { titleStyle.lineHeight.toDp() }
-    val hour = maxOf(88.dp, lineSize * 5.5f)
+    val hour = timelineHourHeight(vm.weekTimelineZoom)
     val hourPx = with(density) { hour.toPx() }
     val minMinutes = ceil(maxOf(24.dp, lineSize + 6.dp) / hour * 60f).toInt()
     val minBlockWidth = timelineMinLaneWidth(titleSize)
@@ -134,13 +132,22 @@ internal fun ContinuousTimeline(
         }.collect { reportDirection(it) }
     }
     var requestedMinute by remember { mutableStateOf<Int?>(null) }
-    var previousAxis by remember { mutableStateOf(axis) }
-    LaunchedEffect(axis) {
-        if (previousAxis.gaps != axis.gaps || previousAxis.hourPx != axis.hourPx) {
-            val minute = previousAxis.yToMinute(scroll.value.toFloat())
+    var previousAxis by remember(scroll) { mutableStateOf(axis) }
+    var pendingAxisMinute by remember(scroll) { mutableStateOf<Float?>(null) }
+    SideEffect {
+        if (pendingAxisMinute == null && (previousAxis.gaps != axis.gaps || previousAxis.hourPx != axis.hourPx)) {
+            // Capture before the new grid measures and can clamp the old pixel offset.
+            pendingAxisMinute = previousAxis.yToMinute(scroll.value.toFloat())
+        }
+    }
+    LaunchedEffect(axis, scroll) {
+        if (pendingAxisMinute != null) {
             withFrameNanos { }
-            val target = axis.minuteToY(requestedMinute?.toFloat() ?: minute).coerceAtMost(scroll.maxValue.toFloat())
-            scroll.dispatchRawDelta(target - scroll.value)
+            (requestedMinute?.toFloat() ?: pendingAxisMinute)?.let { minute ->
+                val target = axis.minuteToY(minute).coerceIn(0f, scroll.maxValue.toFloat())
+                scroll.dispatchRawDelta(target - scroll.value)
+            }
+            pendingAxisMinute = null
         }
         previousAxis = axis
     }
@@ -164,27 +171,32 @@ internal fun ContinuousTimeline(
             if (pending && vm.selectedDate == today) requestedMinute = (LocalTime.now().hour - 1).coerceAtLeast(0) * 60
             val target = index(vm.selectedDate)
             if (pending && (target != row.firstVisibleItemIndex || row.firstVisibleItemScrollOffset != 0)) {
-                if (motion) {
-                    if (kotlin.math.abs(target - row.firstVisibleItemIndex) > 14) {
-                        row.scrollToItem(timelineApproachIndex(row.firstVisibleItemIndex, target, TIMELINE_DAYS - 1))
-                    }
-                    row.animateScrollToItem(target)
-                } else row.scrollToItem(target)
+                // Explicit selection changes the date atomically. Only finger-driven scrolling
+                // travels through intervening dates; a picker or Today must not flash their events.
+                row.scrollToItem(target)
             }
             if ((firstPosition && scroll.value == 0) || (pending && vm.selectedDate == today)) {
                 val minute = if (vm.selectedDate == today) (LocalTime.now().hour - 1).coerceAtLeast(0) * 60 else 7 * 60
                 withFrameNanos { }
                 scroll.scrollTo(latestAxis.minuteToY(minute).roundToInt())
+                // Navigation has already positioned the latest grid; an older remap must not undo it.
+                pendingAxisMinute = null
+                previousAxis = latestAxis
             }
             firstPosition = false
             withFrameNanos { }
             completed = true
         } finally {
-            if (completed || currentCoroutineContext().isActive) vm.consumeTimelineNavigation(request)
+            if (completed || currentCoroutineContext().isActive) {
+                firstPosition = false
+                vm.consumeTimelineNavigation(request)
+            }
             requestedMinute = null
         }
     }
-    BoxWithConstraints(modifier.fillMaxSize().testTag("calendar_continuous_timeline")) {
+    BoxWithConstraints(modifier.fillMaxSize().testTag("calendar_continuous_timeline").graphicsLayer {
+        alpha = if (firstPosition || vm.timelineNavigationRequest != vm.handledTimelineNavigation || pendingAxisMinute != null) 0f else 1f
+    }) {
         val gutter = rememberTimeGutter(labels + listOf(allDayLabel.substringBeforeLast(' '), allDayLabel.substringAfterLast(' ')), railStyle, 44.dp, maxWidth * 0.30f)
         val column = maxOf(88.dp, titleSize * 6.5f, (maxWidth - gutter) / vm.visibleWeekDays)
         val columnPx = with(density) { column.toPx() }

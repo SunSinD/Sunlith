@@ -134,6 +134,8 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var timelineNavigationRequest by mutableStateOf(0); private set
     var handledTimelineNavigation by mutableStateOf(0); private set
     var dayLayout by mutableStateOf(settings.dayLayout); private set
+    var dayTimelineZoom by mutableIntStateOf(settings.dayTimelineZoom); private set
+    var weekTimelineZoom by mutableIntStateOf(settings.weekTimelineZoom); private set
     var visibleWeekDays by mutableStateOf(settings.visibleWeekDays); private set
     var courseColorSlots by mutableStateOf(settings.courseColorSlots); private set
     var layoutPreset by mutableStateOf(settings.layoutPreset); private set
@@ -986,6 +988,16 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         reload()
     }
 
+    fun changeDayTimelineZoom(value: Int) {
+        settings.dayTimelineZoom = value
+        dayTimelineZoom = settings.dayTimelineZoom
+    }
+
+    fun changeWeekTimelineZoom(value: Int) {
+        settings.weekTimelineZoom = value
+        weekTimelineZoom = settings.weekTimelineZoom
+    }
+
     fun changeVisibleWeekDays(value: Int) {
         settings.visibleWeekDays = value
         visibleWeekDays = settings.visibleWeekDays
@@ -997,8 +1009,8 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         require(value in setOf("sunlith", "schedule", "planner"))
         val (monthChoice, weekChoice, dayChoice) = when (value) {
             "schedule" -> Triple("split", "list", "schedule")
-            "planner" -> Triple("full", "list", "timeline")
-            else -> Triple("split", "list", "timeline")
+            "planner" -> Triple("full", "list", "cards")
+            else -> Triple("split", "list", "cards")
         }
         Snapshot.withMutableSnapshot {
             settings.monthLayout = monthChoice

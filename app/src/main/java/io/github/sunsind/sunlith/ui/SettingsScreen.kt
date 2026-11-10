@@ -195,6 +195,15 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                                 if (vm.weekLayout != "timeline") vm.changeWeekLayout("timeline")
                             }
                         }
+                        if (vm.weekLayout != "list") TimelineZoomRow(stringResource(R.string.settings_week_zoom), vm.weekTimelineZoom, vm::changeWeekTimelineZoom)
+                        DropdownRow(
+                            stringResource(R.string.view_day), vm.dayLayout,
+                            listOf("cards" to stringResource(R.string.settings_week_list),
+                                "timeline" to stringResource(R.string.settings_day_all_hours),
+                                "schedule" to stringResource(R.string.custom_schedule)),
+                            vm::changeDayLayout,
+                        )
+                        if (vm.dayLayout == "timeline") TimelineZoomRow(stringResource(R.string.settings_day_zoom), vm.dayTimelineZoom, vm::changeDayTimelineZoom)
                         ToggleRow(stringResource(R.string.settings_group_empty_hours), stringResource(R.string.settings_group_empty_hours_summary), vm.groupEmptyHours, vm::changeGroupEmptyHours)
                         ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
                         SectionTitle(stringResource(R.string.custom_colors))
@@ -233,7 +242,7 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                             vm.dayLayout,
                             listOf(
                                 "timeline" to stringResource(R.string.settings_day_all_hours),
-                                "cards" to stringResource(R.string.settings_day_events_only),
+                                "cards" to stringResource(R.string.settings_week_list),
                                 "schedule" to stringResource(R.string.custom_schedule),
                             ),
                             vm::changeDayLayout,
@@ -644,6 +653,13 @@ private fun Messages(messages: List<String>) {
         messages.take(8).forEach { Text(it, color = p.muted, style = MaterialTheme.typography.bodySmall) }
         if (messages.size > 8) Text(pluralStringResource(R.plurals.more_messages, messages.size - 8, messages.size - 8), color = p.muted, style = MaterialTheme.typography.bodySmall)
     }
+}
+
+@Composable
+private fun TimelineZoomRow(title: String, value: Int, onChange: (Int) -> Unit) {
+    DropdownRow(title, value.toString(), listOf(50, 75, 100, 125, 150, 200).map {
+        it.toString() to "$it%"
+    }) { onChange(it.toInt()) }
 }
 
 @Composable

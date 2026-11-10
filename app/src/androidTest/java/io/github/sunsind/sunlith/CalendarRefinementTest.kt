@@ -3,6 +3,12 @@ package io.github.sunsind.sunlith
 import android.Manifest
 import android.app.LocaleManager
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.ContentProvider
+import android.content.ContentResolver
+import android.content.ContentValues
+import android.database.Cursor
+import android.net.Uri
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Point
@@ -23,19 +29,26 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.material3.Text
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
@@ -64,10 +77,13 @@ import io.github.sunsind.sunlith.ui.periodSwipe
 import androidx.compose.ui.layout.onSizeChanged
 import io.github.sunsind.sunlith.ui.PagedPeriod
 import io.github.sunsind.sunlith.ui.rememberPeriodSwipe
-import io.github.sunsind.sunlith.ui.awaitFocusStart
-import io.github.sunsind.sunlith.ui.scrollToFocus
 import io.github.sunsind.sunlith.ui.focusTarget
 import io.github.sunsind.sunlith.ui.Timeline
+import io.github.sunsind.sunlith.ui.awaitScrollable
+import io.github.sunsind.sunlith.ui.ContinuousTimeline
+import io.github.sunsind.sunlith.ui.TimelineFocus
+import io.github.sunsind.sunlith.ui.SunlithTheme
+import io.github.sunsind.sunlith.ui.LightPalette
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import java.time.LocalDate
@@ -79,6 +95,13 @@ import java.util.UUID
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
@@ -325,38 +348,439 @@ class CalendarRefinementTest {
     }
 
     @Test
-    fun aLongDayFocusRendersAtTopAndScrollsWithoutTeleporting() {
-        val done = AtomicBoolean(false)
-        val viewport = AtomicInteger(0)
-        val positions = mutableListOf<Int>()
+    fun externallySelectedPeriodsAreMeasuredBeforeTheirFirstDraw() {
+        var period by mutableLongStateOf(0)
+        val draws = Collections.synchronizedList(mutableListOf<Pair<Long, List<Long>>>())
         onMain {
             requireNotNull(activity).setContent {
-                val list = rememberLazyListState()
-                LaunchedEffect(list) {
-                    awaitFocusStart(true)
-                    list.scrollToFocus(140, true)
-                    done.set(true)
-                }
-                LaunchedEffect(list) {
-                    while (!done.get()) {
-                        withFrameNanos { }
-                        val info = list.layoutInfo
-                        info.visibleItemsInfo.firstOrNull()?.let { item ->
-                            viewport.set(info.viewportEndOffset - info.viewportStartOffset)
-                            positions += list.firstVisibleItemIndex * item.size + list.firstVisibleItemScrollOffset
-                        }
-                    }
-                }
-                LazyColumn(Modifier.fillMaxSize(), state = list) {
-                    items(180) { Text("Focus item $it", Modifier.height(64.dp)) }
+                val swipe = rememberPeriodSwipe(true, true) { period += it }
+                PagedPeriod(swipe, period, Modifier.fillMaxSize().drawWithContent {
+                    val measured = swipe.pager?.layoutInfo?.visiblePagesInfo.orEmpty().map { it.index.toLong() - 1_000_000L }
+                    draws += period to measured
+                    drawContent()
+                }) { absolute -> Text("Selected period $absolute", Modifier.fillMaxSize()) }
+            }
+        }
+        awaitState("The initial page must draw") { draws.any { it.first == 0L && 0L in it.second } }
+        listOf(17L, -21L, 1L, 0L).forEach { target ->
+            onMain { period = target }
+            awaitState("The selected $target page must draw") { draws.any { it.first == target } }
+        }
+        assertTrue("A new selected date must never draw the previous measured page: $draws",
+            draws.all { (selected, measured) -> selected in measured })
+    }
+
+    @Test
+    fun externallySelectedSlidingPeriodsCancelTheirOffsetBeforeFirstDraw() {
+        var period by mutableLongStateOf(0)
+        var beginSlide: (() -> Unit)? = null
+        val commits = AtomicInteger(0)
+        val draws = Collections.synchronizedList(mutableListOf<Pair<Long, Float>>())
+        onMain {
+            requireNotNull(activity).setContent {
+                val swipe = rememberPeriodSwipe(true, true) { commits.incrementAndGet(); period += it }
+                SideEffect { beginSlide = { swipe.start(); swipe.dragBy(swipe.width * 0.35f) } }
+                SlidingPeriod(swipe, period, Modifier.fillMaxSize().onSizeChanged { swipe.width = it.width }
+                    .drawWithContent { draws += period to swipe.offset; drawContent() }) { absolute ->
+                    Text("Selected period $absolute", Modifier.fillMaxSize())
                 }
             }
         }
-        awaitState("A long focus must finish") { done.get() }
+        awaitState("The initial sliding page must draw at rest") { draws.any { it.first == 0L && it.second == 0f } }
+        listOf(17L, -21L, 1L, 0L).forEach { target ->
+            val previous = period
+            onMain { requireNotNull(beginSlide).invoke() }
+            awaitState("The outgoing page must really draw with an unfinished slide") {
+                draws.any { it.first == previous && it.second != 0f }
+            }
+            onMain { draws.clear(); period = target }
+            awaitState("The externally selected sliding page must draw") { draws.any { it.first == target } }
+            val targetDraws = synchronized(draws) { draws.filter { it.first == target } }
+            assertTrue("The selected $target page must be at rest from its first draw: $targetDraws",
+                targetDraws.all { it.second == 0f })
+        }
+        assertEquals("An external date change must not commit the interrupted gesture", 0, commits.get())
+    }
+
+    @Test
+    fun aRestoredPagerCannotOverrideAFreshModelsSelectedDate() {
+        val today = LocalDate.now()
+        val distant = today.plusDays(9)
+        val formats = Formats(english, Locale.ENGLISH)
         onMain {
-            assertTrue("The top must be rendered before motion", positions.takeWhile { it == 0 }.size >= 2)
-            assertTrue("The controlled fixture must actually scroll", positions.last() > viewport.get() * 3)
-            assertTrue("No frame may teleport a viewport", positions.zipWithNext().all { (a, b) -> abs(b - a) < viewport.get() })
+            vm.changeStartView(ViewMode.Day.name)
+            vm.changeDayLayout("cards")
+            vm.changeViewMode(ViewMode.Day)
+            vm.select(distant)
+        }
+        node(By.pkg(context.packageName).text(formats.dayLong(distant)))
+        val outgoing = requireNotNull(activity)
+        val outgoingVm = vm
+        instrumentation.runOnMainSync {
+            outgoing.viewModelStore.clear()
+            outgoing.recreate()
+        }
+        awaitState("A different Activity and fresh calendar model must finish restoring.") {
+            ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                .filterIsInstance<MainActivity>().firstOrNull { it !== outgoing }?.let {
+                    activity = it
+                    vm = ViewModelProvider(it)[SunlithViewModel::class.java]
+                }
+            activity !== outgoing && vm !== outgoingVm && vm.loaded && !vm.loadingEvents
+        }
+        node(By.pkg(context.packageName).text(formats.dayLong(today)))
+        onMain {
+            assertEquals("Restored pager state must follow the fresh model, without committing an old page as a swipe.", today, vm.selectedDate)
+            assertEquals(ViewMode.Day, vm.viewMode)
+        }
+    }
+
+    @Test
+    fun initialUserScrollingCannotLeaveEitherTimelineHidden() {
+        val day = LocalDate.now().plusDays(2)
+        val zone = ZoneId.systemDefault()
+        val repository = CalendarRepository(context)
+        val marker = "Visible after initial scroll interruption"
+        repository.saveEvent(EventDraft(calendarId = calendarId, title = marker,
+            startMillis = day.atStartOfDay(zone).toInstant().toEpochMilli(),
+            endMillis = day.atTime(1, 0).atZone(zone).toInstant().toEpochMilli(),
+            allDay = false, timeZone = zone.id, reminderMinutes = emptyList()))
+        onMain {
+            vm.changeWeekLayout("continuous")
+            vm.changeViewMode(ViewMode.Week)
+            vm.select(day)
+            vm.reload()
+        }
+        awaitState("The midnight event must load before mounting either timeline.") {
+            !vm.loadingEvents && vm.eventsByDay[day].orEmpty().any { it.title == marker }
+        }
+        val event = vm.eventsByDay.getValue(day).first { it.title == marker }
+        val formats = Formats(english, Locale.ENGLISH)
+        listOf(false, true).forEach { continuous ->
+            val scroll = ScrollState(0)
+            var hold: Job? = null
+            val acquired = AtomicBoolean(false)
+            try {
+                onMain {
+                    hold = CoroutineScope(Dispatchers.Main.immediate).launch {
+                        scroll.scroll(MutatePriority.UserInput) {
+                            acquired.set(true)
+                            awaitCancellation()
+                        }
+                    }
+                    assertTrue("User input must own the scroll mutation before initial positioning.", acquired.get())
+                    requireNotNull(activity).setContent {
+                        SunlithTheme("light", false) {
+                            Box(Modifier.fillMaxSize().background(LightPalette.background).safeDrawingPadding()
+                                .semantics { testTagsAsResourceId = true }) {
+                                CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
+                                    Box(Modifier.width(330.dp).height(500.dp)) {
+                                        if (continuous) ContinuousTimeline(vm, formats, LocalDate.now(), true, scroll, onOpen = {})
+                                        else Timeline(listOf(day, day.plusDays(1), day.plusDays(2)),
+                                            { if (it == day) listOf(event) else emptyList() }, day, LocalDate.now(), formats, true, scroll,
+                                            autoScroll = true, todayRequest = 0, motion = true,
+                                            onSelectDay = {}, onOpen = {}, onNew = {}, onOverflow = { _, _ -> }, fallback = {})
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                awaitState("The interrupted timeline must finish measurement.") {
+                    scroll.maxValue in 1 until Int.MAX_VALUE && scroll.viewportSize > 0
+                }
+                val bounds = node(By.pkg(context.packageName).res("timeline_event_${event.id}")).visibleBounds
+                assertTrue("The midnight block must be inside the viewport.", bounds.width() > 20 && bounds.height() > 20)
+                var painted = false
+                val deadline = SystemClock.elapsedRealtime() + 3_000
+                while (!painted && SystemClock.elapsedRealtime() < deadline) {
+                    val pixels = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+                    try {
+                        painted = pixels.getPixel(bounds.right - 8, bounds.centerY()) != pixels.getPixel(bounds.left - 8, bounds.centerY())
+                    } finally { pixels.recycle() }
+                    if (!painted) SystemClock.sleep(50)
+                }
+                onMain {
+                    assertTrue("User input must still own the scroll mutation when painted readiness is checked.", hold?.isActive == true && scroll.isScrollInProgress)
+                    assertEquals("Rejected initial positioning must preserve the user's scroll.", 0, scroll.value)
+                    assertTrue("Initial positioning cancelled by user input must reveal the actual event: continuous=$continuous", painted)
+                }
+            } finally { onMain { hold?.cancel() } }
+        }
+    }
+
+    @Test
+    fun aGroupedWeekThatFitsRevealsWithoutWaitingForAScrollRange() {
+        val day = LocalDate.now().plusDays(2)
+        val zone = ZoneId.systemDefault()
+        val event = CalendarEvent(id = 981_071L, calendarId = calendarId, title = "Compact grouped meeting",
+            startMillis = day.atTime(12, 0).atZone(zone).toInstant().toEpochMilli(),
+            endMillis = day.atTime(13, 0).atZone(zone).toInstant().toEpochMilli(),
+            allDay = false, timeZone = zone.id, description = "", location = "")
+        val scroll = ScrollState(0)
+        val measuredWithoutDelay = AtomicBoolean(false)
+        val formats = Formats(english, Locale.ENGLISH)
+        onMain {
+            requireNotNull(activity).setContent {
+                SunlithTheme("light", false) {
+                    Box(Modifier.fillMaxSize().background(LightPalette.background).safeDrawingPadding()
+                        .semantics { testTagsAsResourceId = true }) {
+                        CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
+                            Box(Modifier.width(330.dp).height(500.dp)) {
+                                Timeline(listOf(day, day.plusDays(1), day.plusDays(2)),
+                                    { if (it == day) listOf(event) else emptyList() }, day, LocalDate.now(), formats, true, scroll,
+                                    autoScroll = true, todayRequest = 0, motion = true,
+                                    onSelectDay = {}, onOpen = {}, onNew = {}, onOverflow = { _, _ -> },
+                                    groupEmptyHours = true, fallback = {})
+                            }
+                        }
+                    }
+                }
+                LaunchedEffect(scroll) {
+                    androidx.compose.runtime.snapshotFlow { scroll.viewportSize > 0 }.first { it }
+                    assertEquals("This grouped week must fit without scrolling.", 0, scroll.maxValue)
+                    kotlinx.coroutines.withTimeout(250) {
+                        assertFalse(awaitScrollable(scroll))
+                    }
+                    measuredWithoutDelay.set(true)
+                }
+            }
+        }
+        awaitState("A measured, non-scrollable timeline must be ready immediately.") { measuredWithoutDelay.get() }
+        val bounds = node(By.pkg(context.packageName).res("timeline_event_${event.id}")).visibleBounds
+        val pixels = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            assertTrue("The compact meeting must be painted after measurement.",
+                pixels.getPixel(bounds.right - 8, bounds.centerY()) != pixels.getPixel(bounds.left - 8, bounds.centerY()))
+        } finally { pixels.recycle() }
+    }
+
+    @Test
+    @androidx.test.filters.SdkSuppress(minSdkVersion = 29)
+    fun anUnloadedDayListShowsRetryAndRecoversAfterAProviderFailure() {
+        val fail = AtomicBoolean(true)
+        val resolver = ContentResolver.wrap(object : ContentProvider() {
+            override fun onCreate() = true
+            override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
+                if (uri.pathSegments.firstOrNull() == "instances" && fail.get()) throw IllegalStateException("Synthetic calendar load failure")
+                return this@CalendarRefinementTest.context.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)
+            }
+            override fun getType(uri: Uri) = this@CalendarRefinementTest.context.contentResolver.getType(uri)
+            override fun insert(uri: Uri, values: ContentValues?) = this@CalendarRefinementTest.context.contentResolver.insert(uri, values)
+            override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = this@CalendarRefinementTest.context.contentResolver.delete(uri, selection, selectionArgs)
+            override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = this@CalendarRefinementTest.context.contentResolver.update(uri, values, selection, selectionArgs)
+        }.apply {
+            attachInfo(this@CalendarRefinementTest.context, android.content.pm.ProviderInfo().apply {
+                authority = "com.android.calendar"
+                exported = false
+            })
+        })
+        val failingContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getContentResolver() = resolver
+        }
+        val repository = SunlithViewModel::class.java.getDeclaredField("repo").apply { isAccessible = true }
+        val original = repository.get(vm)
+        val day = LocalDate.now().plusDays(400)
+        try {
+            repository.set(vm, CalendarRepository(failingContext))
+            onMain {
+                vm.changeDayLayout("cards")
+                vm.changeViewMode(ViewMode.Day)
+                vm.select(day)
+                vm.reload()
+            }
+            awaitState("The selected unloaded day must report the provider failure.") {
+                !vm.loadingEvents && vm.loadError != null && !vm.coversRange(day, day)
+            }
+            val retry = node(By.pkg(context.packageName).text(english.getString(R.string.action_retry)))
+            fail.set(false)
+            retry.click()
+            awaitState("Retry must load the selected day and clear the error.") {
+                !vm.loadingEvents && vm.loadError == null && vm.coversRange(day, day)
+            }
+            assertFalse(device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.action_retry))))
+        } finally { repository.set(vm, original) }
+    }
+
+    @Test
+    fun aNewDayTimelinePositionsItsEventBeforeDrawingIntermediateHours() {
+        val day = LocalDate.now().plusDays(2)
+        val zone = ZoneId.systemDefault()
+        val event = CalendarEvent(
+            id = 981_067L, calendarId = calendarId, title = "First painted evening class",
+            startMillis = day.atTime(20, 0).atZone(zone).toInstant().toEpochMilli(),
+            endMillis = day.atTime(21, 0).atZone(zone).toInstant().toEpochMilli(),
+            allDay = false, timeZone = zone.id, description = "", location = "", color = android.graphics.Color.BLUE,
+        )
+        val scroll = ScrollState(0)
+        val handled = AtomicBoolean(false)
+        val samples = Collections.synchronizedList(mutableListOf<Int>())
+        val formats = Formats(english, Locale.ENGLISH)
+        onMain {
+            requireNotNull(activity).setContent {
+                val focus = androidx.compose.runtime.remember { TimelineFocus(day, 1) }
+                Timeline(listOf(day), { listOf(event) }, day, LocalDate.now(), formats, false, scroll,
+                    autoScroll = true, todayRequest = 0, motion = true,
+                    onSelectDay = {}, onOpen = {}, onNew = {}, onOverflow = { _, _ -> },
+                    modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.drawWithContent {
+                        samples += scroll.value
+                        drawContent()
+                    }, focus = focus, onFocusHandled = { handled.set(true) }, fallback = {})
+            }
+        }
+        awaitState("The new day must position and draw its first class") { handled.get() && samples.isNotEmpty() }
+        val settled = scroll.value
+        assertTrue("The fixture must start at a late hour.", settled > 0)
+        assertTrue("No rendered frame may traverse intermediate hours: $samples, target=$settled",
+            samples.all { kotlin.math.abs(it - settled) <= 2 })
+        val eventBounds = node(By.pkg(context.packageName).res("timeline_event_${event.id}")).visibleBounds
+        val viewport = node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds
+        assertTrue("The positioned event must actually be visible.",
+            eventBounds.height() > 20 && eventBounds.top >= viewport.top && eventBounds.bottom <= viewport.bottom)
+        val pixels = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            val eventPixel = pixels.getPixel(eventBounds.right - 8, eventBounds.centerY())
+            val outsidePixel = pixels.getPixel(eventBounds.left - 8, eventBounds.centerY())
+            assertTrue("The focused block must actually be painted, not remain hidden by its preparation layer.", eventPixel != outsidePixel)
+        } finally { pixels.recycle() }
+    }
+
+    @Test
+    fun dayAndGroupedWeekZoomResizeEventsAndPreserveTheViewedMinute() {
+        val day = LocalDate.now().plusDays(2)
+        val zone = ZoneId.systemDefault()
+        val formats = Formats(english, Locale.ENGLISH)
+        val example = CalendarEvent(
+            id = 981_068L, calendarId = calendarId, title = "Zoom keeps this class",
+            startMillis = day.atTime(12, 0).atZone(zone).toInstant().toEpochMilli(),
+            endMillis = day.atTime(13, 0).atZone(zone).toInstant().toEpochMilli(),
+            allDay = false, timeZone = zone.id, description = "Original description", location = "Room Z",
+        )
+        val storedId = CalendarRepository(context).saveEvent(EventDraft(calendarId = calendarId, title = example.title,
+            startMillis = example.startMillis, endMillis = example.endMillis, allDay = false, timeZone = zone.id,
+            description = example.description, location = example.location, reminderMinutes = emptyList()))
+        onMain { vm.select(day); vm.reload() }
+        awaitState("The continuous zoom marker must load from the provider.") {
+            !vm.loadingEvents && vm.eventsByDay[day].orEmpty().any { it.id == storedId }
+        }
+        val stored = vm.eventsByDay.getValue(day).first { it.id == storedId }
+        listOf("day", "week", "continuous").forEach { layout ->
+            val groupedWeek = layout == "week"
+            val continuous = layout == "continuous"
+            val event = if (continuous) stored else example
+            val scroll = ScrollState(0)
+            val zoom = mutableIntStateOf(100)
+            val focus = mutableStateOf<TimelineFocus?>(if (continuous) null else TimelineFocus(day, 1))
+            val opened = AtomicReference<CalendarEvent?>(null)
+            val days = if (groupedWeek) listOf(day, day.plusDays(1), day.plusDays(2)) else listOf(day)
+            // Other columns keep enough occupied hours around the grouped bands to exercise real scrolling
+            // at 50%, while the measured class remains a single unchanged one-hour event.
+            val earlier = event.copy(id = 981_069L, startMillis = day.plusDays(1).atTime(5, 0).atZone(zone).toInstant().toEpochMilli(),
+                endMillis = day.plusDays(1).atTime(7, 0).atZone(zone).toInstant().toEpochMilli())
+            val later = event.copy(id = 981_070L, startMillis = day.plusDays(2).atTime(18, 0).atZone(zone).toInstant().toEpochMilli(),
+                endMillis = day.plusDays(2).atTime(20, 0).atZone(zone).toInstant().toEpochMilli())
+            onMain {
+                if (continuous) {
+                    vm.changeWeekLayout("continuous")
+                    vm.changeViewMode(ViewMode.Week)
+                    vm.changeGroupEmptyHours(false)
+                    vm.changeWeekTimelineZoom(100)
+                    vm.select(day)
+                }
+                requireNotNull(activity).setContent {
+                    SunlithTheme("light", false) {
+                        Box(Modifier.fillMaxSize().background(LightPalette.background).safeDrawingPadding()
+                            .semantics { testTagsAsResourceId = true }) {
+                            CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
+                                Box(Modifier.width(350.dp).height(if (continuous) 500.dp else 320.dp)) {
+                                    if (continuous) ContinuousTimeline(vm, formats, LocalDate.now(), true, scroll,
+                                        onOpen = { opened.set(it) })
+                                    else Timeline(days, { shown -> when (shown) {
+                                        day -> listOf(event)
+                                        day.plusDays(1) -> listOf(earlier)
+                                        else -> listOf(later)
+                                    } }, day, LocalDate.now(), formats, groupedWeek, scroll,
+                                        autoScroll = true, todayRequest = 0, motion = true,
+                                        onSelectDay = {}, onOpen = { opened.set(it) }, onNew = {}, onOverflow = { _, _ -> },
+                                        focus = focus.value, onFocusHandled = { focus.value = null },
+                                        groupEmptyHours = groupedWeek, zoomPercent = zoom.intValue, fallback = {})
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            awaitState("The class must be positioned before changing zoom.") { focus.value == null && scroll.viewportSize > 0 }
+            if (continuous) {
+                awaitState("Initial continuous navigation must finish before setting the viewed minute.") {
+                    !vm.loadingEvents && scroll.value > 0 && vm.timelineNavigationRequest == vm.handledTimelineNavigation
+                }
+                onMain { CoroutineScope(Dispatchers.Main.immediate).launch { scroll.scrollTo(736) } }
+                awaitState("Continuous must start at 11:30 with the 64px hour.") { scroll.value == 736 }
+            }
+            val selector = By.pkg(context.packageName).res("timeline_event_${event.id}")
+            var base = paintedTimelineBounds(selector)
+            var baselineViewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
+            val baselineDeadline = SystemClock.elapsedRealtime() + 5_000
+            fun baselineReady() = abs(base.height() - 64) <= 2 &&
+                abs(base.top - baselineViewport.top - 32) <= 2 &&
+                base.top >= baselineViewport.top && base.bottom <= baselineViewport.bottom
+            while (!baselineReady() && SystemClock.elapsedRealtime() < baselineDeadline) {
+                SystemClock.sleep(50)
+                base = paintedTimelineBounds(selector)
+                baselineViewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
+            }
+            if (!baselineReady() || InstrumentationRegistry.getArguments().getString("captureFinal") == "true") {
+                val name = "zoom-baseline-$layout"
+                device.takeScreenshot(File(context.filesDir, "$name.png"))
+                device.dumpWindowHierarchy(File(context.filesDir, "$name.xml"))
+                File(context.filesDir, "$name.json").writeText(JSONObject().put("painted", base.toString())
+                    .put("viewport", baselineViewport.toString()).put("scroll", scroll.value).toString())
+            }
+            val description = readNode(selector) { it.contentDescription }
+            assertTrue("The full title must remain accessible at every zoom.", description.contains(event.title))
+            assertTrue("The baseline class must be completely inside the viewport: layout=$layout base=$base viewport=$baselineViewport", base.height() > 0 &&
+                base.top > nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).top &&
+                base.bottom < nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).bottom)
+            val initialTop = nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).top
+            val fraction = (base.top - initialTop).toFloat() / base.height()
+            assertTrue("The fixture must view the half-hour before this one-hour class: layout=$layout base=$base viewport=$baselineViewport scroll=${scroll.value}", abs(fraction - 0.5f) < 0.06f)
+            listOf(50, 100, 200).forEach { percent ->
+                onMain { if (continuous) vm.changeWeekTimelineZoom(percent) else zoom.intValue = percent }
+                val deadline = SystemClock.elapsedRealtime() + 5_000
+                var settled = false
+                while (!settled && SystemClock.elapsedRealtime() < deadline) {
+                    val measured = paintedTimelineBounds(selector)
+                    val area = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
+                    settled = abs(measured.height() - base.height() * percent / 100f) <= 2f &&
+                        abs((measured.top - area.top) - fraction * measured.height()) <= 2f
+                    if (!settled) SystemClock.sleep(50)
+                }
+                if (!settled) {
+                    val name = "zoom-unsettled-$layout-$percent"
+                    device.takeScreenshot(File(context.filesDir, "$name.png"))
+                    device.dumpWindowHierarchy(File(context.filesDir, "$name.xml"))
+                }
+                val bounds = paintedTimelineBounds(selector)
+                val viewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
+                assertTrue("Zoom must resize the rendered one-hour block: layout=$layout zoom=$percent base=$base actual=$bounds",
+                    abs(bounds.height() - base.height() * percent / 100f) <= 2f)
+                assertTrue("The whole event must remain visible at $percent%.", bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
+                // The event starts at noon and spans one hour. Its relative distance below the top
+                // therefore measures the visible minute without reusing the production axis mapping.
+                assertTrue("Zoom must preserve the viewed minute: layout=$layout zoom=$percent fraction=$fraction bounds=$bounds viewport=$viewport",
+                    abs((bounds.top - viewport.top) - fraction * bounds.height()) <= 2f)
+                assertEquals("Zoom must preserve the full spoken title, times and room.", description, readNode(selector) { it.contentDescription })
+                opened.set(null)
+                readNode(selector) { it.click() }
+                assertEquals("Zoom must retain the original event and its exact start/end times.", event, opened.get())
+                if (InstrumentationRegistry.getArguments().getString("captureFinal") == "true") {
+                    val name = "zoom-$layout-$percent"
+                    assertTrue(device.takeScreenshot(File(context.filesDir, "$name.png")))
+                    device.dumpWindowHierarchy(File(context.filesDir, "$name.xml"))
+                }
+            }
         }
     }
 
@@ -395,14 +819,67 @@ class CalendarRefinementTest {
     @Test
     fun diagonalSwipesOverTheAgendaPageInBothDirectionsRepeatedly() {
         val original = vm.month
-        repeat(3) {
-            diagonalSwipe(forward = true)
-            awaitMonth(original.plusMonths(1))
-            diagonalSwipe(forward = false)
-            awaitMonth(original)
+        listOf(false, true).forEach { motion ->
+            onMain { vm.changeNavigationAnimation(motion) }
+            repeat(3) {
+                diagonalSwipe(forward = true)
+                awaitMonth(original.plusMonths(1))
+                diagonalSwipe(forward = false)
+                awaitMonth(original)
+            }
         }
         assertEquals(ViewMode.Month, vm.viewMode)
         assertTrue(vm.editor == null)
+    }
+
+    @Test
+    fun diagonalSwipesPageWeekAndDayListsOnceWithAndWithoutMotion() {
+        val formats = Formats(english, Locale.ENGLISH)
+        listOf(ViewMode.Week, ViewMode.Day).forEach { mode ->
+            listOf(false, true).forEach { motion ->
+                onMain {
+                    vm.changeWeekLayout("list")
+                    vm.changeDayLayout("cards")
+                    vm.changeNavigationAnimation(motion)
+                    vm.changeViewMode(mode)
+                    vm.select(vm.today)
+                }
+                awaitState("The $mode list must be loaded before swiping, motion=$motion") { vm.loaded && !vm.loadingEvents }
+                val original = vm.selectedDate
+                val changes = mutableListOf<LocalDate>()
+                var previous = original
+                val observer = object : Choreographer.FrameCallback {
+                    override fun doFrame(frameTimeNanos: Long) {
+                        if (vm.selectedDate != previous) { previous = vm.selectedDate; changes += previous }
+                        Choreographer.getInstance().postFrameCallback(this)
+                    }
+                }
+                instrumentation.runOnMainSync { Choreographer.getInstance().postFrameCallback(observer) }
+                try {
+                    repeat(2) {
+                        listOf(true, false).forEach { forward ->
+                            val expected = if (!forward) original else if (mode == ViewMode.Week) original.plusWeeks(1) else original.plusDays(1)
+                            val area = if (mode == ViewMode.Week) agendaBounds()
+                                else node(By.pkg(context.packageName).res("calendar_day_cards")).visibleBounds
+                            diagonalSwipe(forward, area)
+                            awaitState("A diagonal $mode list swipe must land exactly on $expected, motion=$motion") { vm.selectedDate == expected }
+                            assertTrue("The visible $expected header must expose its selected state.",
+                                node(By.pkg(context.packageName).descStartsWith(formats.dayLong(expected) + ",")).let { it.isSelected || it.isChecked })
+                            if (mode == ViewMode.Day) node(By.pkg(context.packageName).text(formats.dayLong(expected)))
+                            assertEquals("The outgoing page's events must disappear after landing, mode=$mode motion=$motion",
+                                expected == original, device.hasObject(By.pkg(context.packageName).textStartsWith(marker)))
+                            assertEquals(mode, vm.viewMode)
+                            assertTrue(vm.editor == null)
+                        }
+                    }
+                } finally {
+                    instrumentation.runOnMainSync { Choreographer.getInstance().removeFrameCallback(observer) }
+                }
+                val next = if (mode == ViewMode.Week) original.plusWeeks(1) else original.plusDays(1)
+                assertEquals("Each diagonal gesture must produce one visible date change, mode=$mode motion=$motion",
+                    listOf(next, original, next, original), changes)
+            }
+        }
     }
 
     @Test
@@ -561,15 +1038,18 @@ class CalendarRefinementTest {
                 val scrolls = mutableMapOf<Long, ScrollState>()
                 onMain {
                     requireNotNull(activity).setContent {
-                        val swipe = rememberPeriodSwipe(true, motion) { period += it }
-                        PagedPeriod(swipe, period, Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) { absolute ->
-                            val scroll = rememberScrollState()
-                            SideEffect { scrolls[absolute] = scroll }
-                            val first = today.plusDays(absolute * days)
-                            Timeline((0L until days.toLong()).map(first::plusDays), { emptyList() }, today, today,
-                                formats, true, scroll, absolute == period, request, motion,
-                                onSelectDay = {}, onOpen = {}, onNew = {}, onOverflow = { _, _ -> },
-                                fallback = { Text("Unexpected timeline fallback") })
+                        // Keep columns fitted here to isolate scroll ownership; real-view tests cover readable overflow.
+                        CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1f)) {
+                            val swipe = rememberPeriodSwipe(true, motion) { period += it }
+                            PagedPeriod(swipe, period, Modifier.fillMaxSize().safeDrawingPadding().semantics { testTagsAsResourceId = true }) { absolute ->
+                                val scroll = rememberScrollState()
+                                SideEffect { scrolls[absolute] = scroll }
+                                val first = today.plusDays(absolute * days)
+                                Timeline((0L until days.toLong()).map(first::plusDays), { emptyList() }, today, today,
+                                    formats, true, scroll, absolute == period, request, motion,
+                                    onSelectDay = {}, onOpen = {}, onNew = {}, onOverflow = { _, _ -> },
+                                    fallback = { Text("Unexpected timeline fallback") })
+                            }
                         }
                     }
                 }
@@ -964,11 +1444,56 @@ class CalendarRefinementTest {
             }
             SystemClock.sleep(50)
         }
+        captureFailure()
         throw AssertionError(message)
+    }
+
+    private fun paintedTimelineBounds(selector: BySelector): Rect {
+        val target = nodeBounds(selector)
+        val viewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
+        val pixels = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            val x = target.right - 8
+            val middle = target.centerY().coerceIn(viewport.top, viewport.bottom - 1)
+            val color = pixels.getPixel(x, middle)
+            var top = middle
+            var bottom = middle + 1
+            while (top > viewport.top && pixels.getPixel(x, top - 1) == color) top--
+            while (bottom < viewport.bottom && pixels.getPixel(x, bottom) == color) bottom++
+            return Rect(target.left, top, target.right, bottom)
+        } finally { pixels.recycle() }
+    }
+
+    private fun nodeBounds(selector: BySelector): Rect = readNode(selector) { it.visibleBounds }
+
+    private fun <T> readNode(selector: BySelector, read: (UiObject2) -> T): T {
+        val deadline = SystemClock.elapsedRealtime() + 10_000
+        while (SystemClock.elapsedRealtime() < deadline) {
+            try {
+                instrumentation.uiAutomation.serviceInfo = instrumentation.uiAutomation.serviceInfo
+                val target = device.wait(Until.findObject(selector), (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1))
+                    ?: break
+                return read(target)
+            } catch (_: androidx.test.uiautomator.StaleObjectException) {
+                SystemClock.sleep(50)
+            }
+        }
+        captureFailure()
+        throw AssertionError("Expected stable calendar control: $selector")
     }
 
     private fun node(selector: BySelector): UiObject2 {
         instrumentation.uiAutomation.serviceInfo = instrumentation.uiAutomation.serviceInfo
-        return requireNotNull(device.wait(Until.findObject(selector), 10_000)) { "Expected calendar control: $selector" }
+        return requireNotNull(device.wait(Until.findObject(selector), 10_000)) {
+            captureFailure()
+            "Expected calendar control: $selector"
+        }
+    }
+
+    private fun captureFailure() {
+        runCatching {
+            device.takeScreenshot(File(context.filesDir, "refinement-state.png"))
+            device.dumpWindowHierarchy(File(context.filesDir, "refinement-state.xml"))
+        }
     }
 }

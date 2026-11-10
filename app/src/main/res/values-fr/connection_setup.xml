@@ -13,7 +13,7 @@
     <string name="connection_setup_step3_title">3. Envoyez le fichier de connexion</string>
     <string name="connection_setup_step3_body">Touchez Connecter l’ordinateur. Choisissez Tailscale, puis votre ordinateur dans la liste de partage. Terminez avec le guide ci-dessous.</string>
     <string name="connection_setup_address_one">Ce téléphone : %1$s (%2$s)</string>
-    <string name="connection_setup_address_tailscale">Tailscale</string>
+    <string name="connection_setup_address_tailscale">VPN (plage Tailscale)</string>
     <string name="connection_setup_address_wifi">Réseau local</string>
     <string name="connection_setup_address_other_vpn">VPN</string>
     <string name="connection_setup_open_calendar">Ouvrir le calendrier</string>

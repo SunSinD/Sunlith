@@ -37,7 +37,7 @@
     <string name="device_link_not_paired">Non jumelé</string>
     <string name="device_link_last_request">Dernière requête réussie</string>
     <string name="device_link_no_contact">Aucune requête enregistrée</string>
-    <string name="device_link_details_help">Connexion active signifie que Sunlith est à l’écoute. La dernière requête indique quand votre ordinateur a communiqué avec le téléphone, sans confirmer sa présence actuelle. L’accès utilise HTTPS avec le certificat du téléphone et se limite aux agendas choisis.</string>
+    <string name="device_link_details_help">L’écoute ne confirme pas l’accès de l’ordinateur. L’état VPN dépend de l’adresse du téléphone.</string>
     <string name="device_link_history_help">Les 100 dernières modifications réussies de l’ordinateur, conservées seulement sur ce téléphone. Les modifications antérieures et manuelles sont exclues. Cet historique ne permet pas d’annuler les modifications.</string>
     <string name="device_link_history_empty">Aucune modification de l’ordinateur enregistrée.</string>
     <string name="device_link_history_clear">Effacer l’historique</string>

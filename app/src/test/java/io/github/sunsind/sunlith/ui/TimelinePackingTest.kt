@@ -10,6 +10,15 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TimelinePackingTest {
+    @Test
+    fun zoomUsesTheSameCompactTimeScaleForBothTimelines() {
+        assertEquals(32.dp, timelineHourHeight(50))
+        assertEquals(64.dp, timelineHourHeight(100))
+        assertEquals(128.dp, timelineHourHeight(200))
+        assertEquals(32.dp, timelineHourHeight(-1))
+        assertEquals(128.dp, timelineHourHeight(999))
+    }
+
     private val date = LocalDate.of(2026, 11, 5)
     private val zone = ZoneId.of("America/Toronto")
 
@@ -146,14 +155,6 @@ class TimelinePackingTest {
         anchor.record(41, 25, 100)
         assertEquals(41, anchor.index)
         assertEquals(50, anchor.offset(200))
-    }
-
-    @Test
-    fun distantNavigationApproachesFromTheDirectionOfTravel() {
-        assertEquals(102, timelineApproachIndex(500, 100, 1000))
-        assertEquals(498, timelineApproachIndex(100, 500, 1000))
-        assertEquals(2, timelineApproachIndex(500, 0, 1000))
-        assertEquals(998, timelineApproachIndex(100, 1000, 1000))
     }
 
     @Test

@@ -37,7 +37,7 @@
     <string name="device_link_not_paired">Not paired</string>
     <string name="device_link_last_request">Last successful request</string>
     <string name="device_link_no_contact">None recorded yet</string>
-    <string name="device_link_details_help">Connection on means Sunlith is listening. The last request shows when your computer last reached it, not whether it is connected now. Access uses HTTPS with a pinned phone certificate and is limited to your chosen calendars.</string>
+    <string name="device_link_details_help">Listening does not confirm computer access. VPN status is based on the phone’s address.</string>
     <string name="device_link_history_help">Latest 100 successful computer changes, saved only on this phone. Earlier changes and manual edits are not included. This list is a record, not an undo tool.</string>
     <string name="device_link_history_empty">No computer changes recorded yet.</string>
     <string name="device_link_history_clear">Clear history</string>

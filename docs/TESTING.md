@@ -2,6 +2,102 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.7 defaults, zoom and navigation verification, 2026-11-09
+
+The tested distribution APK is version 0.6.7/code 18, nondebuggable and
+R8-minified, signed with the existing certificate. Production and test files
+were frozen together as candidate r15 throughout the checks below. Only this
+verification document changed after runtime verification; the packaged APK
+is the exact tested file.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Distribution APK | `36b41b22f603b88203aedb9acd397894a347b092defc6cc9ca7f6a6f65d7ad3d` |
+| Test APK | `6680357132249c1e03438a282de03414ff7db0222b0a623990f45c9b72cbae2b` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+| Frozen source fingerprint | `6be15b2f82aeb41070e037acf8d1da18d52e0ec1b15b8d12c564312b54fef0fe` |
+| Frozen source ZIP | `ff406f5d7cc3784984cf40f72aef4aafff3235f16eab1daa01e589be862475c4` |
+
+| Check | API 36 / Android 16 | API 30 / Android 11 |
+| --- | --- | --- |
+| Full instrumentation, 25 unique classes each | 288 passed, 0 failed, 7 skipped; 2183.7s | 286 passed, 0 failed, 6 skipped; 1813.4s |
+| Focused navigation and positioning regressions | 7 passed, 0 failed | 7 passed, 0 failed |
+| Upgrade from published 0.6.6, stock and custom layouts | Both passed | Both passed |
+
+These suite totals combine complete classes from disclosed continuation runs,
+not one uninterrupted run. Partial interrupted classes were excluded and
+restarted. Raw unsuccessful attempts were preserved. Continuations corrected
+emulator and fixture state: an orphan injected touch, missing emulator Wi-Fi,
+SystemUI interruption and stale SELinux labels on restored fixture files.
+Demo/widget seeding also triggered cleanup guards; only the identified fixture
+calendar, events and temporary preferences were removed before continuing.
+No physical phone or personal calendar was used.
+
+Local distribution checks passed 84 JVM tests with zero failures or skips.
+Lint reported zero errors, 142 warnings and 9 hints. The desktop companion
+passed 44 tests with one external opt-in skip; its production dependency audit
+found zero vulnerabilities. Distribution app/test builds and diff whitespace
+checks passed. Source reviews found no remaining concrete production blocker.
+All 193 frozen files matched both the live tree and source ZIP before the
+verification-document update.
+
+Fresh visual review covered 91 PNG/XML pairs across seven profiles: 344dp
+English at font 1.15, 280dp English at normal font, 344dp French at normal and
+200% font, forced RTL French, 690dp inner-screen width and 829dp landscape.
+Every XML parsed and every image was reviewed. Five complete date headers fit
+at 280dp with normal text; large text uses wider scrolling columns. Grouped
+empty-hour boundaries were explicitly brought on screen and were readable.
+French all-day labels, centered Day event labels, padding, mirrored arrows,
+short-event titles and both time endpoints were checked. Narrow timeline
+columns can still shorten titles; very short bars can be blank, with full
+content available in List, the short-event chooser and Details.
+
+Real Appearance controls saved all twelve zoom choices independently, six
+for Day and six for Week. Day 125% and Week 75% remained selected after
+reopening settings. Default Day List, the prominent VPN-not-detected status
+and shorter connection details were also reviewed. Stock preset Day timelines
+migrated to List once during both API upgrades; customized Day timeline and
+Continuous Week choices stayed selected. Provider state was unchanged by
+upgrade. API 30's stock before-upgrade PNG is preserved, but its XML dump
+failed; that missing XML is not counted as evidence.
+
+Six switching recordings were decoded without temporal sampling: all 561
+recorded frames were reviewed. Date taps in Day List, Day timeline, Week List
+and Month grid showed no unrelated/intervening-date events. Finger paging in
+Day and Week List showed the expected adjacent pages and reversed correctly.
+Day timeline can suppress its body for one or two recorded frames while
+positioning. Month/Week agendas can retain the preceding content for one
+recorded frame after the highlight changes, then snap directly. Some vertical
+header/card settling remains during Day List swipes. Variable-rate recordings
+cannot prove that every displayed frame was captured.
+
+Performance was measured on API 36 using SwiftShader software rendering,
+344dp width, font 1.15 and animation scales 1. Eight isolated layout hosts
+passed, each using two warmup swipes then six measured alternating swipes.
+Their landing-frame p95 ranged from 44.1 to 66.3ms and maxima from 53.4 to
+83.0ms. Real Continuous Week swipes, without screenshots or hierarchy dumps
+inside the measured interval, produced:
+
+| Group empty hours | Rendered frames | p50 | p95 | Maximum |
+| --- | --- | --- | --- | --- |
+| Off | 110 | 46.0ms | 87.9ms | 132.2ms |
+| On | 119 | 41.7ms | 60.5ms | 73.7ms |
+
+These measurements contain slow frames and do not establish stutter-free
+motion or physical Fold5 performance. A separate passing zoom host recorded
+230 unique rendered frames, p50 32.8ms, p95 173.8ms and maximum 798.3ms; that
+interval includes setup, taps, screenshots and hierarchy dumps, so it is not
+an isolated zoom-gesture benchmark. There is no comparable before/after
+hardware measurement proving a speed increase.
+
+Known limits: no physical Fold5 fold/unfold or live Tailscale-network test.
+The connection indicator detects an eligible local VPN address in Tailscale's
+range; it does not prove the computer is reachable or the whole connection
+works. Private guest provider/preferences/display/locale baselines were
+restored and both private emulators stopped after verification. The final
+byte audit confirmed all 485 original AVD files (94,168,573,854 bytes) were
+unchanged.
+
 ## 0.6.6 side-by-side overlap verification, 2026-11-09
 
 The tested distribution APK is version 0.6.6/code 17, nondebuggable and

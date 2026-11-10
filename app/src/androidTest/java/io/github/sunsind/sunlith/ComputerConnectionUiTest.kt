@@ -68,7 +68,10 @@ class ComputerConnectionUiTest {
             "title" to title, "start" to mapOf("date" to today.toString()), "end" to mapOf("date" to today.plusDays(1).toString())), setOf(linkedCalendarId))
         launch()
         instrumentation.runOnMainSync { vm.open(Screen.DeviceLink) }
+        findText(R.string.connection_tailscale)
+        findText(R.string.connection_tailscale_missing)
         findText(R.string.device_link_details).click()
+        findText(R.string.connection_tailscale)
         findText(R.string.device_link_paired_since)
         findText(R.string.device_link_last_request)
         findText(R.string.device_link_no_contact)

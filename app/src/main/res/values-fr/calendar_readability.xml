@@ -1,4 +1,10 @@
 <resources>
+    <string name="settings_day_zoom">Zoom de la grille Jour</string>
+    <string name="settings_week_zoom">Zoom de la grille Semaine</string>
+    <string name="connection_tailscale">Tailscale / VPN</string>
+    <string name="connection_tailscale_detected">Adresse VPN détectée</string>
+    <string name="connection_tailscale_missing">Non détecté</string>
+    <string name="connection_tailscale_checking">Vérification…</string>
     <string name="calendar_prev_five_days">5 jours précédents</string>
     <string name="calendar_next_five_days">5 jours suivants</string>
     <string name="calendar_teacher_absent">Enseignant absent</string>

@@ -40,6 +40,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +72,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 
 @Composable
 fun DeviceLinkScreen(vm: SunlithViewModel) {
@@ -85,6 +89,7 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
     var ids by rememberSaveable { mutableStateOf(emptySet<Long>()) }
     var hosts by remember { mutableStateOf(emptyList<String>()) }
     var addressKinds by remember { mutableStateOf(emptyMap<String, DeviceLinkAddressKind>()) }
+    var tailscaleAddress by remember { mutableStateOf<Boolean?>(null) }
     var host by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var refresh by remember { mutableStateOf(0) }
@@ -121,14 +126,10 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
 
     LaunchedEffect(refresh) {
         val data = withContext(Dispatchers.IO) {
-            Triple(DeviceLink.isPaired(context), DeviceLink.pairedCalendarIds(context), DeviceLink.addressChoices(context))
+            DeviceLink.isPaired(context) to DeviceLink.pairedCalendarIds(context)
         }
         paired = data.first
         if (paired) ids = data.second
-        hosts = data.third.map { it.host }
-        addressKinds = data.third.associate { it.host to it.kind }
-        // hosts is already ordered by DeviceLinkNetwork: Tailscale VPN first, then other VPN, then Wi-Fi.
-        if (host !in hosts) host = hosts.firstOrNull().orEmpty()
         // Re-offer the same pairing file after a restart without rotating its token; absent cache -> no button.
         if (paired && sharedUri == null) {
             sharedUri = withContext(Dispatchers.IO) {
@@ -136,6 +137,19 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
             }
         }
         if (!paired) sharedUri = null
+    }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle, refresh) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val choices = withContext(Dispatchers.IO) { DeviceLink.addressChoices(context) }
+                hosts = choices.map { it.host }
+                addressKinds = choices.associate { it.host to it.kind }
+                tailscaleAddress = choices.any { it.kind == DeviceLinkAddressKind.TAILSCALE }
+                if (host !in hosts) host = hosts.firstOrNull().orEmpty()
+                delay(2_000)
+            }
+        }
     }
     LaunchedEffect(connection.error) {
         connection.error?.let { vm.message(it) }
@@ -241,6 +255,7 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
         Scaffold(containerColor = p.background, topBar = { ScreenTopBar(stringResource(R.string.device_link_details), onNavigate = back) }) { padding ->
             LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 item { ConnectionDetail(stringResource(R.string.device_link_status), stringResource(if (connection.running) R.string.device_link_on else R.string.device_link_off)) }
+                item { TailscaleStatus(tailscaleAddress) }
                 item { ConnectionDetail(stringResource(R.string.device_link_paired_since), diagnostics.pairedAtMillis?.let { connectionDate(context, it) }
                     ?: stringResource(if (paired) R.string.device_link_older_pairing else R.string.device_link_not_paired)) }
                 item { ConnectionDetail(stringResource(R.string.device_link_last_request), diagnostics.lastSuccessMillis?.let { connectionDate(context, it) } ?: stringResource(R.string.device_link_no_contact)) }
@@ -262,6 +277,7 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                         Text(stringResource(R.string.action_refresh))
                     }
                     Text(stringResource(R.string.device_link_lead), color = p.muted, style = MaterialTheme.typography.bodyMedium)
+                    TailscaleStatus(tailscaleAddress)
                     if (largeText) {
                         TextButton(onClick = { page = "history" }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) { Text(stringResource(R.string.device_link_history)) }
                         TextButton(onClick = { page = "details" }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) { Text(stringResource(R.string.device_link_details)) }
@@ -427,6 +443,18 @@ private fun addressKindRes(kind: DeviceLinkAddressKind?): Int = when (kind) {
 private fun connectionDate(context: android.content.Context, millis: Long): String = DateUtils.formatDateTime(
     context, millis, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_YEAR,
 )
+
+@Composable
+private fun TailscaleStatus(detected: Boolean?) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(stringResource(R.string.connection_tailscale), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(when (detected) {
+            true -> R.string.connection_tailscale_detected
+            false -> R.string.connection_tailscale_missing
+            null -> R.string.connection_tailscale_checking
+        }), Modifier.weight(1f), color = LocalPalette.current.muted, style = MaterialTheme.typography.bodyMedium)
+    }
+}
 
 @Composable
 private fun ConnectionDetail(label: String, value: String) {
