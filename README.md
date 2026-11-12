@@ -10,6 +10,7 @@ Plan on your phone, or ask your computer to add, edit and remove events. Sunlith
 - Agenda and Grid layouts, with separate settings for each view.
 - Wallpaper colors, light and dark themes and icons, and English and French.
 - Search, repeating events, multiple reminders, and calendar import and export.
+- Optional Monday–Friday five-day timelines, and event-linked To-dos that become available when their event starts.
 - A resizable agenda widget with day dividers and adjustable transparency.
 
 ## Connect your computer
@@ -23,6 +24,8 @@ Follow the [connection setup](docs/AI-INTEGRATION.md#direct-phone-connection). T
 Open Settings > Calendars > School schedule to connect Col.NET. Choose your school, then enter your Col.NET username and password. Selecting Collège Montmorency supplies its public portal address and time zone automatically; no browser login or copied link is needed. Only Montmorency has been tested. Another Col.NET school can be configured manually using its sign-in page address; other school portal systems are not supported.
 
 School events go into an existing calendar beside personal events. Choose notifications for teacher absences, times, rooms, teachers, added or removed classes, assessments, school days and connection problems. Updates check every five minutes while open and use best-effort fifteen-minute background jobs; instant push is not available. Coverage depends on what the school publishes. Credentials are encrypted on the connected phone and are not included in releases. Google calendar full-resync behavior remains unverified.
+
+School sync connects directly from the phone to the school portal. It does not need your computer, Computer connection or Tailscale. With a VPN active, it prefers a working direct phone network when Android permits it, then falls back to the default route after a transport failure. Android VPN restrictions and school network or portal outages can still prevent a connection.
 
 ## Build and checks
 

@@ -195,6 +195,9 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                                 if (vm.weekLayout != "timeline") vm.changeWeekLayout("timeline")
                             }
                         }
+                        if (vm.weekLayout == "timeline" && vm.visibleWeekDays == 5) {
+                            ToggleRow(stringResource(R.string.settings_five_day_workweek), stringResource(R.string.settings_five_day_workweek_summary), vm.fiveDayWorkweek, vm::changeFiveDayWorkweek)
+                        }
                         if (vm.weekLayout != "list") TimelineZoomRow(stringResource(R.string.settings_week_zoom), vm.weekTimelineZoom, vm::changeWeekTimelineZoom)
                         DropdownRow(
                             stringResource(R.string.view_day), vm.dayLayout,

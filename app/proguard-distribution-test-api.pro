@@ -417,7 +417,6 @@
     int event_count;
     int school_disconnect_remove;
     int school_sync_changes_count;
-    int timeline_short_event_count;
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.R$string {
     int about_source;
@@ -544,6 +543,7 @@
     int settings_day_all_hours;
     int settings_day_view;
     int settings_export;
+    int settings_five_day_workweek;
     int settings_general;
     int settings_group_empty_hours;
     int settings_import;
@@ -560,6 +560,12 @@
     int title_calendars;
     int title_settings;
     int today;
+    int todo_actions;
+    int todo_complete;
+    int todo_completed;
+    int todo_tag;
+    int todo_title;
+    int todo_undo;
     int tomorrow;
     int view_day;
     int view_month;
@@ -596,6 +602,7 @@
     java.util.Map revision$app_distribution(long);
     long saveEvent(io.github.sunsind.sunlith.data.EventDraft);
     java.util.List storedEvents$app_distribution(java.util.Set);
+    java.util.List todoEvents$default(io.github.sunsind.sunlith.data.CalendarRepository,java.util.Set,long,java.time.ZoneId,int,java.lang.Object);
     long updateIfUnchanged$app_distribution(io.github.sunsind.sunlith.data.EventDraft,java.util.Map);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.DeviceCalendar {
@@ -658,6 +665,16 @@
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.StoredEvent {
     io.github.sunsind.sunlith.data.EventDraft getDraft();
     java.lang.String getUid();
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.TodoItem {
+    long getAvailableAt();
+    io.github.sunsind.sunlith.data.CalendarEvent getEvent();
+    java.lang.String getKey();
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.TodoMarker {
+    io.github.sunsind.sunlith.data.TodoMarker INSTANCE;
+    boolean has(java.lang.String);
+    java.lang.String set(java.lang.String,boolean);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.device.Args {
     <init>(java.util.Map,java.util.Set);
@@ -916,6 +933,7 @@
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolPortalClient$Companion {
     java.net.URI normalize(java.lang.String);
+    io.github.sunsind.sunlith.school.SchoolPortalClient routed(java.lang.String,java.lang.String,java.util.List);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolRecord {
     <init>(java.lang.String,java.lang.String,java.lang.String,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String,long,java.lang.String,java.util.List,java.util.List,boolean,java.lang.Long,io.github.sunsind.sunlith.school.SchoolNotificationPreferences,java.lang.String,io.github.sunsind.sunlith.school.SchoolJournal,java.util.Map,java.lang.String,java.lang.String,java.lang.String,int,kotlin.jvm.internal.DefaultConstructorMarker);
@@ -1052,6 +1070,7 @@
     java.util.Map getCourseColorSlots();
     java.lang.String getDayLayout();
     int getDayTimelineZoom();
+    boolean getFiveDayWorkweek();
     boolean getGroupEmptyHours();
     boolean getHasChosenCalendars();
     boolean getKeepSelectedDate();
@@ -1078,6 +1097,7 @@
     void setCourseColorSlots(java.util.Map);
     void setDayLayout(java.lang.String);
     void setDayTimelineZoom(int);
+    void setFiveDayWorkweek(boolean);
     void setGroupEmptyHours(boolean);
     void setHasChosenCalendars(boolean);
     void setKeepSelectedDate(boolean);
@@ -1100,11 +1120,17 @@
     void setWidgetShowCalendarName(boolean);
     void setWidgetShowEmptyDays(boolean);
 }
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.system.TodoStore {
+    <init>(android.content.Context);
+    boolean isCompleted(java.lang.String);
+    void setCompleted$default(io.github.sunsind.sunlith.system.TodoStore,java.lang.String,boolean,long,int,java.lang.Object);
+}
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.CalendarEventStyleKt {
     io.github.sunsind.sunlith.ui.EventColors courseColors(int,boolean);
     io.github.sunsind.sunlith.data.CalendarEvent focusTarget(java.util.List,java.time.LocalDate,java.time.ZoneId);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.CalendarScreenKt {
+    void CalendarScreen(io.github.sunsind.sunlith.ui.SunlithViewModel,androidx.compose.ui.Modifier,androidx.compose.runtime.Composer,int,int);
     boolean rememberMotion(boolean,androidx.compose.runtime.Composer,int);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.CalendarSwipeKt {
@@ -1121,9 +1147,12 @@
     void ContinuousTimeline(io.github.sunsind.sunlith.ui.SunlithViewModel,io.github.sunsind.sunlith.ui.Formats,java.time.LocalDate,boolean,androidx.compose.foundation.ScrollState,androidx.compose.ui.Modifier,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int,int);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.EditorState {
-    io.github.sunsind.sunlith.ui.EditorState copy$default(io.github.sunsind.sunlith.ui.EditorState,java.lang.Long,java.lang.Long,boolean,java.lang.String,java.lang.String,java.lang.String,boolean,java.time.LocalDate,java.time.LocalTime,java.time.LocalDate,java.time.LocalTime,java.lang.String,java.lang.String,java.lang.String,java.util.List,io.github.sunsind.sunlith.data.EventDraft,int,java.lang.Object);
+    io.github.sunsind.sunlith.ui.EditorState copy$default(io.github.sunsind.sunlith.ui.EditorState,java.lang.Long,java.lang.Long,boolean,java.lang.String,java.lang.String,java.lang.String,boolean,java.time.LocalDate,java.time.LocalTime,java.time.LocalDate,java.time.LocalTime,java.lang.String,java.lang.String,java.lang.String,java.util.List,io.github.sunsind.sunlith.data.EventDraft,boolean,int,java.lang.Object);
+    java.lang.Long getId();
+    java.lang.String getNotes();
     java.time.LocalDate getStartDate();
     java.lang.String getTitle();
+    boolean getTodo();
     io.github.sunsind.sunlith.data.EventDraft toDraft(java.time.ZoneId);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.EventColors {
@@ -1138,6 +1167,7 @@
     java.lang.String dayLong(java.time.LocalDate);
     java.lang.String dayMonth(java.time.LocalDate);
     java.lang.String numericDayMonth(java.time.LocalDate);
+    java.lang.String time(long);
     java.lang.String timeRange(long,long);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.ImportUi {
@@ -1161,6 +1191,7 @@
     io.github.sunsind.sunlith.ui.Screen$Calendars INSTANCE;
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.Screen$Details {
+    <init>(io.github.sunsind.sunlith.data.CalendarEvent);
     io.github.sunsind.sunlith.data.CalendarEvent getEvent();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.Screen$DeviceLink {
@@ -1172,8 +1203,14 @@
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.Screen$SchoolSchedule {
     io.github.sunsind.sunlith.ui.Screen$SchoolSchedule INSTANCE;
 }
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.Screen$Search {
+    io.github.sunsind.sunlith.ui.Screen$Search INSTANCE;
+}
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.Screen$Settings {
     io.github.sunsind.sunlith.ui.Screen$Settings INSTANCE;
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.Screen$Todo {
+    io.github.sunsind.sunlith.ui.Screen$Todo INSTANCE;
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.SunlithAppKt {
     void SunlithApp(io.github.sunsind.sunlith.ui.SunlithViewModel,androidx.compose.runtime.Composer,int);
@@ -1190,6 +1227,8 @@
     void changeAgendaRange(java.lang.String);
     void changeCollapseCalendarOnScroll(boolean);
     void changeDayLayout(java.lang.String);
+    void changeDayTimelineZoom(int);
+    void changeFiveDayWorkweek(boolean);
     void changeGroupEmptyHours(boolean);
     void changeKeepSelectedDate(boolean);
     void changeMaterialYou(boolean);
@@ -1203,8 +1242,10 @@
     void changeWeekLayout(java.lang.String);
     void changeWeekTimelineZoom(int);
     void closeEditor();
+    void completeTodo(io.github.sunsind.sunlith.data.TodoItem,boolean);
     boolean coversRange(java.time.LocalDate,java.time.LocalDate);
     void deliverPendingLink();
+    void editEvent(long);
     void extendAgenda(boolean);
     void finishAiIntro();
     void finishLayoutSetup();
@@ -1220,6 +1261,7 @@
     java.util.List getEvents();
     java.util.Map getEventsByDay();
     boolean getExtendingAgenda();
+    boolean getFiveDayWorkweek();
     java.time.LocalDate getGridLoadedFrom();
     java.time.LocalDate getGridLoadedTo();
     boolean getGroupEmptyHours();
@@ -1242,6 +1284,7 @@
     boolean getNeedsNotificationStep();
     androidx.compose.runtime.MutableIntState getPagedTimelineTodayHandled$app_distribution();
     boolean getPendingDayFocus();
+    boolean getSaving();
     boolean getSearchLoading();
     java.util.List getSearchResults();
     java.time.LocalDate getSelectedDate();
@@ -1253,6 +1296,9 @@
     java.time.LocalDate getTimelineViewportStart();
     java.time.LocalDate getToday();
     int getTodayRequest();
+    java.util.Set getTodoCompleted();
+    java.util.List getTodoItems();
+    boolean getTodoLoading();
     io.github.sunsind.sunlith.ui.ViewMode getViewMode();
     int getVisibleWeekDays();
     java.lang.String getWeekLayout();
@@ -1263,10 +1309,13 @@
     void handleSchoolLink(java.time.LocalDate);
     void newEvent(java.time.LocalDate);
     void open(io.github.sunsind.sunlith.ui.Screen);
+    void openCalendar();
     void openDay(java.time.LocalDate);
     void openSearch();
+    void openTodos();
     void refreshCurrentDate$app_distribution(java.time.LocalDate);
     void reload();
+    void reloadTodos();
     void select(java.time.LocalDate);
     void selectAndFocus(java.time.LocalDate);
     void setMondayFirst(boolean);
@@ -1274,6 +1323,7 @@
     void step(int);
     void updateEditor(kotlin.jvm.functions.Function1);
     void updateSearch(java.lang.String);
+    boolean workweekTimeline();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.ThemeKt {
     void SunlithTheme(java.lang.String,boolean,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int,int);

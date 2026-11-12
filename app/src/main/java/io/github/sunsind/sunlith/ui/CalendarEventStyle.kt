@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -337,6 +338,10 @@ internal fun CalendarEventCard(event: CalendarEvent, day: LocalDate, f: Formats,
             } else if (event.location.isNotBlank()) {
                 Text(event.location, color = colors.content, style = typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+        if (event.todo) {
+            Icon(Icons.Outlined.CheckBoxOutlineBlank, stringResource(R.string.todo_tag), tint = colors.content,
+                modifier = Modifier.padding(start = 8.dp, end = 4.dp).size(16.dp))
         }
         if (!event.rrule.isNullOrBlank()) {
             Icon(Icons.Outlined.Repeat, stringResource(R.string.repeating), tint = colors.content, modifier = Modifier.padding(horizontal = 12.dp).size(16.dp))

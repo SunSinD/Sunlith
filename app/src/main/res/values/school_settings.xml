@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="school_title">School schedule</string>
-    <string name="school_intro">Connect your school\'s Col.NET account to add classes, exams and deadlines beside your own events.</string>
+    <string name="school_intro">Add classes, exams and deadlines directly from Col.NET. No computer or VPN needed.</string>
     <string name="school_provider_colnet">Col.NET</string>
     <string name="school_institution">School</string>
     <string name="school_choose_institution">Choose your school</string>
@@ -48,7 +48,7 @@
     <string name="school_error_portal">Check the portal address.</string>
     <string name="school_error_sign_in">The username or password didn\'t work.</string>
     <string name="school_error_mfa">This account needs an extra sign-in step that isn\'t supported.</string>
-    <string name="school_error_network">Couldn\'t reach the portal. Check your connection.</string>
+    <string name="school_error_network">Couldn\'t reach the school portal. Check this phone\'s internet connection.</string>
     <string name="school_error_calendar_permission">Calendar access is off.</string>
     <string name="school_error_data">The portal sent something that couldn\'t be read.</string>
     <string name="school_error_unavailable">The portal isn\'t available right now.</string>

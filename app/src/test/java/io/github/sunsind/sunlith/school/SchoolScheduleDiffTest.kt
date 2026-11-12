@@ -1,5 +1,6 @@
 package io.github.sunsind.sunlith.school
 
+import android.net.NetworkCapabilities
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.*
@@ -7,6 +8,39 @@ import org.junit.Test
 
 class SchoolScheduleDiffTest {
     private val today = LocalDate.of(2030, 10, 7)
+
+    private fun route(name: String, transport: Int) = SchoolNetworkCandidate(name, setOf(transport), setOf(
+        NetworkCapabilities.NET_CAPABILITY_INTERNET, NetworkCapabilities.NET_CAPABILITY_VALIDATED,
+        NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED, NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED,
+        NetworkCapabilities.NET_CAPABILITY_NOT_VPN))
+
+    @Test fun schoolRoutingLeavesTheDefaultUntouchedWithoutAnActiveVpn() {
+        assertNull(schoolDirectNetwork(false, listOf(route("wifi", NetworkCapabilities.TRANSPORT_WIFI))))
+        assertNull(schoolDirectNetwork(true, emptyList<SchoolNetworkCandidate<String>>()))
+    }
+
+    @Test fun schoolRoutingPrefersExistingValidatedWifiOrEthernetOverCellular() {
+        val cellular = route("cellular", NetworkCapabilities.TRANSPORT_CELLULAR)
+        val wifi = route("wifi", NetworkCapabilities.TRANSPORT_WIFI)
+        val ethernet = route("ethernet", NetworkCapabilities.TRANSPORT_ETHERNET)
+        assertEquals("wifi", schoolDirectNetwork(true, listOf(cellular, wifi)))
+        assertEquals("ethernet", schoolDirectNetwork(true, listOf(cellular, ethernet)))
+        assertEquals("cellular", schoolDirectNetwork(true, listOf(cellular)))
+    }
+
+    @Test fun schoolRoutingRejectsCaptiveUnvalidatedRestrictedSuspendedAndVpnPaths() {
+        val wifi = route("wifi", NetworkCapabilities.TRANSPORT_WIFI)
+        val cellular = route("cellular", NetworkCapabilities.TRANSPORT_CELLULAR)
+        listOf(NetworkCapabilities.NET_CAPABILITY_INTERNET, NetworkCapabilities.NET_CAPABILITY_VALIDATED,
+            NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED, NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED,
+            NetworkCapabilities.NET_CAPABILITY_NOT_VPN).forEach { missing ->
+            assertEquals("cellular", schoolDirectNetwork(true, listOf(wifi.copy(capabilities = wifi.capabilities - missing), cellular)))
+        }
+        val captive = wifi.copy(capabilities = wifi.capabilities + NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)
+        val vpn = wifi.copy(transports = wifi.transports + NetworkCapabilities.TRANSPORT_VPN)
+        assertNull(schoolDirectNetwork(true, listOf(captive, vpn)))
+        assertNull(schoolDirectNetwork(true, listOf(wifi.copy(transports = setOf(NetworkCapabilities.TRANSPORT_BLUETOOTH)))))
+    }
     private fun item(id: String = "class-a", date: LocalDate = today) = SchoolItem(id, "class-key", "Full synthetic course title", "243-TEST", "01", "2", "01", date,
         date.atTime(8, 0).atZone(ZoneId.of("America/Toronto")).toInstant().toEpochMilli(), date.atTime(10, 0).atZone(ZoneId.of("America/Toronto")).toInstant().toEpochMilli(),
         false, "America/Toronto", listOf("Synthetic Teacher"), listOf("A100"), emptyList(), false)

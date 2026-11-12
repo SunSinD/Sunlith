@@ -1,6 +1,9 @@
 package io.github.sunsind.sunlith.school
 
+import android.util.Log
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URLEncoder
 import java.time.LocalDate
@@ -14,8 +17,11 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 internal data class SchoolLogin(val token: String, val expiresAt: Long)
-internal class SchoolPortalClient(address: String, private val language: String,
-    private val open: (URI) -> HttpsURLConnection = { it.toURL().openConnection() as HttpsURLConnection }) {
+internal class SchoolPortalClient private constructor(address: String, private val language: String,
+    private val routes: List<(URI) -> HttpsURLConnection>) {
+    constructor(address: String, language: String,
+        open: (URI) -> HttpsURLConnection = { it.toURL().openConnection() as HttpsURLConnection }) : this(address, language, listOf(open))
+    private var routeIndex = 0
     val base: URI = normalize(address)
     suspend fun login(username: String, password: String): SchoolLogin {
         schoolRequire(username.isNotBlank() && password.isNotEmpty() && username.length <= 1000 && password.length <= 4000)
@@ -62,7 +68,29 @@ internal class SchoolPortalClient(address: String, private val language: String,
         coroutineContext.ensureActive()
         val url = base.resolve(relative)
         schoolRequire(url.scheme == base.scheme && url.host == base.host && url.port == base.port && url.path.startsWith(base.path))
-        val connection = open(url)
+        // Changing the route keeps the same HTTPS URL and normal certificate/hostname verification.
+        while (true) {
+            try {
+                return requestOn(routes[routeIndex](url), token, array, form)
+            } catch (e: IOException) {
+                coroutineContext.ensureActive()
+                logTransport(e)
+                if (routeIndex == routes.lastIndex) throw e
+                // The fallback remains selected for the rest of this sync, rather than repeating a failed route.
+                routeIndex++
+            } catch (e: SecurityException) {
+                coroutineContext.ensureActive()
+                logTransport(e)
+                if (routeIndex == routes.lastIndex) throw SchoolFailure(SchoolError.NETWORK)
+                routeIndex++
+            }
+        }
+    }
+    private fun logTransport(error: Exception) {
+        val route = if (routes.size > 1 && routeIndex == 0) "direct" else "default"
+        Log.w("SunlithSchool", "Portal ${error.javaClass.simpleName} route=$route")
+    }
+    private suspend fun requestOn(connection: HttpsURLConnection, token: String?, array: Boolean, form: String?): Any {
         try {
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 15_000
@@ -82,10 +110,13 @@ internal class SchoolPortalClient(address: String, private val language: String,
                 connection.outputStream.use { it.write(bytes) }
             }
             val status = connection.responseCode
-            if (status == 401 || status == 403 || (form != null && status == 400)) throw SchoolFailure(SchoolError.SIGN_IN)
+            if (status == 401) throw SchoolFailure(SchoolError.SIGN_IN)
+            val mime = connection.contentType?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)
+            if (mime == "text/html" && status != 503) throw SchoolFailure(SchoolError.NETWORK)
+            if (status == 403 || (form != null && status == 400)) throw SchoolFailure(SchoolError.SIGN_IN)
             if (status == 503) throw SchoolFailure(SchoolError.UNAVAILABLE)
             if (status !in 200..299) throw SchoolFailure(SchoolError.NETWORK)
-            schoolRequire(connection.contentType?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)?.let { it == "application/json" || it.endsWith("+json") } == true)
+            schoolRequire(mime?.let { it == "application/json" || it.endsWith("+json") } == true)
             schoolRequire(connection.contentLengthLong <= MAX_BYTES)
             val bytes = ByteArrayOutputStream()
             connection.inputStream.use { input ->
@@ -93,7 +124,7 @@ internal class SchoolPortalClient(address: String, private val language: String,
                 val deadline = System.nanoTime() + 30_000_000_000L
                 while (true) {
                     coroutineContext.ensureActive()
-                    if (System.nanoTime() > deadline) throw SchoolFailure(SchoolError.NETWORK)
+                    if (System.nanoTime() > deadline) throw SocketTimeoutException("School response timed out")
                     val count = input.read(buffer)
                     if (count < 0) break
                     schoolRequire(bytes.size() + count <= MAX_BYTES)
@@ -111,6 +142,10 @@ internal class SchoolPortalClient(address: String, private val language: String,
     }
     companion object {
         private const val MAX_BYTES = 4 * 1024 * 1024
+        fun routed(address: String, language: String, routes: List<(URI) -> HttpsURLConnection>): SchoolPortalClient {
+            require(routes.isNotEmpty() && routes.size <= 2)
+            return SchoolPortalClient(address, language, routes.toList())
+        }
         private fun boundedNesting(body: String) {
             var depth = 0; var quoted = false; var escaped = false
             body.forEach { char ->

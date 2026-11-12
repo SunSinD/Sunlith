@@ -1,4 +1,6 @@
 <resources>
+    <string name="settings_five_day_workweek">Du lundi au vendredi seulement</string>
+    <string name="settings_five_day_workweek_summary">Grille de 5 jours seulement. Balayez entre les semaines de travail.</string>
     <string name="settings_day_zoom">Zoom de la grille Jour</string>
     <string name="settings_week_zoom">Zoom de la grille Semaine</string>
     <string name="connection_tailscale">Tailscale / VPN</string>

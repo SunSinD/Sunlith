@@ -30,7 +30,9 @@ data class CalendarEvent(
     val color: Int = 0,
     val calendarName: String = "",
     val school: SchoolEventInfo? = null,
-)
+) {
+    val todo: Boolean = TodoMarker.has(description)
+}
 
 enum class SchoolAbsenceCoverage { NONE, PARTIAL, FULL }
 

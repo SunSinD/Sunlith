@@ -21,12 +21,17 @@ import io.github.sunsind.sunlith.requireEmulator
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.net.SocketException
+import java.net.UnknownHostException
 import java.net.URI
 import java.security.cert.Certificate
+import java.security.cert.CertificateException
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -624,17 +629,7 @@ class SchoolConnectorFixtureTest {
     @Test fun syntheticNetworkUsesAllWeekQueriesAndSafeHeaders() = runBlocking {
         val calls = mutableListOf<Pair<URI, FakeConnection>>()
         val client = SchoolPortalClient("https://example.invalid/colnet/login.asp", "fr") { uri ->
-            val body = when {
-                uri.path.endsWith("token") -> "{\"access_token\":\"synthetic-token-only\",\"expires_in\":2592000}"
-                uri.path.endsWith("infoMFA") -> "{\"IndMFA\":false,\"ServicesNonDisponibles\":false}"
-                uri.path.endsWith("accesPermis") -> "{\"Acces\":true}"
-                uri.path.endsWith("informations") -> "{\"CleUnique\":\"synthetic-user-id\",\"PeriodeEtudesHoraire\":\"TEST\",\"ServicesAffiches\":[\"AGENDA\",\"CANCELED_SESSIONS\"]}"
-                uri.path.endsWith("periodesEtudes") -> "[{\"Code\":\"TEST\",\"Description\":\"Synthetic term\",\"DateDebut\":\"20301007\",\"DateFin\":\"20301020\"}]"
-                uri.path.endsWith("agenda") -> JSONArray().put(agendaJson()).toString()
-                uri.query == "DateDebut=20301007" -> JSONArray().put(agendaJson().put("CleUnique", "absence-other-id").put("Message", "Synthetic absence notice")).toString()
-                else -> "[]"
-            }
-            FakeConnection(uri, body).also { calls += uri to it }
+            FakeConnection(uri, portalBody(uri)).also { calls += uri to it }
         }
         val login = client.login("synthetic+user", "synthetic&password")
         val result = client.fetch(login.token, zone)
@@ -644,6 +639,133 @@ class SchoolConnectorFixtureTest {
         assertTrue(calls.first().second.output.toString("UTF-8").contains("synthetic%26password"))
         assertNull(calls.first().second.getRequestProperty("Authorization"))
         assertTrue(calls.drop(1).all { it.second.getRequestProperty("Authorization") == "Bearer synthetic-token-only" })
+    }
+
+    @Test fun dnsFailureFallsBackOnceAndKeepsTheFallbackForTheWholeSync() = runBlocking {
+        val direct = mutableListOf<URI>()
+        val fallback = mutableListOf<Pair<URI, FakeConnection>>()
+        val client = SchoolPortalClient.routed("https://example.invalid/colnet/", "fr", listOf(
+            { uri -> direct += uri; throw UnknownHostException("Synthetic direct DNS failure") },
+            { uri -> FakeConnection(uri, portalBody(uri)).also { fallback += uri to it } },
+        ))
+        val login = client.login("synthetic-user", "synthetic-password")
+        assertTrue(client.fetch(login.token, zone).items.single().teacherAbsent)
+        assertEquals(1, direct.size)
+        assertEquals(8, fallback.size)
+        assertEquals(direct.single(), fallback.first().first)
+        assertTrue(fallback.all { it.first.scheme == "https" && it.first.host == "example.invalid" && !it.second.instanceFollowRedirects })
+        assertTrue(fallback.all { it.second.disconnected })
+        assertEquals("POST", fallback.first().second.requestMethod)
+        assertTrue(fallback.drop(1).all { it.second.requestMethod == "GET" && it.second.getRequestProperty("Authorization") == "Bearer synthetic-token-only" })
+    }
+
+    @Test fun failedResponseReadClosesTheAttemptAndRepeatsTheTokenOnlyOncePerRoute() = runBlocking {
+        var inputClosed = false
+        lateinit var failed: FakeConnection
+        val fallback = mutableListOf<FakeConnection>()
+        var directCalls = 0
+        val client = SchoolPortalClient.routed("https://example.invalid/colnet/", "en", listOf(
+            { uri ->
+                directCalls++
+                object : FakeConnection(uri, portalBody(uri)) {
+                    override fun getInputStream() = object : ByteArrayInputStream(byteArrayOf()) {
+                        override fun read(buffer: ByteArray, offset: Int, length: Int): Int = throw IOException("Synthetic failed read")
+                        override fun close() { inputClosed = true; super.close() }
+                    }
+                }.also { failed = it }
+            },
+            { uri -> FakeConnection(uri, portalBody(uri)).also { fallback += it } },
+        ))
+        client.login("synthetic-user", "synthetic-password")
+        assertTrue(inputClosed)
+        assertTrue(failed.disconnected)
+        assertEquals(failed.output.toString("UTF-8"), fallback.single().output.toString("UTF-8"))
+        client.login("synthetic-user", "synthetic-password")
+        assertEquals(1, directCalls)
+        assertEquals(2, fallback.size)
+    }
+
+    @Test fun directTlsCertificateAndSecurityFailuresUseTheVerifiedDefaultOnce() = runBlocking {
+        listOf(SSLHandshakeException("Synthetic TLS failure"), IOException(CertificateException("Synthetic certificate failure")),
+            SecurityException("Synthetic VPN lockdown")).forEach { problem ->
+            val direct = mutableListOf<FakeConnection>()
+            val fallback = mutableListOf<FakeConnection>()
+            val client = SchoolPortalClient.routed("https://example.invalid/colnet/", "en", listOf(
+                { uri -> object : FakeConnection(uri, portalBody(uri)) {
+                    override fun getResponseCode(): Int = throw problem
+                }.also { direct += it } },
+                { uri -> FakeConnection(uri, portalBody(uri)).also { fallback += it } },
+            ))
+            repeat(2) { assertEquals("synthetic-token-only", client.login("synthetic-user", "synthetic-password").token) }
+            assertEquals(1, direct.size)
+            assertEquals(2, fallback.size)
+            assertEquals(direct.single().url.toURI(), fallback.first().url.toURI())
+            assertEquals("https", fallback.first().url.protocol)
+            (direct + fallback).forEach { connection ->
+                assertTrue(connection.disconnected)
+                assertFalse(connection.instanceFollowRedirects)
+                assertSame(HttpsURLConnection.getDefaultHostnameVerifier(), connection.hostnameVerifier)
+                assertSame(HttpsURLConnection.getDefaultSSLSocketFactory(), connection.sslSocketFactory)
+            }
+        }
+    }
+
+    @Test fun tlsCertificateAndSecurityFailuresOnTheDefaultRouteAreTerminal() = runBlocking {
+        listOf(SSLHandshakeException("Synthetic default TLS failure"), IOException(CertificateException("Synthetic default certificate failure")),
+            SecurityException("Synthetic default denial")).forEach { problem ->
+            val direct = mutableListOf<FakeConnection>()
+            val fallback = mutableListOf<FakeConnection>()
+            val client = SchoolPortalClient.routed("https://example.invalid/colnet/", "en", listOf(
+                { uri -> object : FakeConnection(uri, portalBody(uri)) {
+                    override fun getResponseCode(): Int = throw SSLHandshakeException("Synthetic direct TLS failure")
+                }.also { direct += it } },
+                { uri -> object : FakeConnection(uri, portalBody(uri)) {
+                    override fun getResponseCode(): Int = throw problem
+                }.also { fallback += it } },
+            ))
+            repeat(2) {
+                try { client.login("synthetic-user", "synthetic-password"); fail("The default route must fail") }
+                catch (failure: Exception) {
+                    if (problem is SecurityException) assertEquals(SchoolError.NETWORK, (failure as SchoolFailure).reason)
+                    else assertSame(problem, failure)
+                }
+            }
+            assertEquals(1, direct.size)
+            assertEquals(2, fallback.size)
+            assertTrue((direct + fallback).all { it.disconnected })
+        }
+    }
+
+    @Test fun serverErrorsAndInvalidDataNeverUseAnotherRoute() = runBlocking {
+        listOf(Triple(401, "application/json", SchoolError.SIGN_IN), Triple(401, "text/html", SchoolError.SIGN_IN),
+            Triple(403, "application/json", SchoolError.SIGN_IN),
+            Triple(403, "text/html", SchoolError.NETWORK), Triple(200, "text/html", SchoolError.NETWORK),
+            Triple(200, "application/json", SchoolError.INVALID_DATA), Triple(503, "application/json", SchoolError.UNAVAILABLE),
+            Triple(302, "application/json", SchoolError.NETWORK)).forEach { (status, mime, expected) ->
+            var fallbackCalls = 0
+            val client = SchoolPortalClient.routed("https://example.invalid/colnet/", "en", listOf(
+                { uri -> FakeConnection(uri, "{}", status, mime) },
+                { uri -> fallbackCalls++; FakeConnection(uri, portalBody(uri)) },
+            ))
+            try { client.login("synthetic-user", "synthetic-password"); fail("The server response must fail") }
+            catch (failure: SchoolFailure) { assertEquals(expected, failure.reason) }
+            assertEquals(0, fallbackCalls)
+        }
+    }
+
+    @Test fun transportAttemptsStopAfterTheSecondRouteAndNeverCycleBack() = runBlocking {
+        var direct = 0
+        var fallback = 0
+        val client = SchoolPortalClient.routed("https://example.invalid/colnet/", "en", listOf(
+            { _ -> direct++; throw SocketException("Synthetic direct failure") },
+            { _ -> fallback++; throw SocketException("Synthetic fallback failure") },
+        ))
+        repeat(2) {
+            try { client.login("synthetic-user", "synthetic-password"); fail("Both routes must fail") }
+            catch (_: SocketException) { }
+        }
+        assertEquals(1, direct)
+        assertEquals(2, fallback)
     }
     @Test fun incrementalRefreshPreservesPastAbsenceWithoutQueryingHistoricalWeeksAgain() = runBlocking {
         var weekQueries = 0
@@ -685,7 +807,7 @@ class SchoolConnectorFixtureTest {
             catch (e: SchoolFailure) { e.reason }
         }
         assertEquals(SchoolError.NETWORK, failure("{}", 302, login = true))
-        assertEquals(SchoolError.INVALID_DATA, failure("<html>Login</html>", mime = "text/html", login = true))
+        assertEquals(SchoolError.NETWORK, failure("<html>Login</html>", mime = "text/html", login = true))
         assertEquals(SchoolError.MFA_REQUIRED, failure("{\"IndMFA\":true}"))
         assertEquals(SchoolError.UNAVAILABLE, failure("{\"Code\":\"ServicesNonDisponibles\"}"))
         assertEquals(SchoolError.UNAVAILABLE, failure("{\"ServicesNonDisponibles\":true}"))
@@ -695,14 +817,26 @@ class SchoolConnectorFixtureTest {
         .put("JourneeComplete", false).put("HeureDebut", "0800").put("HeureFin", "1000").put("IndAbsence", false)
         .put("Enseignants", JSONArray().put(JSONObject().put("Nom", "Synthetic Teacher"))).put("Locaux", JSONArray().put(JSONObject().put("Nom", "A100")))
 
-    private class FakeConnection(uri: URI, private val body: String, private val status: Int = 200, private val mime: String = "application/json") : HttpsURLConnection(uri.toURL()) {
+    private fun portalBody(uri: URI): String = when {
+        uri.path.endsWith("token") -> "{\"access_token\":\"synthetic-token-only\",\"expires_in\":2592000}"
+        uri.path.endsWith("infoMFA") -> "{\"IndMFA\":false,\"ServicesNonDisponibles\":false}"
+        uri.path.endsWith("accesPermis") -> "{\"Acces\":true}"
+        uri.path.endsWith("informations") -> "{\"CleUnique\":\"synthetic-user-id\",\"PeriodeEtudesHoraire\":\"TEST\",\"ServicesAffiches\":[\"AGENDA\",\"CANCELED_SESSIONS\"]}"
+        uri.path.endsWith("periodesEtudes") -> "[{\"Code\":\"TEST\",\"Description\":\"Synthetic term\",\"DateDebut\":\"20301007\",\"DateFin\":\"20301020\"}]"
+        uri.path.endsWith("agenda") -> JSONArray().put(agendaJson()).toString()
+        uri.query == "DateDebut=20301007" -> JSONArray().put(agendaJson().put("CleUnique", "absence-other-id").put("Message", "Synthetic absence notice")).toString()
+        else -> "[]"
+    }
+
+    private open class FakeConnection(uri: URI, private val body: String, private val status: Int = 200, private val mime: String = "application/json") : HttpsURLConnection(uri.toURL()) {
         val output = ByteArrayOutputStream()
+        var disconnected = false
         override fun getResponseCode() = status
         override fun getContentType() = mime
         override fun getContentLengthLong() = body.toByteArray().size.toLong()
         override fun getInputStream() = ByteArrayInputStream(body.toByteArray(Charsets.UTF_8))
         override fun getOutputStream() = output
-        override fun disconnect() {}
+        override fun disconnect() { disconnected = true }
         override fun usingProxy() = false
         override fun connect() {}
         override fun getCipherSuite() = "SYNTHETIC"

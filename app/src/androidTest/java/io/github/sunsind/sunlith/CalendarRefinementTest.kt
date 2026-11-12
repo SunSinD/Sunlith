@@ -1308,7 +1308,7 @@ class CalendarRefinementTest {
     }
 
     @Test
-    fun openingADayFromFullMonthKeepsItsParentAndHidesFloatingToday() {
+    fun openingADayFromFullMonthKeepsItsParentAndOffersTodayWhenAway() {
         onMain { vm.changeMonthLayout("full") }
         val original = vm.selectedDate
         val chosen = original.withDayOfMonth(if (original.dayOfMonth == 15) 16 else 15)
@@ -1316,7 +1316,11 @@ class CalendarRefinementTest {
         awaitState("Tapping a month date must open that day with a parent.") {
             vm.viewMode == ViewMode.Day && vm.selectedDate == chosen && vm.hasDayParent
         }
-        assertFalse(device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))))
+        if (chosen == LocalDate.now()) {
+            assertFalse(device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))))
+        } else {
+            node(By.pkg(context.packageName).res("calendar_today_${if (chosen < LocalDate.now()) "next" else "previous"}"))
+        }
         assertFalse("Drilled-in Day uses Back to return to its calendar", device.hasObject(By.pkg(context.packageName).res("calendar_view_menu")))
         node(By.pkg(context.packageName).desc(english.getString(R.string.action_back))).click()
         awaitState("Back must restore the month and its selected date.") {

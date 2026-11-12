@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +57,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +66,7 @@ import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
 import io.github.sunsind.sunlith.data.EventDraft
 import io.github.sunsind.sunlith.data.EditBlockReason
+import io.github.sunsind.sunlith.data.TodoMarker
 import java.time.Instant
 import java.time.ZoneId
 
@@ -78,7 +82,7 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
     var draft by remember(event.id) { mutableStateOf<EventDraft?>(null) }
     var blockReason by remember(event.id) { mutableStateOf<EditBlockReason?>(null) }
     var permissionsLoaded by remember(event.id) { mutableStateOf(false) }
-    LaunchedEffect(event.id, vm.events) {
+    LaunchedEffect(event.id, vm.events, vm.todoRevision) {
         permissionsLoaded = false
         draft = vm.loadDraft(event.id)
         blockReason = vm.editBlockReason(event.id)
@@ -167,6 +171,22 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
                     else -> R.string.details_unsupported
                 }))
             }
+            DetailRow(Icons.Outlined.CheckBox) {
+                val todoLabel = stringResource(R.string.todo_tag)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        PrimaryText(stringResource(R.string.todo_tag))
+                        SecondaryText(stringResource(if (series) R.string.todo_tag_series_hint else R.string.todo_tag_hint))
+                    }
+                    Switch(
+                        checked = TodoMarker.has(draft?.description ?: event.description),
+                        onCheckedChange = { vm.setEventTodo(event, it) },
+                        enabled = writable && permissionsLoaded && blockReason == null && event.id !in vm.todoSavingIds,
+                        colors = switchColors(),
+                        modifier = Modifier.semantics { contentDescription = todoLabel },
+                    )
+                }
+            }
             if (periods.isNotEmpty()) {
                 DetailRow(Icons.Outlined.LocationOn) {
                     SecondaryText(stringResource(R.string.details_school_periods))
@@ -189,7 +209,7 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
             draft?.reminderMinutes?.takeIf { it.isNotEmpty() && periods.isEmpty() }?.let { reminders ->
                 DetailRow(Icons.Outlined.Notifications) { reminders.sorted().forEach { PrimaryText(f.reminder(it)) } }
             }
-            val notes = if (periods.isNotEmpty()) event.description else draft?.description ?: event.description
+            val notes = TodoMarker.strip(if (periods.isNotEmpty()) event.description else draft?.description ?: event.description)
             if (absences.isNotEmpty()) {
                 DetailRow(Icons.Outlined.EventBusy) {
                     SecondaryText(stringResource(R.string.details_teacher_absence))

@@ -30,6 +30,76 @@ class TimelinePackingTest {
     )
 
     @Test
+    fun dayLabelsKeepExactStartsAndUseSeparateLanesWhenTheirTextWouldCollide() {
+        val clusters = packTimeline(listOf(event(1, 1080, 1095), event(2, 1100, 1105)), date, zone, 30,
+            readableLabels = true)
+        assertEquals(1, clusters.size)
+        assertEquals(listOf(1080, 1100), clusters.flatMap { it.blocks }.map { it.start })
+        assertEquals(listOf(1110, 1130), clusters.single().blocks.map { it.end })
+        assertEquals(2, clusters.single().cols)
+        assertTrue(clusters.single().blocks[0].col != clusters.single().blocks[1].col)
+    }
+
+    @Test
+    fun dayLabelsReserveRoomBelowMidnightWithoutMovingTheirStartOrTheClock() {
+        val block = packTimeline(listOf(event(1, 1439, 1440)), date, zone, 30,
+            readableLabels = true).single().blocks.single()
+        assertEquals(1439, block.start)
+        assertEquals(1469, block.end)
+        val axis = TimelineAxis(64f, listOf(block.start to block.end))
+        assertEquals(1536f, axis.minuteToY(1440), 0.01f)
+        assertEquals(1439 / 60f * 64f, axis.minuteToY(block.start), 0.01f)
+    }
+
+    @Test
+    fun longDayEventRegainsItsWidthAfterTheNeighbouringShortLabel() {
+        val cluster = packTimeline(listOf(event(1, 540, 555), event(2, 555, 630)), date, zone, 30,
+            readableLabels = true).single()
+        val short = dayTimelineLayout(cluster.blocks[0], cluster, cluster.cols, 30)
+        val long = dayTimelineLayout(cluster.blocks[1], cluster, cluster.cols, 30)
+        assertEquals(listOf(TimelineBand(540, 555, 0f, 1f), TimelineBand(555, 570, 0f, .5f)), short.bands)
+        assertEquals(listOf(TimelineBand(555, 570, .5f, 1f), TimelineBand(570, 630, 0f, 1f)), long.bands)
+        assertEquals(TimelineBand(540, 570, 0f, .5f), short.label)
+        assertEquals(TimelineBand(570, 630, 0f, 1f), long.label)
+    }
+
+    @Test
+    fun adjacentTinyDayLabelsHaveAReadableRectangleAndNeverCoverEachOther() {
+        val cluster = packTimeline(listOf(event(1, 540, 545), event(2, 545, 550), event(3, 550, 555)), date, zone, 53,
+            readableLabels = true).single()
+        assertEquals(3, cluster.cols)
+        assertEquals(listOf(540, 545, 550), cluster.blocks.map { it.start })
+        val layouts = cluster.blocks.map { dayTimelineLayout(it, cluster, cluster.cols, 53) }
+        assertTrue(layouts.all { it.label.end - it.label.start >= 53 && it.label.right > it.label.left })
+        for (a in layouts.indices) for (b in a + 1 until layouts.size) {
+            for (first in layouts[a].bands) for (second in layouts[b].bands) {
+                if (first.start < second.end && second.start < first.end) {
+                    assertTrue(first.right <= second.left || second.right <= first.left)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun genuineDayOverlapKeepsSeparateLanesUntilAnEventEnds() {
+        val cluster = packTimeline(listOf(event(1, 540, 630), event(2, 570, 600)), date, zone, 30,
+            readableLabels = true).single()
+        val first = dayTimelineLayout(cluster.blocks[0], cluster, cluster.cols, 30)
+        val second = dayTimelineLayout(cluster.blocks[1], cluster, cluster.cols, 30)
+        assertEquals(listOf(TimelineBand(540, 570, 0f, 1f), TimelineBand(570, 600, 0f, .5f), TimelineBand(600, 630, 0f, 1f)), first.bands)
+        assertEquals(listOf(TimelineBand(570, 600, .5f, 1f)), second.bands)
+    }
+
+    @Test
+    fun hiddenDayOverflowBlocksStillReserveTheirTimeBesideVisibleLabels() {
+        val cluster = packTimeline(listOf(event(1, 540, 600), event(2, 540, 570), event(3, 540, 555)), date, zone, 30,
+            readableLabels = true).single()
+        val visible = dayTimelineLayout(cluster.blocks.first(), cluster, shownLanes = 2, minMinutes = 30)
+        assertEquals(listOf(TimelineBand(540, 570, 0f, .5f), TimelineBand(570, 600, 0f, 1f)), visible.bands)
+        assertEquals(TimelineBand(540, 600, 0f, .5f), visible.label)
+    }
+
+    @Test
     fun chainedOverlapsReuseAFreeLaneWithoutCoveringOtherEvents() {
         val clusters = packTimeline(listOf(event(1, 540, 600), event(2, 570, 630), event(3, 600, 660)), date, zone, 30)
         assertEquals(1, clusters.size)

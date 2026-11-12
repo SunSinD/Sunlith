@@ -708,13 +708,14 @@ class CalendarExperienceTest {
     }
 
     @Test
-    fun dayLayoutsNeverShowTheFloatingTodayActionEvenAwayFromToday() {
+    fun dayLayoutsShowTheFloatingTodayActionAwayAndHideItOnTheCurrentDay() {
         onMain { vm.changeKeepSelectedDate(false) }
         val today = By.pkg(context.packageName).desc(english.getString(R.string.action_today))
         listOf("cards", "timeline", "schedule").forEach { layout ->
             onMain { vm.changeDayLayout(layout); vm.changeViewMode(ViewMode.Day); vm.select(LocalDate.now().plusDays(40)) }
             node(By.pkg(context.packageName).res("calendar_day_picker"))
-            assertFalse("Day $layout must not show the floating Today action.", device.hasObject(today))
+            node(By.pkg(context.packageName).res(if (layout == "schedule") "calendar_today_up" else "calendar_today_previous")).click()
+            awaitUi { vm.selectedDate == LocalDate.now() && !device.hasObject(today) }
             selectView(ViewMode.Month)
             selectView(ViewMode.Day)
             awaitUi { vm.selectedDate == LocalDate.now() }

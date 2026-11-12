@@ -273,6 +273,14 @@ Use Sunlith's get_current_time and list_calendars tools. Show my writable calend
 - Event query bounds mean `event.end > timeMin` and `event.start < timeMax`; events touching a boundary without overlapping are excluded. Query bounds may use UTC independently of an event's own timezone.
 - List tools return at most 100 items per page and expose `nextPageToken`. Event queries are limited to 366 days per request. Request the next page if necessary; the first page is not a complete archive.
 
+## Event-linked To-dos
+
+Sunlith recognizes `[sunlith:todo]` as a separate token in an event description. To tag an existing event through the connection, first read its current description and etag, then append `\n\n[sunlith:todo]` while preserving all existing notes and other fields. Use the normal whole-series scope for a repeating event. The marker syncs with the calendar and remains in ICS exports; other calendar apps may show it as text. Sunlith hides it from notes and shows a small To-do symbol instead.
+
+Tagged events enter the To-do list at their start time; all-day events enter at local midnight. Single events have no history cutoff. Repeating occurrences include the previous 366 days, each with its own completion. Completion and undo are stored only on this installation and are not included in ICS backups. Tagging is unavailable for events that Sunlith cannot safely edit, including managed school events and events with guests or recurrence exceptions.
+
+Completion survives moving a single event or moving a whole series that uses a standard daily, weekly, monthly or yearly repeat rule. Complex repeat rules and extra recurrence dates use the occurrence time as their identity, so moving those series can reset their completions. Removing and restoring the To-do tag keeps saved completions.
+
 ## Shared and local calendars
 
 Events already stored in your Google account appear through the same synced calendar. Connecting an assistant does not copy them into another calendar.

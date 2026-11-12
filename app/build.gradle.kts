@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.sunsind.sunlith"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.6.7"
+        versionCode = 19
+        versionName = "0.6.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

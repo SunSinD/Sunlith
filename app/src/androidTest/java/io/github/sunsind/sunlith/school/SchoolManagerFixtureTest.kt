@@ -35,6 +35,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.net.URI
+import java.net.SocketException
+import java.net.UnknownHostException
 import java.security.cert.Certificate
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -292,6 +294,65 @@ class SchoolManagerFixtureTest {
         assertNull(manager.state.value.error)
         assertNull(durableRecord().lastFailure)
         assertEquals("D400", repository().getEvent(recovered.ledger.first().rowId)!!.location)
+        assertArrayEquals(personalBefore, providerBytes(personal))
+    }
+
+    @Test fun htmlUnauthorizedSessionRefreshesLoginAndUpdatesSavedClasses() = fixtureTest {
+        var rejectNextSession = false
+        manager = SchoolScheduleManager(context) { address, language ->
+            SchoolPortalClient(address, language) { uri ->
+                if (rejectNextSession && uri.path.endsWith("infoMFA")) {
+                    rejectNextSession = false
+                    FakeConnection(uri, "<html>Unauthorized</html>", 401, null, "text/html")
+                } else portal.open(uri)
+            }
+        }
+        val personal = savePersonal()
+        val personalBefore = providerBytes(personal)
+        connect()
+        val rowId = durableRecord().ledger.single().rowId
+        val loginAttempts = portal.calls.count { it.path.endsWith("token") }
+        portal.agenda = JSONArray().put(agendaJson().put("Locaux", names("E500"))).toString()
+        rejectNextSession = true
+
+        manager.refresh()
+
+        assertFalse(rejectNextSession)
+        assertNull(manager.state.value.error)
+        assertFalse(manager.state.value.busy)
+        assertEquals(loginAttempts + 1, portal.calls.count { it.path.endsWith("token") })
+        assertEquals(rowId, durableRecord().ledger.single().rowId)
+        assertEquals("E500", repository().getEvent(rowId)!!.location)
+        assertArrayEquals(personalBefore, providerBytes(personal))
+    }
+
+    @Test fun allPhoneRoutesFailWithoutChangingSavedClassesAndTheNextRefreshCanRecover() = fixtureTest {
+        var failRoutes = false
+        val attempts = mutableListOf<String>()
+        manager = SchoolScheduleManager(context) { address, language ->
+            SchoolPortalClient.routed(address, language, listOf(
+                { uri ->
+                    if (failRoutes) { attempts += "direct"; throw UnknownHostException("Synthetic direct DNS failure") }
+                    portal.open(uri)
+                },
+                { _ -> attempts += "default"; throw SocketException("Synthetic fallback transport failure") },
+            ))
+        }
+        val personal = savePersonal()
+        val personalBefore = providerBytes(personal)
+        connect()
+        val before = durableRecord()
+        val rows = before.ledger.associate { it.rowId to providerBytes(it.rowId) }
+        failRoutes = true
+        manager.refresh()
+        assertEquals(listOf("direct", "default"), attempts)
+        assertPreservedAfterFailure(before, rows, SchoolError.NETWORK)
+        assertArrayEquals(personalBefore, providerBytes(personal))
+        failRoutes = false
+        manager.refresh()
+        assertNull(manager.state.value.error)
+        assertFalse(manager.state.value.busy)
+        assertEquals(before.baseline, durableRecord().baseline)
         assertArrayEquals(personalBefore, providerBytes(personal))
     }
 
@@ -909,9 +970,10 @@ class SchoolManagerFixtureTest {
         fun release() { released.countDown() }
     }
 
-    private class FakeConnection(uri: URI, private val body: String, private val status: Int, private val gate: NetworkGate?) : HttpsURLConnection(uri.toURL()) {
+    private class FakeConnection(uri: URI, private val body: String, private val status: Int, private val gate: NetworkGate?,
+        private val mime: String = "application/json") : HttpsURLConnection(uri.toURL()) {
         override fun getResponseCode(): Int { gate?.block(); return status }
-        override fun getContentType() = "application/json"
+        override fun getContentType() = mime
         override fun getContentLengthLong() = body.toByteArray(Charsets.UTF_8).size.toLong()
         override fun getInputStream() = ByteArrayInputStream(body.toByteArray(Charsets.UTF_8))
         override fun getOutputStream() = ByteArrayOutputStream()

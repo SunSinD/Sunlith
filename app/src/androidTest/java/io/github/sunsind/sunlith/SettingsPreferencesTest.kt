@@ -67,6 +67,7 @@ class SettingsPreferencesTest {
         assertEquals(100, settings.dayTimelineZoom)
         assertEquals(100, settings.weekTimelineZoom)
         assertFalse(settings.groupEmptyHours)
+        assertFalse(settings.fiveDayWorkweek)
         assertEquals(7, settings.visibleWeekDays)
         assertEquals("sunlith", settings.layoutPreset)
     }
@@ -249,6 +250,20 @@ class SettingsPreferencesTest {
         val restored = SettingsStore(isolated)
         assertEquals(5, restored.visibleWeekDays)
         assertEquals(mapOf("synthetic-course" to 3), restored.courseColorSlots)
+    }
+
+    @Test
+    fun workweekIsOptionalAndPersistsWithoutChangingListDefaults() {
+        val settings = SettingsStore(isolated)
+        assertFalse(settings.fiveDayWorkweek)
+        settings.fiveDayWorkweek = true
+        val restored = SettingsStore(isolated)
+        assertTrue(restored.fiveDayWorkweek)
+        assertEquals("list", restored.weekLayout)
+        assertEquals("cards", restored.dayLayout)
+        assertEquals(7, restored.visibleWeekDays)
+        restored.fiveDayWorkweek = false
+        assertFalse(SettingsStore(isolated).fiveDayWorkweek)
     }
 
     @Test

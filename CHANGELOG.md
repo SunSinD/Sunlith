@@ -1,5 +1,14 @@
 # Changes
 
+## 0.6.8
+
+- Add an optional Monday–Friday workweek for the five-day Week timeline. Rolling days remain the default, and List remains the default layout.
+- Keep the Month Today arrow steady during the return, and add directional Today arrows in Day.
+- Show short Day timeline titles directly, using separate label lanes and room below midnight when needed.
+- Tag events as To-do in the editor or Details. They enter the To-do list when they start, with completion and undo saved on this phone.
+- Show a small To-do symbol beside tagged events across Month, Week and Day.
+- Let school sync use a working direct phone network when a VPN is active and Android permits it, with a fallback if that route fails. School sync does not need a computer connection.
+
 ## 0.6.7
 
 - Restore List as the default Day layout alongside Week. Existing custom layouts stay selected.

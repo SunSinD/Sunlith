@@ -119,6 +119,10 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt("week_timeline_zoom", 100).coerceIn(50, 200)
         set(value) { prefs.edit().putInt("week_timeline_zoom", value.coerceIn(50, 200)).apply() }
 
+    var fiveDayWorkweek: Boolean
+        get() = prefs.getBoolean("five_day_workweek", false)
+        set(value) { prefs.edit().putBoolean("five_day_workweek", value).apply() }
+
     var visibleWeekDays: Int
         get() = prefs.getInt("visible_week_days", 7).takeIf { it in setOf(3, 5, 7) } ?: 7
         set(value) { require(value in setOf(3, 5, 7)); prefs.edit().putInt("visible_week_days", value).apply() }

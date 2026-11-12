@@ -52,6 +52,7 @@ import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,6 +74,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -82,6 +85,7 @@ import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarDates
 import io.github.sunsind.sunlith.data.DeviceCalendar
 import io.github.sunsind.sunlith.data.EventDraft
+import io.github.sunsind.sunlith.data.TodoMarker
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -107,6 +111,7 @@ data class EditorState(
     val originalRrule: String?,
     val reminders: List<Int>,
     val originalDraft: EventDraft? = null,
+    val todo: Boolean = false,
 ) {
     val recurring: Boolean get() = !rrule.isNullOrBlank()
     val editsSeries: Boolean get() = id != null && !originalRrule.isNullOrBlank()
@@ -138,7 +143,9 @@ data class EditorState(
             startDate == original.startDate && startTime == original.startTime &&
             endDate == original.endDate && endTime == original.endTime
         return EventDraft(
-            id = id, calendarId = calendarId ?: error("No calendar"), title = title.trim(), description = notes,
+            id = id, calendarId = calendarId ?: error("No calendar"), title = title.trim(),
+            description = if (original != null && notes == original.notes && todo == original.todo)
+                originalDraft!!.description else TodoMarker.set(notes, todo),
             location = location.trim(),
             startMillis = if (timingUnchanged) originalDraft!!.startMillis else startMillis(zone),
             endMillis = if (timingUnchanged) originalDraft!!.endMillis else endMillis(zone), allDay = allDay,
@@ -163,7 +170,7 @@ data class EditorState(
         fun from(d: EventDraft, zone: ZoneId): EditorState {
             val base = EditorState(
                 id = d.id, calendarId = d.calendarId, lockedCalendar = d.id != null, title = d.title,
-                location = d.location, notes = d.description, allDay = d.allDay,
+                location = d.location, notes = TodoMarker.strip(d.description), todo = TodoMarker.has(d.description), allDay = d.allDay,
                 startDate = LocalDate.now(), startTime = LocalTime.of(9, 0), endDate = LocalDate.now(), endTime = LocalTime.of(10, 0),
                 timeZone = if (d.allDay) java.util.TimeZone.getDefault().id else d.timeZone,
                 rrule = d.rrule, originalRrule = d.rrule, reminders = d.reminderMinutes.distinct().sorted(),
@@ -270,6 +277,18 @@ fun EventEditorScreen(vm: SunlithViewModel) {
             }
             if (!state.allDay && state.timeZone != java.util.TimeZone.getDefault().id) {
                 Text(stringResource(R.string.editor_timezone_note, state.timeZone), Modifier.padding(start = 56.dp, end = 16.dp, bottom = 8.dp), color = p.muted, style = MaterialTheme.typography.bodySmall)
+            }
+            HorizontalDivider(color = p.line)
+
+            EditorRow(Icons.Outlined.CheckBox, onClick = { vm.updateEditor { it.copy(todo = !it.todo) } }, role = Role.Switch) {
+                val todoLabel = stringResource(R.string.todo_tag)
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.todo_tag), style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(if (state.recurring) R.string.todo_tag_series_hint else R.string.todo_tag_hint),
+                        color = p.muted, style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = state.todo, onCheckedChange = { v -> vm.updateEditor { it.copy(todo = v) } }, colors = switchColors(),
+                    modifier = Modifier.semantics { contentDescription = todoLabel })
             }
             HorizontalDivider(color = p.line)
 

@@ -36,7 +36,9 @@ import org.json.JSONException
 
 class SchoolScheduleManager internal constructor(
     private val context: Context,
-    private val clientFactory: (String, String) -> SchoolPortalClient = { address, language -> SchoolPortalClient(address, language) },
+    private val clientFactory: (String, String) -> SchoolPortalClient = { address, language ->
+        SchoolPortalClient.routed(address, language, SchoolPortalNetwork.routes(context))
+    },
 ) : SchoolScheduleController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()

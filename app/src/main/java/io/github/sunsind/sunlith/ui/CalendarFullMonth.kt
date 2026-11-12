@@ -129,11 +129,12 @@ private fun FullMonthCell(
     val courses = LocalCourseColors.current
     val untitled = stringResource(R.string.untitled)
     val absenceLabels = events.associateWith { absenceStatus(it, f) }
-    val description = remember(day, isToday, events, f, untitled, absenceLabels) {
+    val todoLabel = stringResource(R.string.todo_tag)
+    val description = remember(day, isToday, events, f, untitled, absenceLabels, todoLabel) {
         buildString {
             append(dayDescription(context, f, day, isToday, events.size))
             if (events.isNotEmpty()) append(". ").append(events.take(5).joinToString(", ") {
-                listOfNotNull(it.displayTitle().ifBlank { untitled }, absenceLabels[it]).joinToString(", ")
+                listOfNotNull(it.displayTitle().ifBlank { untitled }, absenceLabels[it], todoLabel.takeIf { _ -> it.todo }).joinToString(", ")
             })
             if (events.size > 5) append(", ").append(context.resources.getQuantityString(R.plurals.calendar_more_events, events.size - 5, events.size - 5))
         }
@@ -162,9 +163,10 @@ private fun FullMonthCell(
                 val chipTop = top + numberSize + 2.dp.toPx()
                 val labels = events.take(shown).map { event ->
                     val colors = eventColors(event, p, courses, dimmed = !inMonth)
+                    val todoWidth = if (event.todo) 10.dp.toPx() else 0f
                     val text = measurer.measure(event.displayTitle().ifBlank { untitled }, chipStyle.copy(color = colors.content),
                         maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
-                        constraints = Constraints(maxWidth = (available - 6.dp.toPx()).toInt().coerceAtLeast(0)))
+                        constraints = Constraints(maxWidth = (available - 6.dp.toPx() - todoWidth).toInt().coerceAtLeast(0)))
                     Triple(event, colors, text)
                 }
                 onDrawBehind {
@@ -188,7 +190,15 @@ private fun FullMonthCell(
                         colors.border?.let { border ->
                             drawRoundRect(border, Offset(inset, y), Size(available, chipHeight), CornerRadius(4.dp.toPx()), style = Stroke(1.dp.toPx()))
                         }
-                        val x = if (layoutDirection == LayoutDirection.Rtl) size.width - inset - 3.dp.toPx() - text.size.width else inset + 3.dp.toPx()
+                        val todoWidth = if (event.todo) 10.dp.toPx() else 0f
+                        if (event.todo) {
+                            val iconSize = minOf(7.dp.toPx(), chipHeight - 4.dp.toPx()).coerceAtLeast(1f)
+                            val iconX = if (layoutDirection == LayoutDirection.Rtl) size.width - inset - 3.dp.toPx() - iconSize else inset + 3.dp.toPx()
+                            drawRoundRect(colors.content, Offset(iconX, y + (chipHeight - iconSize) / 2), Size(iconSize, iconSize),
+                                CornerRadius(1.dp.toPx()), style = Stroke(1.dp.toPx()))
+                        }
+                        val x = if (layoutDirection == LayoutDirection.Rtl) size.width - inset - 3.dp.toPx() - todoWidth - text.size.width
+                            else inset + 3.dp.toPx() + todoWidth
                         drawText(text, topLeft = Offset(x, y + (chipHeight - text.size.height) / 2))
                     }
                 }

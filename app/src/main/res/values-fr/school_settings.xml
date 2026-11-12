@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="school_title">Horaire scolaire</string>
-    <string name="school_intro">Connectez le compte Col.NET de votre établissement pour ajouter vos cours, examens et remises avec vos événements.</string>
+    <string name="school_intro">Ajoutez cours, examens et échéances depuis Col.NET, sans ordinateur ni VPN.</string>
     <string name="school_provider_colnet">Col.NET</string>
     <string name="school_institution">Établissement</string>
     <string name="school_choose_institution">Choisir un établissement</string>
@@ -49,7 +49,7 @@
     <string name="school_error_portal">Vérifiez l\'adresse du portail.</string>
     <string name="school_error_sign_in">Le nom d\'utilisateur ou le mot de passe ne fonctionne pas.</string>
     <string name="school_error_mfa">Ce compte demande une étape de connexion de plus qui n\'est pas prise en charge.</string>
-    <string name="school_error_network">Impossible de joindre le portail. Vérifiez votre connexion.</string>
+    <string name="school_error_network">Impossible de joindre le portail. Vérifiez la connexion Internet du téléphone.</string>
     <string name="school_error_calendar_permission">L\'accès au calendrier est désactivé.</string>
     <string name="school_error_data">Le portail a envoyé des données illisibles.</string>
     <string name="school_error_unavailable">Le portail n\'est pas disponible pour le moment.</string>

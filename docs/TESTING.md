@@ -2,6 +2,101 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.8 workweek, To-do and school-network verification, 2026-11-11
+
+The tested distribution APK is version 0.6.8/code 19, nondebuggable and
+R8-minified, signed with the existing certificate. Candidate R14 freezes 201
+production, test and configuration files. All live files and source ZIP entries
+matched the fingerprint at final source review. Only this verification document
+changed afterward; packaging uses the exact tested APK.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Distribution APK | `3e116aa7e37a260e5d17505464a5377a356f89eb0c0732e4c6cb0860b471db68` |
+| Test APK | `fe6c9f890e04d394d3ff95d0b5d4b4541f3638d36f13fc1346b1e0542c63e67f` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+| Frozen source fingerprint | `e01f265d192fa5ef74018d8c2b40982ee1e6ac6ec479d989ea1e0e8b23f15fdd` |
+| Frozen source ZIP | `181bf329c6c90d7510a8be13bc2a62e34bfea4c55a8b76d5dbcb6e84cbe148fa` |
+
+| Check | API 30 / Android 11 | API 36 / Android 16 |
+| --- | --- | --- |
+| Instrumentation coverage, 26 unique classes each | 306 passed, 0 failed, 7 skipped | 308 passed, 0 failed, 8 skipped |
+| Focused regression campaign, identical production APK | 36 passed, 1 opt-in skip | 36 passed, 1 opt-in skip |
+| Upgrade from published 0.6.7, stock and custom layouts | Both passed | Both passed |
+| Final toolbar navigation | Passed | Passed in English, French and Arabic |
+
+The 26-class totals combine the first 23 complete classes with a three-class
+school continuation, with no duplicated classes. The original full campaigns
+remain recorded as unsuccessful: WidgetSmoke passed, but intentionally left
+DemoFixture's five synthetic events, triggering the runner's cleanup guard.
+Strict cleanup verified the exact owned calendar, five expected events, empty
+related tables and preference baseline before continuing. School fixture
+preferences were separately preserved and removed only after verifying their
+exact names, contents and provenance. Raw attempts and cleanup evidence remain
+preserved. No personal calendar or physical phone was used.
+
+The main coverage skips include four opt-in screenshot helpers, an external
+desktop-client fixture and the private live-portal smoke. API 30 also skips
+unsupported Material You wallpaper behavior. API 36 additionally skips two
+explicit permission-recovery opt-ins, which were not newly run. Screenshot
+helpers were exercised separately for the display review below.
+
+Local checks passed 108 JVM tests with zero failures, errors or skips. Lint
+reported zero errors, 144 warnings and 9 hints. The desktop companion passed
+44 tests with one external opt-in skip; syntax checks passed and its production
+dependency audit found zero vulnerabilities. Distribution app/test builds,
+signatures, all 117 production/configuration freshness checks and whitespace
+checks passed. Final GPT 6.1 Sol High and Opus 5.5 High reviews found no concrete
+release blocker. The build-only integrity report predates runtime verification;
+the runtime counts above come from the completed campaigns.
+
+Production has been byte-identical since R11. Later candidates corrected only
+test helpers: merged descriptions in the dense event chooser, Settings inside
+More, and waiting for the recreated toolbar tree. The corrected tests passed
+in isolation and in both main campaigns. Earlier production regressions were
+fixed before that freeze: delayed Schedule focus, nonoverlapping accessibility
+targets for stepped Day labels, and rounded midnight footer clearance.
+
+Visual review covered 60 feature PNG/XML pairs across six profiles, 32 school
+pairs across English/French profiles, and six extra midnight zoom pairs at
+50%, 100% and 200% on both APIs. All 98 pairs passed hash, image-size and XML
+checks. Feature profiles cover 344dp English, 280dp English, 344dp French,
+200% French, forced RTL French and 829dp landscape English. School checkpoints
+contain duplicates, yielding 12 distinct states per language. Fresh R14 toolbar
+captures also cover English, French and Arabic. Opus reviewed all 26 display
+sheets plus raw landscape, large-text and midnight frames.
+
+The workweek toggle remains off by default and affects only the five-day paged
+Week timeline; List defaults and rolling days are preserved. Month's Today
+return, Day directional arrows, short Day titles, To-do entry points and EN/FR
+school copy were checked. Short Day titles can ellipsize in their label lane;
+crowded overlaps still use the event chooser. Large-text Week columns scroll
+horizontally, and narrow editor dates can wrap. The pre-existing 200% editor
+heading can break or truncate. See [AI integration](AI-INTEGRATION.md) for
+To-do marker, local completion, recurrence history and editing limits.
+
+All four upgrade cases preserved provider data. Stock Day cards and Week List
+defaults stayed selected; custom Day timeline and Continuous Week choices
+were retained. API 36's isolated motion campaign passed nine checks: eight
+paging layouts and viewed-minute preservation during zoom. Each paging host
+used 24 all-day events, two warmup swipes and six measured alternating swipes.
+Landing-frame p95 ranged from 47.5 to 60.7ms, with maxima from 52.3 to 90.8ms
+under software rendering. These include slow frames and do not prove
+stutter-free motion or physical Fold5 performance.
+
+School sync uses the portal directly from the phone. When a VPN is active,
+it prefers a validated direct network when Android permits it, retaining normal
+TLS checks and a default-route fallback. Fixtures cover routing, failures,
+authentication, response handling and preservation of calendar state. Actual
+campus Wi-Fi with Tailscale, physical Fold5 fold/unfold and physical TalkBack
+remain unverified; the original campus failure's cause was not proven.
+
+Final private-guest provider, preferences, display and app locales exactly
+matched their original campaign baselines, and the installed candidate hashes
+were verified. Both owned guests were stopped gracefully. The final SHA-256
+byte audit confirmed all 485 original AVD files (94,168,573,854 bytes) were
+unchanged, with zero differences from their baseline.
+
 ## 0.6.7 defaults, zoom and navigation verification, 2026-11-09
 
 The tested distribution APK is version 0.6.7/code 18, nondebuggable and

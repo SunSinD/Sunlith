@@ -17,6 +17,8 @@ import android.provider.CalendarContract.Reminders
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.school.SchoolOwnership
 import io.github.sunsind.sunlith.school.SchoolCalendarPresentation
+import io.github.sunsind.sunlith.system.AppRefresh
+import java.time.ZoneId
 import java.util.TimeZone
 import java.util.UUID
 
@@ -78,6 +80,97 @@ class CalendarRepository(context: Context) {
     fun getEvent(id: Long): EventDraft? {
         checkRead()
         return readStored(id)?.draft
+    }
+
+    /** Tags only the description; timing, recurrence, attendees and reminders are never rewritten. */
+    fun setTodo(id: Long, enabled: Boolean) {
+        checkWrite()
+        val expected = revision(id) ?: error("This event no longer exists.")
+        require(editBlockReason(id) == null) { "This event cannot be edited here. Open it in your existing calendar app." }
+        val description = expected[Events.DESCRIPTION].orEmpty()
+        val updated = TodoMarker.set(description, enabled)
+        if (description == updated) return
+        require(updated.length <= 100_000) { "The event details are too long." }
+        resolver.applyBatch(CalendarContract.AUTHORITY, arrayListOf(
+            revisionAssert(id, expected),
+            ContentProviderOperation.newUpdate(ContentUris.withAppendedId(Events.CONTENT_URI, id))
+                .withValue(Events.DESCRIPTION, updated).withExpectedCount(1).build(),
+        ))
+        AppRefresh.refresh(context)
+    }
+
+    /**
+     * Single events have no history cutoff. Repeating occurrences cover the last 366 days and the
+     * next 366 days, keeping expansion bounded. Future items let the UI schedule its next refresh.
+     */
+    fun todoEvents(calendarIds: Set<Long>, now: Long, zone: ZoneId = ZoneId.systemDefault()): List<TodoItem> {
+        checkRead()
+        if (calendarIds.isEmpty()) return emptyList()
+        val ids = calendarIds.toList()
+        val selection = "${Events.CALENDAR_ID} IN (${ids.joinToString(",") { "?" }}) AND ${Events.DELETED}=0 AND " +
+            "(${Events.STATUS} IS NULL OR ${Events.STATUS} != ?) AND ${Events.DESCRIPTION} LIKE ?"
+        val args = (ids.map(Long::toString) + Events.STATUS_CANCELED.toString() + "%${TodoMarker.TOKEN}%").toTypedArray()
+        val tagged = resolver.query(Events.CONTENT_URI, STORED_PROJECTION, selection, args, "${Events.DTSTART} ASC")?.use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val stored = readStored(cursor, false)
+                    if (TodoMarker.has(stored.draft.description)) add(stored)
+                }
+            }
+        }.orEmpty()
+        val calendars = calendars().associateBy { it.id }
+        fun StoredEvent.isRecurring(): Boolean = !draft.rrule.isNullOrBlank() || !rdate.isNullOrBlank() ||
+            !exrule.isNullOrBlank() || originalId != null || originalSyncId != null || originalInstanceTime != null
+        val singles = tagged.filterNot { it.isRecurring() }.map { stored ->
+            val draft = stored.draft
+            val calendar = calendars[draft.calendarId]
+            val event = CalendarEvent(requireNotNull(draft.id), draft.calendarId, draft.title, draft.description, draft.location,
+                draft.startMillis, draft.endMillis, draft.allDay, draft.timeZone, draft.rrule, calendar?.color ?: 0, calendar?.name.orEmpty())
+            TodoItem(event, TodoIdentity.key(event), TodoIdentity.availableAt(event, zone))
+        }
+        if (tagged.none { it.isRecurring() }) return singles.sortedBy { it.availableAt }
+        val span = 366L * 24 * 60 * 60 * 1000
+        val uri = Instances.CONTENT_URI.buildUpon().also {
+            ContentUris.appendId(it, now - span)
+            ContentUris.appendId(it, now + span)
+        }.build()
+        val occurrences = resolver.query(uri,
+            arrayOf(Instances.EVENT_ID, Instances.CALENDAR_ID, Instances.TITLE, Instances.DESCRIPTION,
+                Instances.EVENT_LOCATION, Instances.BEGIN, Instances.END, Instances.ALL_DAY,
+                Instances.EVENT_TIMEZONE, Instances.RRULE, Instances.DISPLAY_COLOR, Instances.CALENDAR_DISPLAY_NAME),
+            "${Instances.CALENDAR_ID} IN (${ids.joinToString(",") { "?" }}) AND " +
+                "(${Instances.STATUS} IS NULL OR ${Instances.STATUS} != ?) AND ${Instances.DESCRIPTION} LIKE ?",
+            args, "${Instances.BEGIN} ASC",
+        )?.use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val description = cursor.string(Instances.DESCRIPTION)
+                    if (TodoMarker.has(description)) add(CalendarEvent(
+                        cursor.long(Instances.EVENT_ID), cursor.long(Instances.CALENDAR_ID), cursor.string(Instances.TITLE), description,
+                        cursor.string(Instances.EVENT_LOCATION), cursor.long(Instances.BEGIN), cursor.long(Instances.END),
+                        cursor.int(Instances.ALL_DAY) != 0, cursor.string(Instances.EVENT_TIMEZONE).ifBlank { TimeZone.getDefault().id },
+                        cursor.optional(Instances.RRULE), cursor.int(Instances.DISPLAY_COLOR), cursor.string(Instances.CALENDAR_DISPLAY_NAME),
+                    ))
+                }
+            }
+        }.orEmpty()
+        val recurringIds = tagged.filter { it.isRecurring() }.mapNotNull { it.draft.id }.toSet()
+        val taggedById = tagged.associateBy { it.draft.id }
+        val repeating = occurrences.groupBy { it.calendarId }.flatMap { (calendarId, events) ->
+            val links = seriesLinks(calendarId, events.map { it.id })
+            val identities = links.values.map { it.masterId }.distinct().associateWith { masterId ->
+                val master = taggedById[masterId] ?: readStored(masterId)
+                master?.let { TodoRecurrenceIdentity.from(it.draft, !it.rdate.isNullOrBlank() || !it.exrule.isNullOrBlank()) }
+            }
+            events.mapNotNull { event ->
+                val link = links[event.id] ?: return@mapNotNull null
+                if (event.id !in recurringIds && link.originalInstanceTime == null && link.rrule.isNullOrBlank()) return@mapNotNull null
+                TodoItem(event, TodoIdentity.key(event, link.masterId, true, link.originalInstanceTime,
+                    if (link.originalInstanceTime == null) event.allDay else link.originalAllDay, identities[link.masterId]),
+                    TodoIdentity.availableAt(event, zone))
+            }
+        }
+        return (singles + repeating).distinctBy { it.key }.sortedBy { it.availableAt }
     }
 
     fun editBlockReason(id: Long): EditBlockReason? {

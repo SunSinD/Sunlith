@@ -17,6 +17,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
+import io.github.sunsind.sunlith.data.TodoItem
+import io.github.sunsind.sunlith.data.TodoMarker
+import io.github.sunsind.sunlith.system.TodoStore
 import io.github.sunsind.sunlith.data.projectSchoolEvents
 import io.github.sunsind.sunlith.data.CalendarRepository
 import io.github.sunsind.sunlith.data.DeviceCalendar
@@ -49,6 +52,7 @@ enum class ViewMode { Month, Week, Day }
 
 sealed interface Screen {
     data object Search : Screen
+    data object Todo : Screen
     data object Settings : Screen
     data object WidgetSettings : Screen
     data object Calendars : Screen
@@ -74,6 +78,60 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = CalendarRepository(app)
     private val transfer = IcsTransfer(app, repo)
     private val settings = SettingsStore(app)
+    private val todoStore = TodoStore(app)
+    private var todoJob: Job? = null
+    private var todoGeneration = 0
+    var todoItems by mutableStateOf(emptyList<TodoItem>()); private set
+    var todoCompleted by mutableStateOf(emptySet<String>()); private set
+    var todoLoading by mutableStateOf(false); private set
+    var todoError by mutableStateOf<String?>(null); private set
+    var todoRevision by mutableIntStateOf(0); private set
+    var todoSavingIds by mutableStateOf(emptySet<Long>()); private set
+
+    fun openTodos() {
+        open(Screen.Todo)
+        reloadTodos()
+    }
+
+    fun reloadTodos() {
+        val generation = ++todoGeneration
+        todoJob?.cancel()
+        if (!hasPermission) {
+            todoItems = emptyList(); todoCompleted = emptySet(); todoLoading = false
+            return
+        }
+        todoLoading = true
+        todoJob = viewModelScope.launch {
+            try {
+                val ids = activeIds
+                val items = withContext(Dispatchers.IO) { repo.todoEvents(ids, System.currentTimeMillis()) }
+                todoItems = items
+                todoCompleted = items.filter { todoStore.isCompleted(it.key) }.mapTo(mutableSetOf()) { it.key }
+                todoError = null
+            } catch (c: CancellationException) { throw c }
+            catch (e: Exception) { todoError = e.userMessage() }
+            finally { if (generation == todoGeneration) todoLoading = false }
+        }
+    }
+
+    fun completeTodo(item: TodoItem, completed: Boolean) {
+        todoStore.setCompleted(item.key, completed)
+        todoCompleted = if (completed) todoCompleted + item.key else todoCompleted - item.key
+    }
+
+    fun setEventTodo(event: CalendarEvent, enabled: Boolean) {
+        if (event.id in todoSavingIds) return
+        todoSavingIds = todoSavingIds + event.id
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { repo.setTodo(event.id, enabled) }
+                todoRevision++
+                reload()
+            } catch (c: CancellationException) { throw c }
+            catch (e: Exception) { message(e.userMessage()) }
+            finally { todoSavingIds = todoSavingIds - event.id }
+        }
+    }
     private val uiPrefs = app.getSharedPreferences("sunlith_ui", Context.MODE_PRIVATE)
 
     var launcherIcon by mutableStateOf(LauncherIcons.saved(context)); private set
@@ -137,6 +195,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var dayTimelineZoom by mutableIntStateOf(settings.dayTimelineZoom); private set
     var weekTimelineZoom by mutableIntStateOf(settings.weekTimelineZoom); private set
     var visibleWeekDays by mutableStateOf(settings.visibleWeekDays); private set
+    var fiveDayWorkweek by mutableStateOf(settings.fiveDayWorkweek); private set
     var courseColorSlots by mutableStateOf(settings.courseColorSlots); private set
     var layoutPreset by mutableStateOf(settings.layoutPreset); private set
 
@@ -211,6 +270,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         val changed = granted != hasPermission
         hasPermission = granted
         if (!granted) {
+            todoJob?.cancel(); todoItems = emptyList(); todoCompleted = emptySet(); todoLoading = false
             loadJob?.cancel()
             extensionJob?.cancel()
             loadGeneration++
@@ -272,6 +332,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         changeJob?.cancel()
         changeJob = viewModelScope.launch {
             delay(450)
+            todoRevision++
             reload()
             invalidateSearch()
         }
@@ -317,6 +378,10 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     private fun wantedRange(): Pair<LocalDate, LocalDate> {
         if (continuousAgenda()) return targetWindow ?: initialWindow()
         val grid = gridRange()
+        if (workweekTimeline()) {
+            val monday = weekStart(selectedDate, true)
+            return minOf(grid.first, monday) to maxOf(grid.second, monday.plusDays(4))
+        }
         // A rolling timeline can retain earlier dates while the selection stays in its window.
         return if (viewMode == ViewMode.Week && weekLayout == "timeline" && visibleWeekDays < 7) {
             grid.first.minusDays((visibleWeekDays - 1).toLong()) to grid.second
@@ -373,6 +438,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
                     calendars = cals
                     activeIds = ids
                 }
+                if (Screen.Todo in stack) reloadTodos()
                 val result = withContext(Dispatchers.IO) {
                     val agenda = eventsBetween(from, to, ids)
                     val calendar = if (containsRange(from, to, buffer.first, buffer.second)) agenda
@@ -1005,6 +1071,14 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         ensureLoaded()
     }
 
+    fun workweekTimeline(): Boolean = viewMode == ViewMode.Week && weekLayout == "timeline" && visibleWeekDays == 5 && fiveDayWorkweek
+
+    fun changeFiveDayWorkweek(value: Boolean) {
+        settings.fiveDayWorkweek = value
+        fiveDayWorkweek = value
+        ensureLoaded()
+    }
+
     fun applyLayoutPreset(value: String) {
         require(value in setOf("sunlith", "schedule", "planner"))
         val (monthChoice, weekChoice, dayChoice) = when (value) {
@@ -1067,7 +1141,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         val terms = searchQuery.trim().lowercase().split(Regex("\\s+")).filter(String::isNotEmpty)
         val pool = searchPool.orEmpty()
         searchResults = if (terms.isEmpty()) emptyList() else pool.filter { e ->
-            val hay = "${e.title}\n${e.location}\n${e.description}\n${e.calendarName}".lowercase()
+            val hay = "${e.title}\n${e.location}\n${TodoMarker.strip(e.description)}\n${e.calendarName}".lowercase()
             terms.all { it in hay }
         }.take(400)
     }

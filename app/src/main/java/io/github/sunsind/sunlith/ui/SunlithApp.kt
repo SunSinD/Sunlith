@@ -120,6 +120,7 @@ fun SunlithApp(vm: SunlithViewModel) {
                         when (screen) {
                             null -> Unit
                             Screen.Search -> SearchScreen(vm)
+                            Screen.Todo -> TodoScreen(vm)
                             Screen.Settings -> settingsState.SaveableStateProvider("settings") { SettingsScreen(vm) }
                             Screen.WidgetSettings -> SettingsScreen(vm, initialPage = "widget")
                             Screen.Calendars -> CalendarsScreen(vm)

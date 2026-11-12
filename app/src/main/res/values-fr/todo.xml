@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="todo_title">À faire</string>
+    <string name="todo_actions">Autres actions</string>
+    <string name="todo_tag">À faire</string>
+    <string name="todo_tag_hint">Ajouter à votre liste au début de cet événement.</string>
+    <string name="todo_tag_series_hint">Ajouter chaque occurrence à votre liste au début de celle-ci.</string>
+    <string name="todo_empty">Rien à faire pour le moment.</string>
+    <string name="todo_empty_hint">Marquez un événement À faire. Il apparaît ici quand il commence.</string>
+    <string name="todo_completed">Terminés (%1$d)</string>
+    <string name="todo_complete">Marquer %1$s comme terminé</string>
+    <string name="todo_undo">Marquer %1$s comme non terminé</string>
+    <string name="todo_retry">Réessayer</string>
+    <string name="todo_refresh">Actualiser</string>
+</resources>
