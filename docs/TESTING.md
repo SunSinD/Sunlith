@@ -2,6 +2,146 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.9 administration messages and timeline verification, 2026-11-13
+
+The tested distribution APK is version 0.6.9/code 20, nondebuggable and
+R8 minified, signed with the existing certificate. Candidate R39 freezes 216
+production, test and configuration files. All live files and source ZIP entries
+matched the fingerprint before packaging. Only this verification document
+changed after the final runtime handback. Packaging uses the exact tested APK.
+
+| Artifact | SHA256 |
+| --- | --- |
+| Distribution APK | `a9096b5afa5c5d489bb086f68ff22227746b282c5d3036f23e00051ed87a4dba` |
+| Test APK | `ed06772910bd495e1ac94bece4f263f865288d76a4de9e64b59823264a94d683` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+| Frozen source fingerprint | `25c5004d08af2869c92015fdc8f755833dcb18cb81b6c15611db9f8654b4337a` |
+| Frozen source ZIP | `5ddacb11ee32016dcc7db1b2e9dc942fd7106be1fcc1bb6adfc47c34d297450f` |
+
+| Check | API 30 / Android 11 | API 36 / Android 16 |
+| --- | --- | --- |
+| Full instrumentation inventory, 29 unique classes each | 369 passed, 7 skipped, 0 failed | 371 passed, 8 skipped, 0 failed |
+| Separate R37 focused campaign, identical production APK | 12 passed, 0 skipped, 0 failed | 12 passed, 0 skipped, 0 failed |
+| Upgrade from published 0.6.8 | All four cases passed | All four cases passed |
+
+The full counts are disjoint unions of complete classes, rather than
+uninterrupted runs. A user clarification paused scheduling at a natural class
+boundary, after nine classes on API 30 and six on API 36. Exact state
+restoration preceded continuation through the remaining 20 and 23 classes.
+No completed class was replayed and neither source nor APK changed. Every
+executed class ended naturally with its normal final runner summary.
+
+Root independently audited all 58 class logs. Counts include only terminal
+status bundles naming a test method. Nameless diagnostic success bundles,
+75 on API 30 and 96 on API 36, are excluded. API 36 accounts for all 379
+declared methods. API 30 has 376 outcomes because three methods require API 33:
+the French app locale check, the school notification permission recovery check,
+and the one method in NotificationPermissionRecoveryTest.
+
+Full suite skips include four optional display helpers, the external desktop
+fixture and private live portal smoke. API 30 also skips unsupported Material
+You behavior. API 36 also skips two optional permission recovery checks.
+The optional timeline display helper was separately enabled once on API 36
+and passed one test. Its result and the 24 focused R37 passes are separate
+from the full suite counts.
+
+Local checks passed all 148 JVM tests with zero failures, errors or skips.
+Lint reported zero errors, 151 warnings and 9 hints. Distribution app and test
+signatures passed. The companion passed 44 tests with one external optional
+skip, syntax checks passed, and its production dependency audit found zero
+vulnerabilities. The build integrity report predates runtime verification.
+Completed runtime reports supply the device results above.
+
+Production APK bytes have been identical since R33. Later candidates corrected
+test expectations and geometry sampling only. Preserved failed attempts include
+R33's stale adjacent card expectation, R35's Day sampling beneath floating
+controls, R36's highlighted Week fill being mistaken for layout bounds, and
+R37's temporary focus outline affecting the zoom gap baseline. R34 and R38
+were built but never run. Corrected R39 tests passed the full suites.
+
+An earlier runner defect also remains explicitly recorded. The legacy harness
+requested a force stop after 35 failed groups. Of those logs, 33 reported a
+process crash and two reported a normal failure summary. Earlier blanket claims
+that those attempts completed naturally are withdrawn. Raw reports and the
+additive correction are preserved. The corrected runner waits for the active
+class to finish naturally and stops only future scheduling. R39 used that
+corrected behavior.
+
+Fresh R39 visual evidence includes 41 PNG/XML pairs: 14 from the enabled
+timeline helper and 27 from nine display profiles. Root independently checked
+all hashes and XML, reviewed every image and inspected the three landscape
+originals at full resolution. Profiles cover 344dp English light, English dark,
+Material You dark, English at 115%, 280dp English, 344dp French, French at 200%
+in dark mode, forced RTL French, and 829dp landscape English dark.
+This is not a claim of 320dp coverage.
+
+Two preliminary profile campaigns failed to reveal the 11:30 marker and each
+produced zero completed profiles and zero completed pairs. Both restored state
+exactly and stopped later scheduling. The first retained no failure screenshot,
+so its exact visible state is unproven. The second retained PNG/XML evidence
+showing that the swipe began inside the floating Today button. The ignored host
+helper was corrected to swipe in the hour gutter, search in both directions
+within bounds and retain search evidence. All nine profiles then passed.
+App source, test source and APKs stayed unchanged. Both failed reports remain.
+
+Earlier visual evidence is recorded separately. Root reviewed all 32 R33 images,
+20 new R35 images, the R36 overlap images and all ten R37 key pairs.
+R33 ordinary Day at 100% and 115% had fresh PNGs but reused XML provenance.
+These older captures are not counted as fresh R39 pairs.
+
+Ordinary Day retains full width cards at real times on the fixed 64dp per hour
+scale. Genuine overlaps keep separate readable lanes. Narrow shared lanes
+center their labels, including wrapped meeting numbers. Sequential short Day
+events share one compact card per lane with a visible count and a complete
+popup, without a diagonal staircase or an expanding row list. A later 19:00
+class stays separate, and a long class beside the short lane keeps its duration.
+Week groups events when readable lanes cannot fit. At 280dp, titles can shorten
+to initials plus ellipsis while the count and full popup remain available.
+At 200% text, Week columns scroll horizontally.
+
+All hours remain visible by default. Settings > Appearance > Group empty hours
+in Week is optional and its default and persistence passed on both APIs.
+Regular paged Week and Day reserve an all day row only when banner events exist.
+Synthetic controls explain the top area in the earlier test image.
+Continuous Week's existing banner space was explicitly accepted and retained.
+Month's event renderer has no change. Day and Month ignore pinch zoom.
+Week and Continuous Week save zoom, and the removed clock bubble leaves the
+current time line and dot.
+
+Motion review covered six passive clips: Calendars and Computer connection
+transitions with motion both off and on, plus Week paging in both directions.
+Root reviewed all 100 decoded frames, represented by 98 distinct full resolution
+images and two exact duplicates, with no temporal sampling. No calendar flash
+under Settings was observed, and date headers moved with matching event
+columns. Encoded durations range from 1.11 to 2.13 seconds. Seven seconds was
+the recorder wall clock limit. Sparse variable rate recordings do not prove
+smoothness or capture every displayed frame. Decoder output counts matched
+the video probe despite timestamp warnings during image output.
+
+A separate 59 second, 801 frame recording began at the pinch method and
+continued into later Day and Month states. Root reviewed 12 samples at five
+second intervals. It is not an isolated 59 second pinch or proof of smoothness.
+
+All eight upgrade cases preserved provider data, stock layout selections and
+custom Day timeline and Continuous Week selections. Missing legacy preference,
+legacy off, legacy on and new key precedence all passed on both APIs.
+The default five day timeline is Monday to Friday, with earlier explicit
+rolling choices preserved. Week header selection remains optional and off
+by default. Administration messages preserve the portal's original language.
+Checks run every five minutes while open and about every fifteen minutes in
+the background when Android allows them. They are not instant push delivery.
+
+Final provider data, preferences, display configuration and app locales on
+both private guests exactly matched their campaign baselines. Installed app
+and test hashes matched R39. Ownership was revalidated before gracefully
+stopping only the two owned guests. A final full byte and timestamp audit
+confirmed all 485 original AVD files, totaling 94,168,573,854 bytes, unchanged
+against the recorded baselines with zero differences.
+
+Physical Fold5 behavior, physical TalkBack and actual campus network behavior
+remain unverified. Emulator evidence does not establish physical device motion
+quality or prove the cause of the earlier campus connection failure.
+
 ## 0.6.8 workweek, To-do and school-network verification, 2026-11-11
 
 The tested distribution APK is version 0.6.8/code 19, nondebuggable and

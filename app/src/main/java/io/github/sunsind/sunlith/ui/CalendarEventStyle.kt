@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
 import io.github.sunsind.sunlith.data.SchoolAbsenceCoverage
+import java.text.BreakIterator
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -178,6 +179,52 @@ internal fun compactRooms(location: String): String {
 }
 
 private val ROOM_PREFIX = Regex("([A-Za-z]{2,5})-(.+)")
+
+/**
+ * A title that wraps only where the line breaker may wrap it (spaces, line breaks, after a hyphen or slash) in a card
+ * [width] pixels wide: a piece wider than the card keeps its longest start that fits, followed by an ellipsis, instead
+ * of being split across lines. The separators are kept as they are. Scripts written without spaces between words are
+ * returned unchanged, since they wrap between characters normally.
+ */
+internal fun fitWords(text: String, width: Int, locale: Locale = Locale.ROOT, measure: (String) -> Int): String {
+    if (text.codePoints().anyMatch { it.toUnspacedScript() }) return text
+    val lines = BreakIterator.getLineInstance(locale).apply { setText(text) }
+    val out = StringBuilder(text.length + 4)
+    var start = lines.first()
+    var end = lines.next()
+    while (end != BreakIterator.DONE) {
+        val piece = text.substring(start, end)
+        // Trailing spaces and line breaks hang past the line end, so only the visible part has to fit.
+        val word = piece.trimEnd()
+        out.append(if (word.isEmpty() || measure(word) <= width) piece else shortenWord(word, width, measure) + piece.substring(word.length))
+        start = end
+        end = lines.next()
+    }
+    return out.toString()
+}
+
+private fun shortenWord(word: String, width: Int, measure: (String) -> Int): String {
+    val boundaries = BreakIterator.getCharacterInstance().apply { setText(word) }
+    val first = boundaries.following(0)
+    var end = first
+    while (true) {
+        val next = boundaries.next()
+        if (next == BreakIterator.DONE || next >= word.length || measure(word.substring(0, next) + ELLIPSIS) > width) break
+        end = next
+    }
+    // A single letter that cannot take an ellipsis is still more useful than an empty line.
+    return if (end == first && measure(word.substring(0, first) + ELLIPSIS) > width) word.substring(0, first)
+    else word.substring(0, end) + ELLIPSIS
+}
+
+private const val ELLIPSIS = "\u2026"
+
+private fun Int.toUnspacedScript(): Boolean = when (Character.UnicodeScript.of(this)) {
+    Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA,
+    Character.UnicodeScript.THAI, Character.UnicodeScript.LAO, Character.UnicodeScript.KHMER,
+    Character.UnicodeScript.MYANMAR, Character.UnicodeScript.TIBETAN -> true
+    else -> false
+}
 
 /**
  * A solid fill for an event, made from its calendar color so the same event always gets the same fill. Dark themes

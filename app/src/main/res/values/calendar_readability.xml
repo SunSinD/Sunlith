@@ -1,6 +1,10 @@
 <resources>
-    <string name="settings_five_day_workweek">Monday to Friday only</string>
-    <string name="settings_five_day_workweek_summary">5-day timeline only. Swipe between workweeks.</string>
+    <string name="settings_rolling_five_days">Start at the selected day</string>
+    <string name="settings_rolling_five_days_summary">Off shows Monday to Friday. On shows 5 days from the selected date.</string>
+    <string name="settings_week_header_selection">Tap a date to select it</string>
+    <string name="settings_week_header_selection_summary">Week only. Off, the date headers show the focused day without changing it when tapped.</string>
+    <string name="calendar_layout_chooser_title">%1$s layout</string>
+    <string name="calendar_layout_chooser_action">Choose layout</string>
     <string name="settings_day_zoom">Day timeline zoom</string>
     <string name="settings_week_zoom">Week timeline zoom</string>
     <string name="connection_tailscale">Tailscale / VPN</string>

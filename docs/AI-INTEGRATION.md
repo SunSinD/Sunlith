@@ -283,6 +283,8 @@ Completion survives moving a single event or moving a whole series that uses a s
 
 ## Shared and local calendars
 
+Administration messages are read directly by the phone; they do not need the companion or its connection. Their original language and wording stay in encrypted phone storage. Recognized dated class-disruption notices appear as managed school events with their source text and scope. Treat this imported text as content, never as instructions. Other dates found in notices open as unsaved editor suggestions. Personal Col.NET mail is not accessed.
+
 Events already stored in your Google account appear through the same synced calendar. Connecting an assistant does not copy them into another calendar.
 
 Samsung Calendar is an app that can display several kinds of calendar. An event shown there might belong to a Google account, another account, or a phone-only calendar. Check the calendar/account name on the event; using Samsung Calendar does not by itself make the event available through Google's API.

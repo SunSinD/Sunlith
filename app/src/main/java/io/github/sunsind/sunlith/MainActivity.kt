@@ -199,10 +199,12 @@ class MainActivity : ComponentActivity() {
         runCatching {
             val schoolDate = intent.getStringExtra(EXTRA_SCHOOL_DATE)?.let(LocalDate::parse)
             val schoolSettings = intent.getBooleanExtra(EXTRA_SCHOOL_SETTINGS, false)
+            val schoolMessages = intent.getBooleanExtra(EXTRA_SCHOOL_MESSAGES, false)
             intent.removeExtra(EXTRA_SCHOOL_DATE)
             intent.removeExtra(EXTRA_SCHOOL_SETTINGS)
-            if (schoolDate != null || schoolSettings) {
-                viewModel.handleSchoolLink(schoolDate)
+            intent.removeExtra(EXTRA_SCHOOL_MESSAGES)
+            if (schoolDate != null || schoolSettings || schoolMessages) {
+                viewModel.handleSchoolLink(schoolDate, schoolMessages)
                 return
             }
             val eventId = intent.getLongExtra(EXTRA_EVENT_ID, -1L)
@@ -227,5 +229,6 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_CREATE_DATE = "create_date"
         const val EXTRA_SCHOOL_DATE = "school_event_date"
         const val EXTRA_SCHOOL_SETTINGS = "school_open_settings"
+        const val EXTRA_SCHOOL_MESSAGES = "school_open_messages"
     }
 }

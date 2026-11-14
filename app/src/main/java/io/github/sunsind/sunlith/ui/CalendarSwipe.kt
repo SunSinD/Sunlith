@@ -51,6 +51,20 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
+/** Keeps unsupported two-finger gestures from becoming a date tap, scroll or period swipe. */
+internal fun Modifier.ignoreMultiplePointers(): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        var multiple = false
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            multiple = multiple || event.changes.count { it.pressed } > 1
+            if (multiple) event.changes.forEach { it.consume() }
+            if (event.changes.none { it.pressed }) break
+        }
+    }
+}
+
 /**
  * Horizontal paging between periods (month, week, day). The content follows the finger, the next or previous
  * period slides in beside it, and the change is committed only when the finger is released past a quarter of the

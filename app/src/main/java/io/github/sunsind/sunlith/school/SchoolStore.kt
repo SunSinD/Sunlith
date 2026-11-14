@@ -23,13 +23,13 @@ internal data class SchoolOwned(val item: SchoolItem, val rowId: Long, val uid: 
     }
 }
 
-internal data class SchoolJournal(val after: List<SchoolOwned>, val removed: List<SchoolOwned>, val baseline: List<SchoolItem>, val at: Long, val linked: List<SchoolOwned> = emptyList(), val expected: List<SchoolOwned>? = null, val termKey: String = "", val termName: String = "") {
+internal data class SchoolJournal(val after: List<SchoolOwned>, val removed: List<SchoolOwned>, val baseline: List<SchoolItem>, val at: Long, val linked: List<SchoolOwned> = emptyList(), val expected: List<SchoolOwned>? = null, val termKey: String = "", val termName: String = "", val complete: Boolean = true) {
     fun json() = JSONObject().put("after", JSONArray(after.map { it.json() })).put("removed", JSONArray(removed.map { it.json() }))
         .put("baseline", JSONArray(baseline.map { it.json() })).put("at", at).put("linked", JSONArray(linked.map { it.json() }))
         .put("expected", expected?.let { JSONArray(it.map { owned -> owned.json() }) } ?: JSONObject.NULL)
-        .put("termKey", termKey).put("termName", termName)
+        .put("termKey", termKey).put("termName", termName).put("complete", complete)
     companion object {
-        fun read(j: JSONObject) = SchoolJournal(j.getJSONArray("after").owned(), j.getJSONArray("removed").owned(), j.getJSONArray("baseline").items(), j.getLong("at"), j.getJSONArray("linked").owned(), if (j.isNull("expected")) null else j.getJSONArray("expected").owned(), j.optString("termKey", ""), j.optString("termName", ""))
+        fun read(j: JSONObject) = SchoolJournal(j.getJSONArray("after").owned(), j.getJSONArray("removed").owned(), j.getJSONArray("baseline").items(), j.getLong("at"), j.getJSONArray("linked").owned(), if (j.isNull("expected")) null else j.getJSONArray("expected").owned(), j.optString("termKey", ""), j.optString("termName", ""), j.optBoolean("complete", true))
     }
 }
 
@@ -41,27 +41,34 @@ internal data class SchoolRecord(
     val lastFailure: String? = null, val journal: SchoolJournal? = null, val calendarIdentity: Map<String, String?> = emptyMap(), val disconnecting: String? = null,
     val termKey: String = "",
     val pendingReview: String? = null,
+    val termSource: SchoolTerm? = null,
 ) {
     fun json(): JSONObject = JSONObject().put("version", 1).put("portal", portal).put("username", username).put("password", password)
         .put("zone", zone).put("calendar", calendarId).put("account", account).put("connection", connection).put("token", token).put("expires", expiresAt)
         .put("term", term).put("baseline", JSONArray(baseline.map { it.json() })).put("ledger", JSONArray(ledger.map { it.json() }))
         .put("initialized", initialized).put("success", lastSuccess ?: JSONObject.NULL).put("notify", notifications.enabled)
         .put("categories", JSONArray(notifications.categories.map { it.name })).put("failure", lastFailure ?: JSONObject.NULL).put("journal", journal?.json() ?: JSONObject.NULL)
+        .put("administrationCategory", true)
         .put("calendarIdentity", JSONObject().also { j -> calendarIdentity.forEach { (k, v) -> j.put(k, v ?: JSONObject.NULL) } })
         .put("disconnecting", disconnecting ?: JSONObject.NULL)
         .put("termKey", termKey)
         .put("pendingReview", pendingReview ?: JSONObject.NULL)
+        .put("termSource", termSource?.let { JSONObject().put("code", it.code).put("name", it.name).put("start", it.start.toString()).put("end", it.end.toString()) } ?: JSONObject.NULL)
     companion object {
         fun read(j: JSONObject): SchoolRecord {
             schoolRequire(j.getInt("version") == 1)
             return SchoolRecord(j.getString("portal"), j.getString("username"), j.getString("password"), j.getString("zone"), j.getLong("calendar"),
                 j.getString("account"), j.getString("connection"), j.getString("token"), j.getLong("expires"), j.getString("term"),
                 j.getJSONArray("baseline").items(), j.getJSONArray("ledger").owned(), j.getBoolean("initialized"),
-                if (j.isNull("success")) null else j.getLong("success"), SchoolNotificationPreferences(j.getBoolean("notify"), j.getJSONArray("categories").strings().map { SchoolAlert.valueOf(it) }.toSet()),
+                if (j.isNull("success")) null else j.getLong("success"), SchoolNotificationPreferences(j.getBoolean("notify"),
+                    j.getJSONArray("categories").strings().map { SchoolAlert.valueOf(it) }.toSet().let {
+                        if (j.optBoolean("administrationCategory", false)) it else it + SchoolAlert.ADMINISTRATION_MESSAGES
+                    }),
                 if (j.isNull("failure")) null else j.getString("failure"), if (j.isNull("journal")) null else SchoolJournal.read(j.getJSONObject("journal")),
                 j.getJSONObject("calendarIdentity").let { r -> r.keys().asSequence().associateWith { if (r.isNull(it)) null else r.getString(it) } },
                 if (j.isNull("disconnecting")) null else j.getString("disconnecting"), j.optString("termKey", ""),
-                if (j.isNull("pendingReview")) null else j.getString("pendingReview"))
+                if (j.isNull("pendingReview")) null else j.getString("pendingReview"),
+                j.optJSONObject("termSource")?.let { SchoolTerm(it.getString("code"), it.getString("name"), java.time.LocalDate.parse(it.getString("start")), java.time.LocalDate.parse(it.getString("end"))) })
         }
     }
 }

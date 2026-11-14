@@ -115,4 +115,5 @@
     <string name="school_link_managed">Votre école mettra ces cours à jour. Déconnectez l\'horaire pour les modifier vous-même.</string>
     <string name="school_not_now">Pas maintenant</string>
     <string name="school_error_calendar_changed">Des événements scolaires ont été déplacés ou remplacés dans une autre application. Déconnectez et reconnectez l’horaire scolaire.</string>
+    <string name="school_error_calendar_limit">Une partie de cet horaire est trop volumineuse pour le calendrier du téléphone.</string>
 </resources>

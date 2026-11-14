@@ -57,6 +57,7 @@
     <string name="school_error_existing_classes">Some existing classes couldn\'t be linked safely. Check for duplicate imported classes, then try again.</string>
     <string name="school_error_generic">Something went wrong. Try again.</string>
     <string name="school_error_calendar_changed">Some school events were moved or replaced in another app. Disconnect and reconnect the school schedule.</string>
+    <string name="school_error_calendar_limit">Part of this schedule is too large to save in the phone\'s calendar.</string>
 
     <string name="school_review_title">Review changes</string>
     <string name="school_link_title">Link classes already in your calendar</string>

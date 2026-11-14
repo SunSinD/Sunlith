@@ -10,6 +10,7 @@ import android.provider.CalendarContract
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
 import android.os.Parcel
+import android.util.Log
 import io.github.sunsind.sunlith.R
 import java.time.LocalDate
 
@@ -62,7 +63,7 @@ internal class SchoolCalendarWriter(
         val retiredIds = retired.map { it.rowId }.toSet()
         return record.ledger.filter { it.rowId !in retiredIds }
     }
-    fun plan(record: SchoolRecord, feed: SchoolFeed, today: LocalDate): SchoolJournal {
+    fun plan(record: SchoolRecord, feed: SchoolFeed, today: LocalDate, noticeOnly: Boolean = false): SchoolJournal {
         permission()
         schoolRequire(feed.account == record.account)
         if (record.calendarIdentity != calendarIdentity(record.calendarId)) throw SchoolFailure(SchoolError.CALENDAR_CHANGED)
@@ -82,12 +83,14 @@ internal class SchoolCalendarWriter(
         val usedCandidates = mutableSetOf<Long>()
         val incoming = feed.items.associateBy { it.id }
         val after = expected.filter { owned ->
-            owned.item.id !in incoming && (owned.item.date.isBefore(today) || owned.item.date.isBefore(feed.term.start) || owned.item.date.isAfter(feed.term.end))
+            (noticeOnly && owned.item.kind != SchoolNoticeInterpreter.NOTICE_KIND) ||
+                (owned.item.id !in incoming && (owned.item.date.isBefore(today) || owned.item.date.isBefore(feed.term.start) || owned.item.date.isAfter(feed.term.end)))
         }.toMutableList()
         feed.items.forEach { item ->
+            if (noticeOnly && item.kind != SchoolNoticeInterpreter.NOTICE_KIND) return@forEach
             var existing = old[item.id]
             if (existing == null && item.date.isBefore(today) && (item.id in lostIds || item.id in baselineIds)) return@forEach
-            if (existing != null && item.date.isBefore(today)) { after += existing; return@forEach }
+            if (existing != null && item.date.isBefore(today) && item.kind != SchoolNoticeInterpreter.NOTICE_KIND) { after += existing; return@forEach }
             if (existing == null && !record.initialized) {
                 val provenance = rows.filter { row ->
                     row[Events._ID]!!.toLong() !in ownedIds && row[Events.CUSTOM_APP_PACKAGE] == context.packageName &&
@@ -128,18 +131,68 @@ internal class SchoolCalendarWriter(
         val retained = after.map { it.item.id }.toSet()
         val removed = expected.filter { it.item.id !in retained }
         val journal = SchoolJournal(after, removed, feed.items, System.currentTimeMillis(), linked, expected, feed.term.key, feed.term.name)
-        schoolRequire(journal.json().toString().toByteArray().size <= 4 * 1024 * 1024 && after.size + removed.size <= 1500)
+        localRequire(journal.json().toString().toByteArray().size <= 4 * 1024 * 1024 && after.size + removed.size <= 1500)
+        steps(record, journal)
         return journal
     }
     fun summary(record: SchoolRecord, plan: SchoolJournal) = SchoolChangeSummary(
         plan.after.count { it.rowId < 0 }, plan.after.count { next -> next.rowId >= 0 && plan.linked.none { it.rowId == next.rowId } && (plan.expected ?: record.ledger).single { it.rowId == next.rowId }.revision.managedRevision() != next.revision.managedRevision() }, plan.removed.size, plan.linked.size)
 
-    fun commit(record: SchoolRecord, plan: SchoolJournal): List<SchoolOwned> {
+    fun commit(record: SchoolRecord, plan: SchoolJournal): List<SchoolOwned> = commit(record, plan, null)
+
+    fun commitSteps(record: SchoolRecord, plan: SchoolJournal, persist: (SchoolRecord) -> Unit): List<SchoolOwned> {
         permission()
+        val parts = steps(record, plan)
+        var current = record
+        var ledger = plan.expected ?: record.ledger
+        parts.indices.forEach { index ->
+            val step = step(record, plan, parts, index, ledger)
+            val journaled = current.copy(journal = step)
+            persist(journaled)
+            ledger = commit(journaled, step, if (parts.size > 1) "${index + 1}/${parts.size}" else null)
+            if (!step.complete) {
+                current = journaled.copy(ledger = ledger, journal = null)
+                persist(current)
+            }
+        }
+        return ledger
+    }
+
+    internal fun steps(record: SchoolRecord, plan: SchoolJournal): List<Set<String>> {
+        val groups = (changed(record, plan).map { it.item.id } + plan.removed.map { it.item.id }).distinct()
+        if (batchBytes(operations(record, plan)) <= BATCH_LIMIT) return listOf(groups.toSet())
+        fun fit(ids: List<String>): List<List<String>> {
+            val bytes = batchBytes(operations(record, part(record, plan, ids.toSet())))
+            if (ids.size == 1) { localRequire(bytes <= BATCH_LIMIT); return listOf(ids) }
+            if (bytes <= STEP_TARGET) return listOf(ids)
+            return fit(ids.subList(0, ids.size / 2)) + fit(ids.subList(ids.size / 2, ids.size))
+        }
+        return fit(groups).map { it.toSet() }
+    }
+
+    internal fun step(record: SchoolRecord, plan: SchoolJournal, parts: List<Set<String>>, index: Int, ledger: List<SchoolOwned>): SchoolJournal {
+        if (parts.size == 1) return plan
+        val current = parts[index]
+        val previous = ledger.associateBy { it.item.id }
+        val planned = (plan.expected ?: record.ledger).associateBy { it.item.id }
+        val known = (plan.after + plan.removed).map { it.item.id }.toSet()
+        if (previous.size != ledger.size || ledger.any { it.item.id !in known }) throw SchoolFailure(SchoolError.STORAGE)
+        val expected = ledger.map { owned ->
+            if (owned.item.id !in current) owned
+            else planned[owned.item.id]?.takeIf { it.rowId == owned.rowId } ?: throw SchoolFailure(SchoolError.STORAGE)
+        }
+        val after = plan.after.mapNotNull { if (it.item.id in current) it else previous[it.item.id] } +
+            plan.removed.filter { it.item.id !in current }.mapNotNull { previous[it.item.id] }
+        val complete = index == parts.lastIndex
+        return SchoolJournal(after, plan.removed.filter { it.item.id in current }, if (complete) plan.baseline else emptyList(), plan.at,
+            plan.linked.filter { it.item.id in current }, expected, plan.termKey, plan.termName, complete)
+    }
+
+    internal fun operations(record: SchoolRecord, plan: SchoolJournal): ArrayList<ContentProviderOperation> {
         val operations = arrayListOf<ContentProviderOperation>()
         val old = (plan.expected ?: record.ledger).associateBy { it.rowId }
-        val changed = plan.after.filter { it.rowId < 0 || old[it.rowId]?.revision?.managedRevision() != it.revision.managedRevision() }
-        if (changed.isEmpty() && plan.removed.isEmpty()) return plan.after
+        val changed = changed(record, plan)
+        if (changed.isEmpty() && plan.removed.isEmpty()) return operations
         operations += assertRow(Calendars.CONTENT_URI, record.calendarId, record.calendarIdentity)
         (changed.mapNotNull { old[it.rowId] } + plan.removed).distinctBy { it.rowId }.forEach {
             operations += assertRow(Events.CONTENT_URI, it.rowId, it.revision.managedRevision())
@@ -159,10 +212,31 @@ internal class SchoolCalendarWriter(
                 .withValues(contentValues(values(record.calendarId, owned.item, owned.uid, owned.marker))).withExpectedCount(1).build()
         }
         plan.removed.forEach { operations += ContentProviderOperation.newDelete(ContentUris.withAppendedId(Events.CONTENT_URI, it.rowId)).withExpectedCount(1).build() }
-        boundedBatch(operations)
-        applyBatch(operations)
-        return verify(record, plan) ?: throw SchoolFailure(SchoolError.STORAGE)
+        return operations
     }
+
+    private fun commit(record: SchoolRecord, plan: SchoolJournal, label: String?): List<SchoolOwned> {
+        permission()
+        val operations = operations(record, plan)
+        if (operations.isEmpty()) return plan.after
+        val bytes = batchBytes(operations)
+        if (label != null) Log.i(TAG, "Calendar step $label operations=${operations.size} bytes=$bytes")
+        try {
+            localRequire(bytes <= BATCH_LIMIT)
+            applyBatch(operations)
+            return verify(record, plan) ?: throw SchoolFailure(SchoolError.STORAGE)
+        } catch (e: Exception) {
+            Log.w(TAG, "Calendar step ${label ?: "1/1"} stopped operations=${operations.size} bytes=$bytes type=${e.javaClass.simpleName}")
+            throw e
+        }
+    }
+    private fun changed(record: SchoolRecord, plan: SchoolJournal): List<SchoolOwned> {
+        val old = (plan.expected ?: record.ledger).associateBy { it.rowId }
+        return plan.after.filter { it.rowId < 0 || old[it.rowId]?.revision?.managedRevision() != it.revision.managedRevision() }
+    }
+    private fun part(record: SchoolRecord, plan: SchoolJournal, ids: Set<String>) = SchoolJournal(
+        plan.after.filter { it.item.id in ids }, plan.removed.filter { it.item.id in ids }, emptyList(), plan.at,
+        plan.linked.filter { it.item.id in ids }, plan.expected ?: record.ledger)
     fun verify(record: SchoolRecord, plan: SchoolJournal, allowContentChanges: Boolean = false): List<SchoolOwned>? {
         permission()
         schoolRequire(record.calendarIdentity == calendarIdentity(record.calendarId))
@@ -247,7 +321,7 @@ internal class SchoolCalendarWriter(
         var count = 0
         groups.forEach { group ->
             val candidate = ArrayList(operations).apply { addAll(group) }
-            if (count > 0 && (count >= 100 || batchBytes(candidate) > 800_000)) {
+            if (count > 0 && (count >= 100 || batchBytes(candidate) > BATCH_LIMIT)) {
                 boundedBatch(operations)
                 applyBatch(operations)
                 operations = batch()
@@ -286,7 +360,7 @@ internal class SchoolCalendarWriter(
     private fun eventRows(calendar: Long) = query(Events.CONTENT_URI, arrayOf(Events._ID, *COLUMNS), "${Events.CALENDAR_ID}=? AND ${Events.DELETED}=0", arrayOf(calendar.toString()))
     private fun query(uri: android.net.Uri, columns: Array<String>, selection: String?, arguments: Array<String>?): List<Map<String, String?>> =
         (resolver.query(uri, columns, selection, arguments, null) ?: throw SchoolFailure(SchoolError.STORAGE)).use { cursor ->
-            buildList { while (cursor.moveToNext()) { schoolRequire(size < 50_000); add(columns.associateWith { key -> cursor.getColumnIndexOrThrow(key).let { if (cursor.isNull(it)) null else cursor.getString(it) } }) } }
+            buildList { while (cursor.moveToNext()) { localRequire(size < 50_000); add(columns.associateWith { key -> cursor.getColumnIndexOrThrow(key).let { if (cursor.isNull(it)) null else cursor.getString(it) } }) } }
         }
     companion object {
         internal val COLUMNS = arrayOf(Events.CALENDAR_ID, Events.TITLE, Events.DESCRIPTION, Events.EVENT_LOCATION, Events.DTSTART, Events.DTEND,
@@ -322,8 +396,12 @@ internal class SchoolCalendarWriter(
         private fun contentValues(values: Map<String, String?>) = ContentValues().apply { values.forEach { (k, v) -> if (v == null) putNull(k) else put(k, v) } }
         private fun assertRow(uri: android.net.Uri, id: Long, revision: Map<String, String?>) = ContentProviderOperation.newAssertQuery(ContentUris.withAppendedId(uri, id))
             .withValues(contentValues(revision)).withExpectedCount(1).build()
+        private const val TAG = "SunlithSchool"
+        internal const val BATCH_LIMIT = 800_000
+        internal const val STEP_TARGET = 700_000
+        private fun localRequire(value: Boolean) { if (!value) throw SchoolFailure(SchoolError.CALENDAR_LIMIT) }
         private fun boundedBatch(operations: ArrayList<ContentProviderOperation>) {
-            schoolRequire(batchBytes(operations) <= 800_000)
+            localRequire(batchBytes(operations) <= BATCH_LIMIT)
         }
         internal fun batchBytes(operations: ArrayList<ContentProviderOperation>): Int {
             val parcel = Parcel.obtain()

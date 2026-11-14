@@ -64,6 +64,22 @@ internal class SchoolPortalClient private constructor(address: String, private v
         }
         return SchoolFeed(account, term, merged.sortedWith(compareBy<SchoolItem> { it.startMillis }.thenBy { it.id }))
     }
+    suspend fun portalLinks(token: String): List<Pair<String, String>> {
+        val info = request("api/informations", token, false) as JSONObject
+        val links = info.optJSONArray("Liens") ?: return emptyList()
+        schoolRequire(links.length() <= 200)
+        return (0 until links.length()).mapNotNull { links.optJSONObject(it) }.mapNotNull { j ->
+            val code = j.text("Code"); val description = j.text("Description")
+            if (code.isBlank() || description.isBlank() || code.length > 200) null else code to description.take(200)
+        }.distinctBy { it.first }
+    }
+    /** Returns a one-time portal URL for immediate opening. It is never stored or logged. */
+    suspend fun portalLink(token: String, code: String): String? {
+        schoolRequire(code.isNotBlank() && code.length <= 200)
+        val j = request("api/lienPortail?cleCodeLien=${URLEncoder.encode(code, "UTF-8")}", token, false) as JSONObject
+        val url = j.text("UrlLien").trim()
+        return SchoolHtml.safeLink(url)?.takeIf { it.startsWith("https://", ignoreCase = true) }
+    }
     private suspend fun request(relative: String, token: String?, array: Boolean, form: String? = null): Any {
         coroutineContext.ensureActive()
         val url = base.resolve(relative)
@@ -111,10 +127,10 @@ internal class SchoolPortalClient private constructor(address: String, private v
             }
             val status = connection.responseCode
             if (status == 401) throw SchoolFailure(SchoolError.SIGN_IN)
+            if (status in 500..599) throw SchoolFailure(SchoolError.UNAVAILABLE)
             val mime = connection.contentType?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)
-            if (mime == "text/html" && status != 503) throw SchoolFailure(SchoolError.NETWORK)
+            if (mime == "text/html") throw SchoolFailure(SchoolError.NETWORK)
             if (status == 403 || (form != null && status == 400)) throw SchoolFailure(SchoolError.SIGN_IN)
-            if (status == 503) throw SchoolFailure(SchoolError.UNAVAILABLE)
             if (status !in 200..299) throw SchoolFailure(SchoolError.NETWORK)
             schoolRequire(mime?.let { it == "application/json" || it.endsWith("+json") } == true)
             schoolRequire(connection.contentLengthLong <= MAX_BYTES)

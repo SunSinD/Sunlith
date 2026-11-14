@@ -20,6 +20,7 @@ import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.Reminders
 import android.util.Base64
+import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -52,6 +53,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
@@ -430,6 +432,26 @@ class SchoolManagerFixtureTest {
         assertEquals(listOf("E500"), durableRecord().baseline.single().rooms)
     }
 
+    @Test fun backgroundAgendaRefreshWaitsForAnActiveScheduleOperation() = fixtureTest {
+        startManager()
+        connect()
+        val before = portal.calls.count { it.path.endsWith("agenda") }
+        val gate = gateNext("agenda")
+        coroutineScope {
+            val manual = launch(Dispatchers.IO) { manager.refresh() }
+            gate.awaitEntered()
+            val background = launch(Dispatchers.IO) { manager.refreshForJob() }
+            try {
+                delay(100)
+                assertFalse("The background agenda refresh must wait instead of skipping a busy schedule", background.isCompleted)
+                gate.release()
+                withTimeout(TIMEOUT) { manual.join(); background.join() }
+            } finally { gate.release(); manual.cancelAndJoin(); background.cancelAndJoin() }
+        }
+        assertEquals(before + 2, portal.calls.count { it.path.endsWith("agenda") })
+        assertNull(manager.state.value.error)
+    }
+
     @Test fun jobRefreshRemainsCancellableAndNextManualRefreshSucceeds() = fixtureTest {
         startManager()
         connect()
@@ -774,6 +796,109 @@ class SchoolManagerFixtureTest {
         assertFalse(manager.state.value.connected)
     }
 
+    @Test fun fullTermLegacyLinkConnectAndApplyCommitsInBoundedSteps() = largeTest {
+        val legacy = fullTermFixture()
+        val personal = savePersonal()
+        val personalBefore = providerBytes(personal)
+        val sizes = Collections.synchronizedList(mutableListOf<Int>())
+        startManager(SchoolCalendarWriter(context) { operations ->
+            sizes += SchoolCalendarWriter.batchBytes(operations)
+            context.contentResolver.applyBatch(CalendarContract.AUTHORITY, operations)
+        })
+        connectLarge()
+        assertEquals(SchoolChangeSummary(30, 0, 0, 260), manager.state.value.pendingChanges)
+        assertFalse(durableRecord().initialized)
+        assertTrue(sizes.isEmpty())
+        val naive = naiveBatchBytes()
+        assertTrue("One atomic batch is $naive bytes", naive > SchoolCalendarWriter.BATCH_LIMIT)
+
+        withTimeout(LARGE_TIMEOUT) { manager.applyPendingChanges() }
+
+        Log.i("SunlithSchoolTest", "Manager full-term link naive=$naive steps=$sizes")
+        assertNull(manager.state.value.error)
+        assertNull(manager.state.value.pendingChanges)
+        assertTrue(sizes.size >= 2)
+        assertTrue("Steps were $sizes", sizes.all { it <= SchoolCalendarWriter.BATCH_LIMIT })
+        val record = durableRecord()
+        assertTrue(record.initialized)
+        assertNull(record.journal)
+        assertNotNull(record.lastSuccess)
+        assertEquals(290, record.baseline.size)
+        assertEquals(290, manager.state.value.eventCount)
+        assertFullTermLinked(legacy, record.ledger)
+        assertArrayEquals(personalBefore, providerBytes(personal))
+        assertEquals(291, repository().storedEvents(setOf(calendar)).size)
+    }
+
+    @Test fun interruptedFullTermLinkRecoversLedgerOnlyAndAsksAgainBeforeLinkingTheRest() = largeTest {
+        val legacy = fullTermFixture()
+        var applied = 0
+        startManager(SchoolCalendarWriter(context) { operations ->
+            assertTrue(SchoolCalendarWriter.batchBytes(operations) <= SchoolCalendarWriter.BATCH_LIMIT)
+            context.contentResolver.applyBatch(CalendarContract.AUTHORITY, operations)
+            if (++applied == 1) throw IllegalStateException("Synthetic crash after the first committed step")
+        })
+        connectLarge()
+        assertEquals(SchoolChangeSummary(30, 0, 0, 260), manager.state.value.pendingChanges)
+
+        withTimeout(LARGE_TIMEOUT) { manager.applyPendingChanges() }
+
+        assertEquals(1, applied)
+        assertEquals(SchoolError.STORAGE, manager.state.value.error)
+        assertNotNull(manager.state.value.pendingChanges)
+        val interrupted = durableRecord()
+        assertFalse(interrupted.journal!!.complete)
+        assertFalse(interrupted.initialized)
+        assertTrue(interrupted.ledger.isEmpty())
+        assertNull(interrupted.lastSuccess)
+
+        val agendaCalls = portal.calls.count { it.path.endsWith("agenda") }
+        startManager()
+        withTimeout(LARGE_TIMEOUT) { manager.refresh() }
+
+        assertEquals("The first refresh after recovery must fetch the remaining plan", agendaCalls + 1,
+            portal.calls.count { it.path.endsWith("agenda") })
+        assertNull(manager.state.value.error)
+        val recovered = durableRecord()
+        assertNull(recovered.journal)
+        assertFalse(recovered.initialized)
+        assertTrue(recovered.baseline.isEmpty())
+        assertNull(recovered.lastSuccess)
+        val firstLinked = recovered.ledger.filter { owned -> legacy.any { it.itemId == owned.item.id } }
+        assertTrue(firstLinked.isNotEmpty())
+        assertTrue(recovered.ledger.size < 290)
+        firstLinked.forEach { owned -> assertEquals(legacy.single { it.itemId == owned.item.id }.id, owned.rowId) }
+        val inserted = recovered.ledger.size - firstLinked.size
+        assertEquals(SchoolChangeSummary(30 - inserted, 0, 0, 260 - firstLinked.size), manager.state.value.pendingChanges)
+        assertEquals(260 + inserted, repository().storedEvents(setOf(calendar)).size)
+
+        withTimeout(LARGE_TIMEOUT) { manager.applyPendingChanges() }
+
+        assertNull(manager.state.value.error)
+        assertNull(manager.state.value.pendingChanges)
+        val record = durableRecord()
+        assertTrue(record.initialized)
+        assertNotNull(record.lastSuccess)
+        assertFullTermLinked(legacy, record.ledger)
+        recovered.ledger.forEach { owned -> assertEquals(owned.rowId, record.ledger.single { it.item.id == owned.item.id }.rowId) }
+        assertEquals(290, repository().storedEvents(setOf(calendar)).size)
+    }
+
+    @Test fun oversizedPortalClassShowsCalendarLimitInsteadOfPortalError() = fixtureTest {
+        val longName = "Enseignante remplaçante en électronique ".repeat(500).take(19_990)
+        portal.agenda = JSONArray().put(agendaJson().put("Enseignants", JSONArray((0 until 25).map { JSONObject().put("Nom", "$it $longName") }))).toString()
+        val personal = savePersonal()
+        val personalBefore = providerBytes(personal)
+        startManager()
+        withTimeout(TIMEOUT) { manager.connect(PORTAL, "synthetic-user", "synthetic-password", zone.id, calendar) }
+        assertEquals(SchoolError.CALENDAR_LIMIT, manager.state.value.error)
+        assertTrue(manager.state.value.connected)
+        assertFalse(durableRecord().initialized)
+        assertNull(durableRecord().journal)
+        assertEquals(listOf(personal), repository().storedEvents(setOf(calendar)).map { it.draft.id })
+        assertArrayEquals(personalBefore, providerBytes(personal))
+    }
+
     @Test fun privateLivePortalSmokeCheck() = runBlocking {
         assumeTrue("Live verification is explicitly opt-in", InstrumentationRegistry.getArguments().getString("schoolLive") == "true")
         val input = File(base.noBackupFilesDir, "school-live-input.json")
@@ -818,11 +943,97 @@ class SchoolManagerFixtureTest {
         runBlocking { withTimeout(30_000) { block() } }
     }
 
-    private fun startManager() {
-        manager = SchoolScheduleManager(context) { address, language ->
+    private fun startManager(writer: SchoolCalendarWriter = SchoolCalendarWriter(context)) {
+        manager = SchoolScheduleManager(context, writer) { address, language ->
             SchoolPortalClient(address, language, portal::open)
         }
     }
+
+    private fun largeTest(block: suspend CoroutineScope.() -> Unit) {
+        runBlocking { withTimeout(4 * LARGE_TIMEOUT) { block() } }
+    }
+
+    private suspend fun connectLarge() = withTimeout(LARGE_TIMEOUT) {
+        manager.connect(PORTAL, "synthetic-user", "synthetic-password", zone.id, calendar)
+        assertNull(manager.state.value.error)
+        assertTrue(manager.state.value.connected)
+        assertFalse(manager.state.value.busy)
+    }
+
+    private data class LegacyRow(val id: Long, val uid: String, val itemId: String)
+
+    private fun fullTermFixture(): List<LegacyRow> {
+        val rows = JSONArray()
+        val legacy = mutableListOf<Pair<String, ContentValues>>()
+        repeat(260) { index ->
+            val date = today.plusDays(1L + index / 20)
+            val (course, name) = COURSES[index % COURSES.size]
+            val group = "0100${index % 3 + 1}"
+            val lab = index % 2 == 0
+            val start = java.time.LocalTime.of(7, 0).plusMinutes(index % 20 * 40L)
+            val end = start.plusMinutes(35)
+            val title = "$name – ${if (lab) "Laboratoire" else "Théorie"}"
+            val room = ROOMS[index % ROOMS.size]
+            rows.put(JSONObject().put("CleUnique", "cle-unique-$index").put("CleClasse", "classe-$course-${index % 3}").put("Titre", title)
+                .put("Cours", course).put("Groupe", group).put("TypeClasse", if (lab) "2" else "1").put("Type", "01").put("Date", wire(date))
+                .put("JourneeComplete", false).put("HeureDebut", hhmm(start)).put("HeureFin", hhmm(end)).put("IndAbsence", false)
+                .put("Enseignants", JSONArray(listOf(TEACHERS[index % TEACHERS.size], TEACHERS[(index + 2) % TEACHERS.size]).map { JSONObject().put("Nom", it) }))
+                .put("Locaux", names(room)).put("NumeroPeriode", "${index % 20 + 1}").put("TitreTypePeriode", "Période de cours régulière")
+                .apply { if (lab) put("Commentaire", "Apportez votre multimètre, votre cahier de laboratoire et vos lunettes de sécurité.") })
+            legacy += "cle-unique-$index" to ContentValues().apply {
+                put(Events.CALENDAR_ID, calendar); put(Events.TITLE, title); put(Events.DESCRIPTION, "$course-$group")
+                put(Events.EVENT_LOCATION, room); put(Events.UID_2445, "${UUID.randomUUID()}@import.invalid")
+                put(Events.DTSTART, at(date, start.hour, start.minute)); put(Events.DTEND, at(date, end.hour, end.minute)); put(Events.ALL_DAY, 0)
+                put(Events.EVENT_TIMEZONE, zone.id); put(Events.STATUS, Events.STATUS_CONFIRMED); put(Events.HAS_ALARM, 0)
+            }
+        }
+        repeat(30) { index ->
+            val date = today.plusDays(1L + index % 10)
+            rows.put(when (index / 10) {
+                0 -> JSONObject().put("CleUnique", "examen-$index").put("Titre", "Examen ${index + 1} – ${COURSES[index % COURSES.size].second}").put("Type", "07")
+                    .put("Date", wire(date)).put("JourneeComplete", true).put("IndAbsence", false).put("Enseignants", JSONArray()).put("Locaux", JSONArray())
+                1 -> JSONObject().put("CleUnique", "journee-$index").put("Titre", "Journée pédagogique – aucun cours").put("Type", "08")
+                    .put("Date", wire(date)).put("JourneeComplete", true).put("IndAbsence", false).put("Enseignants", JSONArray()).put("Locaux", JSONArray())
+                else -> JSONObject().put("CleUnique", "rattrapage-$index").put("CleClasse", "classe-rattrapage-$index").put("Titre", "Séance de rattrapage – Électronique analogique")
+                    .put("Cours", "243RT9MO").put("Groupe", "02001").put("TypeClasse", "1").put("Type", "01").put("Date", wire(date)).put("JourneeComplete", false)
+                    .put("HeureDebut", "2100").put("HeureFin", "2200").put("IndAbsence", false).put("Enseignants", names(TEACHERS[index % TEACHERS.size])).put("Locaux", names(ROOMS[1]))
+            })
+        }
+        portal.agenda = rows.toString()
+        return legacy.chunked(100).flatMap { chunk ->
+            val results = context.contentResolver.applyBatch(CalendarContract.AUTHORITY, ArrayList(chunk.map { (_, values) ->
+                android.content.ContentProviderOperation.newInsert(Events.CONTENT_URI).withValues(values).build()
+            }))
+            chunk.mapIndexed { index, (itemId, values) -> LegacyRow(ContentUris.parseId(results[index].uri!!), values.getAsString(Events.UID_2445), itemId) }
+        }
+    }
+
+    private fun naiveBatchBytes(): Int {
+        val current = durableRecord()
+        val term = SchoolTerm("FIXTURE", "Synthetic active term", termStart, termEnd)
+        val feed = SchoolFeed(current.account, term, SchoolSource.merge(SchoolSource.agenda(JSONArray(portal.agenda), term, zone), emptyList(), term))
+        val writer = SchoolCalendarWriter(context)
+        return SchoolCalendarWriter.batchBytes(writer.operations(current, writer.plan(current, feed, today)))
+    }
+
+    private fun assertFullTermLinked(legacy: List<LegacyRow>, ledger: List<SchoolOwned>) {
+        assertEquals(290, ledger.size)
+        assertEquals(ledger.size, ledger.map { it.item.id }.toSet().size)
+        assertEquals(ledger.size, ledger.map { it.rowId }.toSet().size)
+        assertEquals(ledger.size, ledger.map { it.marker }.toSet().size)
+        assertEquals(ledger.size, ledger.map { it.uid }.toSet().size)
+        assertEquals(legacy.map { it.id }.toSet(), ledger.filter { owned -> legacy.any { it.itemId == owned.item.id } }.map { it.rowId }.toSet())
+        legacy.forEach { row ->
+            val owned = ledger.single { it.item.id == row.itemId }
+            assertEquals(row.id, owned.rowId)
+            assertEquals(row.uid, owned.uid)
+            assertEquals(row.uid, repository().revision(row.id)!![Events.UID_2445])
+        }
+        legacy.filterIndexed { index, _ -> index % 52 == 0 }.forEach { assertEquals(EditBlockReason.SCHOOL_MANAGED, repository().editBlockReason(it.id)) }
+        assertTrue(repository().storedEvents(setOf(calendar)).map { it.draft.id }.toSet().containsAll(ledger.map { it.rowId }))
+    }
+
+    private fun hhmm(time: java.time.LocalTime) = "%02d%02d".format(time.hour, time.minute)
 
     private suspend fun connect() = withTimeout(TIMEOUT) {
         manager.connect(PORTAL, "synthetic-user", "synthetic-password", zone.id, calendar)
@@ -998,5 +1209,10 @@ class SchoolManagerFixtureTest {
     private companion object {
         const val PORTAL = "https://example.invalid/colnet/"
         const val TIMEOUT = 10_000L
+        const val LARGE_TIMEOUT = 60_000L
+        val COURSES = listOf("243EL1MO" to "Électronique analogique", "243CN2MO" to "Circuits numériques et VHDL", "243CO3MO" to "Communications numériques",
+            "243RS4MO" to "Réseaux locaux et Packet Tracer", "201NYAMO" to "Calcul différentiel", "601MOAMO" to "Écriture et littérature", "340EEAMO" to "Éthique et politique")
+        val TEACHERS = listOf("Marie-Ève Tremblay-Gagnon", "Jean-François Bélanger", "Geneviève Ouellet-Côté", "Stéphane Bérubé", "Nathalie Lévesque", "François-Xavier Thériault")
+        val ROOMS = listOf("C-2.14 Laboratoire d'électronique", "A-1.07", "B-3.22 Salle de classe", "E-0.45 Laboratoire de télécommunications")
     }
 }

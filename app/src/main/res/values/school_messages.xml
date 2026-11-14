@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="school_messages_title">College messages</string>
+    <string name="school_messages_open">Messages</string>
+    <string name="school_messages_open_sub">Messages from the Col.NET administration</string>
+    <string name="school_admin_open_notice">Open notice</string>
+    <string name="school_messages_refresh">Refresh</string>
+    <string name="school_messages_updated">Updated %1$s</string>
+    <string name="school_messages_never">Not loaded yet</string>
+    <string name="school_messages_not_connected">Connect School schedule first.</string>
+    <string name="school_admin_notices">College notices</string>
+    <string name="school_admin_confirmed">Confirmed</string>
+    <string name="school_admin_updated">Notice corrected</string>
+    <string name="school_admin_warning">Warning, not confirmed</string>
+    <string name="school_admin_until">Until %1$s</string>
+    <string name="school_admin_decision">Decision expected around %1$s</string>
+    <string name="school_admin_resume">Classes resume %1$s</string>
+    <string name="school_admin_exceptions">Exceptions</string>
+    <string name="school_admin_scope_note">Added to your calendar as a notice. Your classes were not changed. Check which sites and programs it covers.</string>
+    <string name="school_admin_show_day">Show day</string>
+    <string name="school_admin_superseded">Replaces an earlier notice for this day.</string>
+    <string name="school_admin_title_only">Only the title could be read. Open Col.NET for the full text.</string>
+    <string name="school_admin_suggestions">Dates found in notices</string>
+    <string name="school_admin_suggestions_note">Not added automatically. Check the notice before adding.</string>
+    <string name="school_admin_suggestion_add">Add to calendar</string>
+    <string name="school_admin_list">All administration messages</string>
+    <string name="school_admin_empty">No administration messages.</string>
+    <string name="school_admin_status_sign_in">Col.NET web sign-in didn\'t work for administration messages. Your schedule sync is not affected.</string>
+    <string name="school_admin_status_unrecognized">The administration page has a layout this app doesn\'t recognize, so nothing was guessed. Open Col.NET to read it.</string>
+    <string name="school_admin_status_network">Couldn\'t update administration messages. Try again or open Col.NET.</string>
+    <string name="school_admin_status_unavailable">Col.NET is unavailable right now.</string>
+    <string name="school_admin_not_loaded">Administration messages haven\'t been loaded yet.</string>
+    <string name="school_admin_open_portal">Open Col.NET</string>
+    <string name="school_admin_portal_links">Col.NET links</string>
+    <string name="school_admin_portal_links_empty">No links available.</string>
+    <string name="school_admin_portal_link_failed">Couldn\'t open that link.</string>
+    <string name="school_admin_source">Source: %1$s</string>
+    <string name="school_admin_category">Category: %1$s</string>
+    <string name="school_admin_posted">Posted %1$s</string>
+    <string name="school_messages_close">Close</string>
+    <string name="school_messages_storage">Couldn\'t save administration messages on this phone.</string>
+    <string name="school_alert_administration">Administration messages</string>
+    <plurals name="school_admin_new_messages">
+        <item quantity="one">%d new administration message</item>
+        <item quantity="other">%d new administration messages</item>
+    </plurals>
+</resources>

@@ -190,6 +190,7 @@ class SchoolScheduleUiTest {
             SchoolAlert.ASSESSMENTS to R.string.school_alert_assessments,
             SchoolAlert.SCHOOL_DAYS to R.string.school_alert_school_days,
             SchoolAlert.CONNECTION_PROBLEMS to R.string.school_alert_connection,
+            SchoolAlert.ADMINISTRATION_MESSAGES to R.string.school_alert_administration,
         )
         categories.forEach { (category, label) ->
             val target = scrollTo(label)

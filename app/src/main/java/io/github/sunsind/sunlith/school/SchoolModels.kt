@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 enum class SchoolAlert {
     TEACHER_ABSENCES, CLASS_TIMES, ROOMS, TEACHERS, ADDED_CLASSES, REMOVED_CLASSES,
-    ASSESSMENTS, SCHOOL_DAYS, CONNECTION_PROBLEMS,
+    ASSESSMENTS, SCHOOL_DAYS, CONNECTION_PROBLEMS, ADMINISTRATION_MESSAGES,
 }
 
 data class SchoolNotificationPreferences(
@@ -15,7 +15,7 @@ data class SchoolNotificationPreferences(
 
 enum class SchoolError {
     INVALID_PORTAL, SIGN_IN, MFA_REQUIRED, NETWORK, CALENDAR_PERMISSION,
-    INVALID_DATA, UNAVAILABLE, STORAGE, LEGACY_COLLISION, CALENDAR_CHANGED,
+    INVALID_DATA, UNAVAILABLE, STORAGE, LEGACY_COLLISION, CALENDAR_CHANGED, CALENDAR_LIMIT,
 }
 
 data class SchoolChangeSummary(val added: Int, val updated: Int, val removed: Int, val linked: Int = 0)

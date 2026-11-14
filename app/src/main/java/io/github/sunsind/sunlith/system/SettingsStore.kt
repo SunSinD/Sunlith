@@ -21,6 +21,13 @@ class SettingsStore(context: Context) {
                 prefs.getString("day_layout", "cards") == "timeline") migration.putString("day_layout", "cards")
             migration.apply()
         }
+        if (prefs.contains(LEGACY_WORKWEEK)) {
+            // v0.6.8 stored the opposite toggle. Only an explicit "off" meant the user chose rolling days.
+            val legacy = prefs.getBoolean(LEGACY_WORKWEEK, false)
+            val edit = prefs.edit().remove(LEGACY_WORKWEEK)
+            if (!prefs.contains(ROLLING_FIVE_DAYS)) edit.putBoolean(ROLLING_FIVE_DAYS, rollingFiveDaysFromLegacy(legacy))
+            edit.apply()
+        }
     }
 
     var selectedCalendarIds: Set<Long>
@@ -119,9 +126,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt("week_timeline_zoom", 100).coerceIn(50, 200)
         set(value) { prefs.edit().putInt("week_timeline_zoom", value.coerceIn(50, 200)).apply() }
 
-    var fiveDayWorkweek: Boolean
-        get() = prefs.getBoolean("five_day_workweek", false)
-        set(value) { prefs.edit().putBoolean("five_day_workweek", value).apply() }
+    /** The 5-day timeline shows Monday to Friday unless the user opts into five days starting at the selected date. */
+    var rollingFiveDays: Boolean
+        get() = prefs.getBoolean(ROLLING_FIVE_DAYS, false)
+        set(value) { prefs.edit().putBoolean(ROLLING_FIVE_DAYS, value).apply() }
+
+    /** Tapping a date above a Week timeline selects it only when the user opts in. */
+    var weekHeaderSelection: Boolean
+        get() = prefs.getBoolean("week_header_selection", false)
+        set(value) { prefs.edit().putBoolean("week_header_selection", value).apply() }
 
     var visibleWeekDays: Int
         get() = prefs.getInt("visible_week_days", 7).takeIf { it in setOf(3, 5, 7) } ?: 7
@@ -138,4 +151,15 @@ class SettingsStore(context: Context) {
         require(value in values)
         prefs.edit().putString(key, value).apply()
     }
+
+    private companion object {
+        const val LEGACY_WORKWEEK = "five_day_workweek"
+        const val ROLLING_FIVE_DAYS = "rolling_five_days"
+    }
 }
+
+/**
+ * Maps the v0.6.8 "Monday to Friday only" switch to the inverted rolling opt-in. A missing value was the old default
+ * (rolling), but it was never a choice, so it takes the new Monday to Friday default. An explicit "off" stays rolling.
+ */
+internal fun rollingFiveDaysFromLegacy(legacyWorkweek: Boolean?): Boolean = legacyWorkweek == false

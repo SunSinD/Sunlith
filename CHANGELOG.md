@@ -1,8 +1,22 @@
 # Changes
 
+## 0.6.9
+
+Five day timelines now show Monday to Friday by default. Rolling days remain available, and earlier choices are preserved. Week headers highlight the focused date as you page. Selecting those headers is optional and off by default. Seven day timelines fit the week at normal text sizes.
+
+Events at the same time sit side by side in separate rounded cards with space between them. When they would be too narrow to read, they are grouped into one card with a count that opens their list. Narrow cards beside each other center their titles. Titles wrap between words instead of breaking into fragments. In Day, short events too close together for their titles share one compact card at the first start time. It is one title line tall and shows a count of the other events, and tapping it lists each event with its exact times. They no longer look like events at the same time, and later events keep their own cards.
+
+Pinch Week timelines to zoom around the time under your fingers. A deliberate change in finger spacing starts the gesture, and Week saves its zoom. Day uses a fixed time scale. Rounded hour tiles, a stronger today tint and a current time line kept within today improve the timeline. Hold a Month, Week or Day tab, or its compact menu entry, to choose a layout.
+
+Settings screens keep the calendar covered during transitions. Large school imports use bounded steps that can recover after an interruption, preserving linked class IDs.
+
+Messages opens directly to Col.NET administration notices, with an encrypted copy on your phone. Titles and message text keep their original language. School alerts can notify you about new messages and corrections. Recognized dated notices appear in the school calendar. Confirmations and corrections update the notice for that day, with its source and exceptions. Class events stay intact. Other deadlines open in the editor for review before saving.
+
+Administration checks run every five minutes while the app is open and about every fifteen minutes in the background when Android allows them. Delivery is not instant.
+
 ## 0.6.8
 
-- Add an optional Monday–Friday workweek for the five-day Week timeline. Rolling days remain the default, and List remains the default layout.
+- Add an optional Monday to Friday workweek for the five day Week timeline. Rolling days remain the default, and List remains the default layout.
 - Keep the Month Today arrow steady during the return, and add directional Today arrows in Day.
 - Show short Day timeline titles directly, using separate label lanes and room below midnight when needed.
 - Tag events as To-do in the editor or Details. They enter the To-do list when they start, with completion and undo saved on this phone.

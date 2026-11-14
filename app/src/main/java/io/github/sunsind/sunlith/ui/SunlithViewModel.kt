@@ -50,6 +50,15 @@ import kotlinx.coroutines.withContext
 
 enum class ViewMode { Month, Week, Day }
 
+internal val DAY_LAYOUT_CHOICES = listOf("cards", "timeline")
+
+/** Layouts offered by long-pressing a view tab, in display order. Day keeps the retired compact schedule out. */
+internal fun layoutChoices(mode: ViewMode): List<String> = when (mode) {
+    ViewMode.Month -> listOf("split", "full")
+    ViewMode.Week -> listOf("list", "timeline3", "timeline5", "timeline7", "continuous")
+    ViewMode.Day -> DAY_LAYOUT_CHOICES
+}
+
 sealed interface Screen {
     data object Search : Screen
     data object Todo : Screen
@@ -57,6 +66,7 @@ sealed interface Screen {
     data object WidgetSettings : Screen
     data object Calendars : Screen
     data object SchoolSchedule : Screen
+    data object SchoolMessages : Screen
     data object DeviceLink : Screen
     data object Editor : Screen
     data class Details(val event: CalendarEvent) : Screen
@@ -195,7 +205,8 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var dayTimelineZoom by mutableIntStateOf(settings.dayTimelineZoom); private set
     var weekTimelineZoom by mutableIntStateOf(settings.weekTimelineZoom); private set
     var visibleWeekDays by mutableStateOf(settings.visibleWeekDays); private set
-    var fiveDayWorkweek by mutableStateOf(settings.fiveDayWorkweek); private set
+    var rollingFiveDays by mutableStateOf(settings.rollingFiveDays); private set
+    var weekHeaderSelection by mutableStateOf(settings.weekHeaderSelection); private set
     var courseColorSlots by mutableStateOf(settings.courseColorSlots); private set
     var layoutPreset by mutableStateOf(settings.layoutPreset); private set
 
@@ -758,10 +769,10 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun handleSchoolLink(date: LocalDate? = null) {
+    fun handleSchoolLink(date: LocalDate? = null, messages: Boolean = false) {
         require(date == null || date.year in 1900..2100)
         if (!aiIntroDone || !layoutSetupDone || !hasPermission || needsNotificationStep || !loaded) {
-            pendingLink = { handleSchoolLink(date) }
+            pendingLink = { handleSchoolLink(date, messages) }
             return
         }
         if (stack.contains(Screen.Editor) && editorDirty) {
@@ -774,6 +785,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
             open(Screen.Settings)
             open(Screen.Calendars)
             open(Screen.SchoolSchedule)
+            if (messages) open(Screen.SchoolMessages)
         }
     }
 
@@ -811,6 +823,12 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         editor = state
         editorInitial = state
         open(Screen.Editor)
+    }
+
+    fun addSchoolSuggestion(suggestion: io.github.sunsind.sunlith.school.SchoolNoticeSuggestion) {
+        newEvent(suggestion.date)
+        updateEditor { it.copy(title = suggestion.title, notes = suggestion.detail, allDay = true,
+            endDate = suggestion.date, reminders = emptyList()) }
     }
 
     fun editEvent(id: Long) {
@@ -1071,12 +1089,39 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         ensureLoaded()
     }
 
-    fun workweekTimeline(): Boolean = viewMode == ViewMode.Week && weekLayout == "timeline" && visibleWeekDays == 5 && fiveDayWorkweek
+    fun workweekTimeline(): Boolean = viewMode == ViewMode.Week && weekLayout == "timeline" && visibleWeekDays == 5 && !rollingFiveDays
 
-    fun changeFiveDayWorkweek(value: Boolean) {
-        settings.fiveDayWorkweek = value
-        fiveDayWorkweek = value
+    fun changeRollingFiveDays(value: Boolean) {
+        settings.rollingFiveDays = value
+        rollingFiveDays = value
         ensureLoaded()
+    }
+
+    fun changeWeekHeaderSelection(value: Boolean) {
+        settings.weekHeaderSelection = value
+        weekHeaderSelection = value
+    }
+
+    /** The chooser value for [mode]'s current layout, or null when it uses a layout the chooser does not offer. */
+    fun currentLayoutChoice(mode: ViewMode): String? = when (mode) {
+        ViewMode.Month -> monthLayout
+        ViewMode.Week -> if (weekLayout == "timeline") "timeline$visibleWeekDays" else weekLayout
+        ViewMode.Day -> dayLayout.takeIf { it in DAY_LAYOUT_CHOICES }
+    }
+
+    /** Applies a layout from the view chooser, persists it like Settings does, then opens that view. */
+    fun applyViewLayout(mode: ViewMode, choice: String) {
+        require(choice in layoutChoices(mode))
+        if (currentLayoutChoice(mode) != choice) when (mode) {
+            ViewMode.Month -> changeMonthLayout(choice)
+            ViewMode.Week -> if (choice == "list" || choice == "continuous") changeWeekLayout(choice) else {
+                val days = choice.removePrefix("timeline").toInt()
+                if (visibleWeekDays != days) changeVisibleWeekDays(days)
+                if (weekLayout != "timeline") changeWeekLayout("timeline")
+            }
+            ViewMode.Day -> changeDayLayout(choice)
+        }
+        changeViewMode(mode)
     }
 
     fun applyLayoutPreset(value: String) {

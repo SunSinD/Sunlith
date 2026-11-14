@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="school_messages_title">Messages du Collège</string>
+    <string name="school_messages_open">Messages</string>
+    <string name="school_messages_open_sub">Messages de l\'administration Col.NET</string>
+    <string name="school_admin_open_notice">Voir l\'avis</string>
+    <string name="school_messages_refresh">Actualiser</string>
+    <string name="school_messages_updated">Mis à jour %1$s</string>
+    <string name="school_messages_never">Pas encore chargé</string>
+    <string name="school_messages_not_connected">Connectez d\'abord l\'horaire scolaire.</string>
+    <string name="school_admin_notices">Avis du Collège</string>
+    <string name="school_admin_confirmed">Confirmé</string>
+    <string name="school_admin_updated">Avis corrigé</string>
+    <string name="school_admin_warning">Avertissement, non confirmé</string>
+    <string name="school_admin_until">Jusqu\'à %1$s</string>
+    <string name="school_admin_decision">Décision prévue vers %1$s</string>
+    <string name="school_admin_resume">Reprise des cours le %1$s</string>
+    <string name="school_admin_exceptions">Exceptions</string>
+    <string name="school_admin_scope_note">Ajouté à votre calendrier comme avis. Vos cours n\'ont pas été modifiés. Vérifiez quels lieux et programmes sont touchés.</string>
+    <string name="school_admin_show_day">Voir la journée</string>
+    <string name="school_admin_superseded">Remplace un avis précédent pour cette journée.</string>
+    <string name="school_admin_title_only">Seul le titre a pu être lu. Ouvrez Col.NET pour le texte complet.</string>
+    <string name="school_admin_suggestions">Dates trouvées dans les avis</string>
+    <string name="school_admin_suggestions_note">Pas ajoutées automatiquement. Vérifiez l\'avis avant de les ajouter.</string>
+    <string name="school_admin_suggestion_add">Ajouter au calendrier</string>
+    <string name="school_admin_list">Tous les messages de l\'administration</string>
+    <string name="school_admin_empty">Aucun message de l\'administration.</string>
+    <string name="school_admin_status_sign_in">La connexion Web à Col.NET n\'a pas fonctionné pour les messages de l\'administration. La synchronisation de l\'horaire n\'est pas touchée.</string>
+    <string name="school_admin_status_unrecognized">La page de l\'administration a une mise en page que l\'application ne reconnaît pas, donc rien n\'a été deviné. Ouvrez Col.NET pour la lire.</string>
+    <string name="school_admin_status_network">Impossible d\'actualiser les messages de l\'administration. Réessayez ou ouvrez Col.NET.</string>
+    <string name="school_admin_status_unavailable">Col.NET n\'est pas disponible pour le moment.</string>
+    <string name="school_admin_not_loaded">Les messages de l\'administration ne sont pas encore chargés.</string>
+    <string name="school_admin_open_portal">Ouvrir Col.NET</string>
+    <string name="school_admin_portal_links">Liens Col.NET</string>
+    <string name="school_admin_portal_links_empty">Aucun lien disponible.</string>
+    <string name="school_admin_portal_link_failed">Impossible d\'ouvrir ce lien.</string>
+    <string name="school_admin_source">Source : %1$s</string>
+    <string name="school_admin_category">Catégorie : %1$s</string>
+    <string name="school_admin_posted">Publié le %1$s</string>
+    <string name="school_messages_close">Fermer</string>
+    <string name="school_messages_storage">Impossible d\'enregistrer les messages de l\'administration sur ce téléphone.</string>
+    <string name="school_alert_administration">Messages de l\'administration</string>
+    <plurals name="school_admin_new_messages">
+        <item quantity="one">%d nouveau message de l\'administration</item>
+        <item quantity="other">%d nouveaux messages de l\'administration</item>
+    </plurals>
+</resources>

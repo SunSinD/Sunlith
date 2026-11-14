@@ -1,6 +1,10 @@
 <resources>
-    <string name="settings_five_day_workweek">Du lundi au vendredi seulement</string>
-    <string name="settings_five_day_workweek_summary">Grille de 5 jours seulement. Balayez entre les semaines de travail.</string>
+    <string name="settings_rolling_five_days">Commencer au jour sélectionné</string>
+    <string name="settings_rolling_five_days_summary">Désactivé : du lundi au vendredi. Activé : 5 jours à partir de la date sélectionnée.</string>
+    <string name="settings_week_header_selection">Toucher une date pour la sélectionner</string>
+    <string name="settings_week_header_selection_summary">Semaine seulement. Désactivé, les dates indiquent le jour sélectionné sans le changer au toucher.</string>
+    <string name="calendar_layout_chooser_title">Disposition : %1$s</string>
+    <string name="calendar_layout_chooser_action">Choisir la disposition</string>
     <string name="settings_day_zoom">Zoom de la grille Jour</string>
     <string name="settings_week_zoom">Zoom de la grille Semaine</string>
     <string name="connection_tailscale">Tailscale / VPN</string>

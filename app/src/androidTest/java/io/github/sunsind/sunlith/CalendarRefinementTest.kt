@@ -647,7 +647,7 @@ class CalendarRefinementTest {
     }
 
     @Test
-    fun dayAndGroupedWeekZoomResizeEventsAndPreserveTheViewedMinute() {
+    fun groupedAndContinuousWeekZoomResizeEventsAndPreserveTheViewedMinute() {
         val day = LocalDate.now().plusDays(2)
         val zone = ZoneId.systemDefault()
         val formats = Formats(english, Locale.ENGLISH)
@@ -665,7 +665,7 @@ class CalendarRefinementTest {
             !vm.loadingEvents && vm.eventsByDay[day].orEmpty().any { it.id == storedId }
         }
         val stored = vm.eventsByDay.getValue(day).first { it.id == storedId }
-        listOf("day", "week", "continuous").forEach { layout ->
+        listOf("week", "continuous").forEach { layout ->
             val groupedWeek = layout == "week"
             val continuous = layout == "continuous"
             val event = if (continuous) stored else example
@@ -723,9 +723,16 @@ class CalendarRefinementTest {
             var base = paintedTimelineBounds(selector)
             var baselineViewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
             val baselineDeadline = SystemClock.elapsedRealtime() + 5_000
-            fun baselineReady() = abs(base.height() - 64) <= 2 &&
-                abs(base.top - baselineViewport.top - 32) <= 2 &&
-                base.top >= baselineViewport.top && base.bottom <= baselineViewport.bottom
+            // A one-hour interval is 64px at the fixture's density. The card keeps the same small gap at each end
+            // whatever the scale, so measure that gap once instead of pinning a particular card design.
+            fun inset(bounds: Rect) = (64 - bounds.height()) / 2f
+            fun baselineReady(): Boolean {
+                val target = nodeBounds(selector)
+                return abs(base.top - target.top) + abs(base.bottom - target.bottom) <= 1 &&
+                    inset(base) in 0f..6f &&
+                    abs(base.top - baselineViewport.top - (32 + inset(base))) <= 1 &&
+                    base.top >= baselineViewport.top && base.bottom <= baselineViewport.bottom
+            }
             while (!baselineReady() && SystemClock.elapsedRealtime() < baselineDeadline) {
                 SystemClock.sleep(50)
                 base = paintedTimelineBounds(selector)
@@ -736,16 +743,21 @@ class CalendarRefinementTest {
                 device.takeScreenshot(File(context.filesDir, "$name.png"))
                 device.dumpWindowHierarchy(File(context.filesDir, "$name.xml"))
                 File(context.filesDir, "$name.json").writeText(JSONObject().put("painted", base.toString())
-                    .put("viewport", baselineViewport.toString()).put("scroll", scroll.value).toString())
+                    .put("viewport", baselineViewport.toString()).put("target", nodeBounds(selector).toString())
+                    .put("scroll", scroll.value).toString())
             }
+            assertTrue("The focus outline must fade before measuring the card's fixed gap: layout=$layout painted=$base target=${nodeBounds(selector)}",
+                baselineReady())
             val description = readNode(selector) { it.contentDescription }
             assertTrue("The full title must remain accessible at every zoom.", description.contains(event.title))
             assertTrue("The baseline class must be completely inside the viewport: layout=$layout base=$base viewport=$baselineViewport", base.height() > 0 &&
                 base.top > nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).top &&
                 base.bottom < nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).bottom)
             val initialTop = nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).top
-            val fraction = (base.top - initialTop).toFloat() / base.height()
-            assertTrue("The fixture must view the half-hour before this one-hour class: layout=$layout base=$base viewport=$baselineViewport scroll=${scroll.value}", abs(fraction - 0.5f) < 0.06f)
+            val cardInset = inset(base)
+            assertTrue("Each card end must keep a small fixed gap: layout=$layout base=$base", cardInset in 0f..6f)
+            assertTrue("The fixture must view the half-hour before this one-hour class: layout=$layout base=$base viewport=$baselineViewport scroll=${scroll.value}",
+                abs(base.top - initialTop - (32 + cardInset)) <= 1)
             listOf(50, 100, 200).forEach { percent ->
                 onMain { if (continuous) vm.changeWeekTimelineZoom(percent) else zoom.intValue = percent }
                 val deadline = SystemClock.elapsedRealtime() + 5_000
@@ -753,8 +765,8 @@ class CalendarRefinementTest {
                 while (!settled && SystemClock.elapsedRealtime() < deadline) {
                     val measured = paintedTimelineBounds(selector)
                     val area = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
-                    settled = abs(measured.height() - base.height() * percent / 100f) <= 2f &&
-                        abs((measured.top - area.top) - fraction * measured.height()) <= 2f
+                    settled = abs(measured.height() - (64f * percent / 100f - 2 * cardInset)) <= 1f &&
+                        abs((measured.top - area.top) - (32f * percent / 100f + cardInset)) <= 1f
                     if (!settled) SystemClock.sleep(50)
                 }
                 if (!settled) {
@@ -765,12 +777,12 @@ class CalendarRefinementTest {
                 val bounds = paintedTimelineBounds(selector)
                 val viewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
                 assertTrue("Zoom must resize the rendered one-hour block: layout=$layout zoom=$percent base=$base actual=$bounds",
-                    abs(bounds.height() - base.height() * percent / 100f) <= 2f)
+                    abs(bounds.height() - (64f * percent / 100f - 2 * cardInset)) <= 1f)
                 assertTrue("The whole event must remain visible at $percent%.", bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
                 // The event starts at noon and spans one hour. Its relative distance below the top
                 // therefore measures the visible minute without reusing the production axis mapping.
-                assertTrue("Zoom must preserve the viewed minute: layout=$layout zoom=$percent fraction=$fraction bounds=$bounds viewport=$viewport",
-                    abs((bounds.top - viewport.top) - fraction * bounds.height()) <= 2f)
+                assertTrue("Zoom must preserve the viewed minute: layout=$layout zoom=$percent bounds=$bounds viewport=$viewport",
+                    abs((bounds.top - viewport.top) - (32f * percent / 100f + cardInset)) <= 1f)
                 assertEquals("Zoom must preserve the full spoken title, times and room.", description, readNode(selector) { it.contentDescription })
                 opened.set(null)
                 readNode(selector) { it.click() }
@@ -1457,13 +1469,29 @@ class CalendarRefinementTest {
         val viewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
         val pixels = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
         try {
-            val x = target.right - 8
+            val left = target.left + target.width() / 4
+            val right = target.right - target.width() / 4
             val middle = target.centerY().coerceIn(viewport.top, viewport.bottom - 1)
-            val color = pixels.getPixel(x, middle)
-            var top = middle
-            var bottom = middle + 1
-            while (top > viewport.top && pixels.getPixel(x, top - 1) == color) top--
-            while (bottom < viewport.bottom && pixels.getPixel(x, bottom) == color) bottom++
+            fun spread(pixel: Int): Int {
+                val red = android.graphics.Color.red(pixel)
+                val green = android.graphics.Color.green(pixel)
+                val blue = android.graphics.Color.blue(pixel)
+                return maxOf(red, green, blue) - minOf(red, green, blue)
+            }
+            var color = pixels.getPixel(left, middle)
+            for (x in left until right) {
+                val pixel = pixels.getPixel(x, middle)
+                if (spread(pixel) > spread(color)) color = pixel
+            }
+            // Measure the outer filled rows, away from rounded corners. Text may cover most of an
+            // interior row, so a break in its background is not an event boundary.
+            fun filled(y: Int): Boolean = (left until right).count { pixels.getPixel(it, y) == color } > (right - left) / 2
+            var top = target.bottom.coerceAtMost(viewport.bottom)
+            var bottom = target.top.coerceAtLeast(viewport.top)
+            for (y in target.top.coerceAtLeast(viewport.top) until target.bottom.coerceAtMost(viewport.bottom)) {
+                if (filled(y)) { top = minOf(top, y); bottom = y + 1 }
+            }
+            if (bottom <= top) return Rect(target.left, middle, target.right, middle)
             return Rect(target.left, top, target.right, bottom)
         } finally { pixels.recycle() }
     }

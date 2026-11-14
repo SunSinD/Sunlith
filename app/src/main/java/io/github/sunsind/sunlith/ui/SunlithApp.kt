@@ -109,7 +109,7 @@ fun SunlithApp(vm: SunlithViewModel) {
                     val motion = rememberMotion(vm.navigationAnimation)
                     CalendarScreen(vm, if (covered) Modifier.clearAndSetSemantics { } else Modifier)
                     AnimatedContent(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().then(if (covered) Modifier.background(p.background) else Modifier),
                         targetState = vm.stack.lastOrNull(),
                         transitionSpec = {
                             (if (motion) fadeIn(tween(180)) togetherWith fadeOut(tween(120))
@@ -128,7 +128,17 @@ fun SunlithApp(vm: SunlithViewModel) {
                                 val context = LocalContext.current
                                 val controller = remember(context.applicationContext) { SchoolScheduleManager.get(context) }
                                 LaunchedEffect(controller) { controller.onOpen() }
-                                SchoolScheduleScreen(controller, onBack = vm::back, onChooseCalendars = vm::back)
+                                SchoolScheduleScreen(controller, onBack = vm::back, onChooseCalendars = vm::back,
+                                    onOpenMessages = { vm.open(Screen.SchoolMessages) })
+                            }
+                            Screen.SchoolMessages -> {
+                                val context = LocalContext.current
+                                val controller = remember(context.applicationContext) {
+                                    io.github.sunsind.sunlith.school.SchoolMessagesManager.get(context)
+                                }
+                                SchoolMessagesScreen(controller, onBack = vm::back,
+                                    onAddSuggestion = vm::addSchoolSuggestion,
+                                    onOpenDate = { date -> vm.openCalendar(); vm.openDay(date) })
                             }
                             Screen.DeviceLink -> DeviceLinkScreen(vm)
                             Screen.Editor -> EventEditorScreen(vm)

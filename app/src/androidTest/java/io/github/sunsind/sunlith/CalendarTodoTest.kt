@@ -366,7 +366,7 @@ class CalendarTodoTest {
             vm.closeEditor(); vm.openCalendar()
             vm.changeKeepSelectedDate(true)
             vm.changeGroupEmptyHours(false)
-            vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(5); vm.changeFiveDayWorkweek(false)
+            vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(5); vm.changeRollingFiveDays(true)
             vm.changeViewMode(ViewMode.Week); vm.select(friday); vm.reload()
         }
         awaitState("The rolling five-day timeline must load the seeded Friday") { !vm.loadingEvents && vm.events.any { it.id == weekIds[4L] } }
@@ -375,10 +375,10 @@ class CalendarTodoTest {
         captureFinal("five-day-rolling")
         onMain { vm.open(Screen.Settings) }
         node(By.pkg(context.packageName).text(localized().getString(R.string.beta_settings_appearance))).click()
-        val toggle = By.pkg(context.packageName).text(localized().getString(R.string.settings_five_day_workweek))
+        val toggle = By.pkg(context.packageName).text(localized().getString(R.string.settings_rolling_five_days))
         scrollTo(toggle)
         node(toggle).click()
-        awaitState("The visible workweek switch must turn on") { vm.fiveDayWorkweek }
+        awaitState("Turning rolling days off must enable the Monday-Friday workweek") { !vm.rollingFiveDays }
         captureFinal("workweek-setting")
         onMain { vm.back() }
         awaitState("Returning from Settings must retain the selected Friday") { vm.stack.isEmpty() && vm.selectedDate == friday && vm.workweekTimeline() }

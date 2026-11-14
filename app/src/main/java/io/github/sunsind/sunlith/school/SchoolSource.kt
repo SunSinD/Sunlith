@@ -123,7 +123,7 @@ internal data class SchoolDelta(val item: SchoolItem, val categories: Set<School
 internal object SchoolDiff {
     fun changes(previous: List<SchoolItem>, next: List<SchoolItem>, today: LocalDate): List<SchoolDelta> {
         val before = previous.associateBy { it.id }; val after = next.associateBy { it.id }
-        fun category(item: SchoolItem) = when (item.kind) { "07" -> SchoolAlert.ASSESSMENTS; "08" -> SchoolAlert.SCHOOL_DAYS; "absence" -> SchoolAlert.TEACHER_ABSENCES; else -> SchoolAlert.ADDED_CLASSES }
+        fun category(item: SchoolItem) = when (item.kind) { "07" -> SchoolAlert.ASSESSMENTS; "08", SchoolNoticeInterpreter.NOTICE_KIND -> SchoolAlert.SCHOOL_DAYS; "absence" -> SchoolAlert.TEACHER_ABSENCES; else -> SchoolAlert.ADDED_CLASSES }
         return buildList {
             next.filter { !it.date.isBefore(today) }.forEach { item ->
                 val old = before[item.id]
@@ -135,12 +135,12 @@ internal object SchoolDiff {
                     if (old.rooms != item.rooms) changed += SchoolAlert.ROOMS
                     if (old.teachers != item.teachers) changed += SchoolAlert.TEACHERS
                     if (item.kind == "07") changed += SchoolAlert.ASSESSMENTS
-                    if (item.kind == "08") changed += SchoolAlert.SCHOOL_DAYS
+                    if (item.kind == "08" || item.kind == SchoolNoticeInterpreter.NOTICE_KIND) changed += SchoolAlert.SCHOOL_DAYS
                 }
                 if (changed.isNotEmpty()) add(SchoolDelta(item, changed))
             }
             previous.filter { it.id !in after && !it.date.isBefore(today) }.forEach { item ->
-                add(SchoolDelta(item, setOf(when (item.kind) { "07" -> SchoolAlert.ASSESSMENTS; "08" -> SchoolAlert.SCHOOL_DAYS; "absence" -> SchoolAlert.TEACHER_ABSENCES; else -> SchoolAlert.REMOVED_CLASSES })))
+                add(SchoolDelta(item, setOf(when (item.kind) { "07" -> SchoolAlert.ASSESSMENTS; "08", SchoolNoticeInterpreter.NOTICE_KIND -> SchoolAlert.SCHOOL_DAYS; "absence" -> SchoolAlert.TEACHER_ABSENCES; else -> SchoolAlert.REMOVED_CLASSES })))
             }
         }
     }

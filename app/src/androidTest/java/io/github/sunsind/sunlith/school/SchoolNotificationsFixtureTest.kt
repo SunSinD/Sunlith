@@ -102,7 +102,7 @@ class SchoolNotificationsFixtureTest {
         assertTrue("App notifications must be enabled on the fixture emulator", notifications.areNotificationsEnabled())
         channelsBefore = notifications.notificationChannels.associateBy { it.id }
         groupsBefore = notifications.notificationChannelGroups.associateBy { it.id }
-        listOf(CHANGES, PROBLEMS).forEach { id ->
+        listOf(CHANGES, PROBLEMS, MESSAGES).forEach { id ->
             channelsBefore[id]?.let {
                 assumeTrue("Existing school channels must have restorable importance", it.importance in
                     NotificationManager.IMPORTANCE_MIN..NotificationManager.IMPORTANCE_DEFAULT)
@@ -143,12 +143,13 @@ class SchoolNotificationsFixtureTest {
             if (ownsNotifications) {
                 notifications.cancel("school-changes", 0)
                 notifications.cancel("school-connection", 0)
+                notifications.activeNotifications.filter { it.tag?.startsWith("school-message:") == true }.forEach { notifications.cancel(it.tag, it.id) }
                 if (::fixtureId.isInitialized) notifications.cancel(fixtureId, 91)
                 await("Fixture school notifications must finish cancellation") { schoolNotifications().isEmpty() }
                 pendingIntents.forEach { it.cancel() }
                 if (::fixtureId.isInitialized) notifications.deleteNotificationChannel(fixtureId)
                 groupsBefore[GROUP]?.let { notifications.createNotificationChannelGroup(it) }
-                listOf(CHANGES, PROBLEMS).forEach { id ->
+                listOf(CHANGES, PROBLEMS, MESSAGES).forEach { id ->
                     channelsBefore[id]?.let { notifications.createNotificationChannel(it) }
                         ?: notifications.deleteNotificationChannel(id)
                 }
@@ -197,6 +198,62 @@ class SchoolNotificationsFixtureTest {
             assertUnrelatedPreserved()
             clearSchool()
         }
+    }
+
+    @Test fun administrationNotificationsKeepFrenchAndOpenMessagesInsteadOfAnEmailView() {
+        launchNavigation()
+        val first = SchoolAdminNotice("first", today, "Levée des cours jusqu’à 18 h", "Direction générale",
+            body = "Les cours sont levés jusqu’à 18 h. La formation continue est maintenue.")
+        val second = first.copy(id = "second", subject = "Inscription aux ateliers", body = "Les inscriptions sont ouvertes.")
+        val current = record(setOf(SchoolAlert.ADMINISTRATION_MESSAGES))
+        notifier.messages(current, listOf(first, second))
+        await("Each administration message must have its own notification") { schoolNotifications().size == 2 }
+        listOf(first, second).forEach { message ->
+            val tag = "school-message:${schoolHash(current.connection + "\n" + message.id)}"
+            val notification = posted(tag).notification
+            assertEquals(MESSAGES, notification.channelId)
+            assertEquals(Notification.CATEGORY_MESSAGE, notification.category)
+            assertEquals(message.subject, notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+            assertEquals(message.body, bigText(notification))
+            assertNoCredentials(notification)
+            assertSchoolIntent(send(notification.contentIntent), "messages", MainActivity.EXTRA_SCHOOL_MESSAGES, true)
+            awaitMain("Administration notifications must open Messages directly") {
+                vm.stack.toList() == listOf(Screen.Settings, Screen.Calendars, Screen.SchoolSchedule, Screen.SchoolMessages)
+            }
+        }
+        clearSchool()
+        notifier.messages(current.copy(notifications = current.notifications.copy(enabled = false)), listOf(first))
+        notifier.messages(record(setOf(SchoolAlert.SCHOOL_DAYS)), listOf(first))
+        assertSchoolQuiet()
+    }
+
+    @Test fun noticeChangesUseSchoolDayAlertsWhenAdministrationAlertsAreDisabled() {
+        val notice = item("notice", title = "Levée des cours").copy(kind = SchoolNoticeInterpreter.NOTICE_KIND)
+        val changes = SchoolDiff.changes(emptyList(), listOf(notice), today)
+        notifier.changes(record(setOf(SchoolAlert.SCHOOL_DAYS)), changes)
+        assertTrue(bigText(posted("school-changes").notification).contains(notice.title))
+        clearSchool()
+        notifier.changes(record(setOf(SchoolAlert.SCHOOL_DAYS, SchoolAlert.ADMINISTRATION_MESSAGES)), changes)
+        assertSchoolQuiet()
+        notifier.review(record(setOf(SchoolAlert.SCHOOL_DAYS)), changes)
+        posted("school-review")
+        clearSchool()
+        notifier.review(record(setOf(SchoolAlert.SCHOOL_DAYS, SchoolAlert.ADMINISTRATION_MESSAGES)), changes)
+        assertSchoolQuiet()
+    }
+
+    @Test fun administrationBurstsPostOneSummaryAndTitleOnlyPreviewsExplainTheMissingBody() {
+        val current = record(setOf(SchoolAlert.ADMINISTRATION_MESSAGES))
+        val messages = (1..60).map { SchoolAdminNotice("burst-$it", today, "Information du Collège $it", "Direction générale") }
+        notifier.messages(current, messages)
+        await("A large arrival burst must post one summary") { schoolNotifications().size == 1 }
+        val summary = posted("school-message:summary").notification
+        assertEquals(base.resources.getQuantityString(R.plurals.school_admin_new_messages, 60, 60), text(summary))
+        assertTrue(bigText(summary).contains(messages.first().subject))
+        clearSchool()
+        notifier.messages(current, messages.take(1))
+        val notification = posted("school-message:${schoolHash(current.connection + "\n" + messages.first().id)}").notification
+        assertEquals(base.getString(R.string.school_admin_title_only), text(notification))
     }
 
     @Test fun masterOffAndEmptyOrUnrelatedCategoriesDoNotPost() {
@@ -544,7 +601,7 @@ class SchoolNotificationsFixtureTest {
         notifications = SchoolNotificationPreferences(enabled = true, categories = categories),
     )
 
-    private fun schoolNotifications() = notifications.activeNotifications.filter { it.tag in setOf("school-changes", "school-connection", "school-review") }
+    private fun schoolNotifications() = notifications.activeNotifications.filter { it.tag in setOf("school-changes", "school-connection", "school-review") || it.tag?.startsWith("school-message:") == true }
     private fun unrelated() = notifications.activeNotifications.singleOrNull { it.tag == fixtureId && it.id == 91 }
     private fun text(notification: Notification) = notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
     private fun bigText(notification: Notification) = notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()
@@ -577,7 +634,7 @@ class SchoolNotificationsFixtureTest {
     private fun assertUnrelatedPreserved() {
         assertNotNull("School operations must preserve unrelated notifications", unrelated())
         assertEquals("School operations must not replace unrelated notifications", unrelatedPostTime, unrelated()!!.postTime)
-        channelsBefore.filterKeys { it !in setOf(CHANGES, PROBLEMS) }.forEach { (id, original) ->
+        channelsBefore.filterKeys { it !in setOf(CHANGES, PROBLEMS, MESSAGES) }.forEach { (id, original) ->
             assertEquals("School delivery must preserve unrelated channel $id", original, notifications.getNotificationChannel(id))
         }
     }
@@ -736,6 +793,7 @@ class SchoolNotificationsFixtureTest {
         const val TIMEOUT = 10_000L
         const val CHANGES = "school_schedule_changes"
         const val PROBLEMS = "school_connection_problems"
+        const val MESSAGES = "school_administration_messages"
         const val GROUP = "school"
         const val PORTAL = "https://example.invalid/colnet/"
         const val USERNAME = "synthetic-notification-user"

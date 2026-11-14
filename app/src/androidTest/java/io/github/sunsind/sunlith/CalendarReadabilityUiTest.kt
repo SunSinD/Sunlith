@@ -116,6 +116,7 @@ class CalendarReadabilityUiTest {
     private lateinit var screenContext: Context
     private var activity: ComponentActivity? = null
     private lateinit var vm: SunlithViewModel
+    private var renderedFontScale = 1f
     private val formats get() = Formats(screenContext, Locale.forLanguageTag(language))
     private var calendarId = 0L
     private val account get() = prefix
@@ -154,6 +155,8 @@ class CalendarReadabilityUiTest {
             weekStartsMonday = true
             weekLayout = "list"
             visibleWeekDays = 7
+            rollingFiveDays = true
+            weekHeaderSelection = true
             dayLayout = "timeline"
             agendaRange = "month"
             agendaDisplay = "all"
@@ -245,7 +248,7 @@ class CalendarReadabilityUiTest {
     }
 
     @Test
-    fun fiveDaySettingPagesAcrossWeekendAndSurvivesRecreationAndToday() = checked {
+    fun rollingFiveDaySettingPagesAcrossWeekendAndSurvivesRecreationAndToday() = checked {
         node(By.desc(text(R.string.title_settings))).click()
         node(By.text(text(R.string.beta_settings_appearance))).click()
         scrollTo(By.text(text(R.string.view_week))).click()
@@ -289,10 +292,10 @@ class CalendarReadabilityUiTest {
     }
 
     @Test
-    fun readableHorizontalOverflowRemainsScrollableWithPeriodSwipesDisabled() = checked { exerciseHorizontalOverflow(false) }
+    fun largeTextHorizontalOverflowRemainsScrollableWithPeriodSwipesDisabled() = checked { exerciseHorizontalOverflow(false) }
 
     @Test
-    fun readableHorizontalOverflowConsumesItsOwnScrollBeforePeriodSwipes() = checked { exerciseHorizontalOverflow(true) }
+    fun largeTextHorizontalOverflowConsumesItsOwnScrollBeforePeriodSwipes() = checked { exerciseHorizontalOverflow(true) }
 
     @Test
     fun disabledSwipesOnFittedThreeAndFiveDayTimelinesNeverPageOrTap() = checked {
@@ -477,6 +480,8 @@ class CalendarReadabilityUiTest {
     }
 
     private fun exerciseHorizontalOverflow(swipeEnabled: Boolean) {
+        installContent(fontScaleOverride = 2f)
+        idle()
         val monday = friday.with(DayOfWeek.MONDAY)
         onMain { vm.changeSwipeNavigation(swipeEnabled) }
         timeline(monday, 7)
@@ -586,7 +591,7 @@ class CalendarReadabilityUiTest {
     }
 
     // At 200% text a week spans several screens. Keep each drag short enough to avoid paging.
-    private val headerScrollAttempts get() = if (base.resources.configuration.fontScale > 1.3f) 96 else 24
+    private val headerScrollAttempts get() = if (renderedFontScale > 1.3f) 96 else 24
 
     private fun reachableHeader(date: LocalDate): UiObject2 {
         val selected = vm.selectedDate
@@ -617,7 +622,7 @@ class CalendarReadabilityUiTest {
         } }
         Log.i("ReadabilityFixture", "Missing header date=$date prefix=${formats.dayLong(date)} minWidth=$minimum density=${base.resources.displayMetrics.density} selected=$selected headers=$observed")
         // A fitted viewport has every header already; absence is a failure, never a reason to change pages.
-        if (vm.visibleWeekDays <= 5 && base.resources.configuration.fontScale <= 1.3f && device.displayWidth / base.resources.displayMetrics.density >= 360) {
+        if (vm.visibleWeekDays <= 5 && renderedFontScale <= 1.3f && device.displayWidth / base.resources.displayMetrics.density >= 360) {
             return stableNode(selector) { clippedHeaderBounds(it, viewport).width() >= minimum }
         }
         for (forward in listOf(false, true)) repeat(headerScrollAttempts) {
@@ -645,7 +650,7 @@ class CalendarReadabilityUiTest {
         repeat(headerScrollAttempts) {
             if (reached.size < count) { dragHeader(forward = false); observe() }
         }
-        assertEquals("Every date including Saturday and Sunday must remain reachable in the same window", expected.toSet(), reached)
+        assertEquals("Every date including Saturday and Sunday must remain reachable in the same window (rendered font=$renderedFontScale, attempts=$headerScrollAttempts)", expected.toSet(), reached)
         assertEquals(null, readableHeader(start.minusDays(1), viewport))
         assertEquals(null, readableHeader(start.plusDays(count.toLong()), viewport))
     }
@@ -760,15 +765,17 @@ class CalendarReadabilityUiTest {
         idle()
     }
 
-    private fun installContent(compactMonth: Boolean = false) {
+    private fun installContent(compactMonth: Boolean = false, fontScaleOverride: Float? = null) {
         val current = requireNotNull(activity)
         val config = Configuration(current.resources.configuration).apply {
             setLocale(Locale.forLanguageTag(language))
             if (rtl) setLayoutDirection(Locale.forLanguageTag("ar"))
+            if (fontScaleOverride != null) fontScale = fontScaleOverride
         }
         val localized = object : ContextWrapper(app.createConfigurationContext(config)) {
             override fun getApplicationContext(): Context = app
         }
+        renderedFontScale = if (compactMonth) 1f else config.fontScale
         instrumentation.runOnMainSync {
             vm = ViewModelProvider(current, ViewModelProvider.AndroidViewModelFactory(app))[SunlithViewModel::class.java]
             current.setContent {
@@ -782,6 +789,10 @@ class CalendarReadabilityUiTest {
                     if (compactMonth) {
                         CompositionLocalProvider(LocalDensity provides Density(2.625f, 1f)) {
                             Box(Modifier.fillMaxWidth().height(300.dp)) { SunlithApp(vm) }
+                        }
+                    } else if (fontScaleOverride != null) {
+                        CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScaleOverride)) {
+                            SunlithApp(vm)
                         }
                     } else SunlithApp(vm)
                 }
@@ -825,7 +836,7 @@ class CalendarReadabilityUiTest {
         device.dumpWindowHierarchy(File(folder, "$name.xml"))
         File(folder, "$name.json").writeText(JSONObject().put("state", state).put("language", language).put("rtl", rtl)
             .put("selectedDate", vm.selectedDate).put("visibleDays", vm.visibleWeekDays).put("swipeNavigation", vm.swipeNavigation)
-            .put("fontScale", base.resources.configuration.fontScale).put("widthPixels", device.displayWidth)
+            .put("fontScale", renderedFontScale).put("deviceFontScale", base.resources.configuration.fontScale).put("widthPixels", device.displayWidth)
             .put("heightPixels", device.displayHeight).put("syntheticCalendarId", calendarId)
             .put("courseSlots", JSONObject(vm.courseColorSlots)).toString(2))
     }

@@ -118,7 +118,7 @@ private val AlertGroups = listOf(
     R.string.school_group_classes to listOf(
         SchoolAlert.CLASS_TIMES, SchoolAlert.ROOMS, SchoolAlert.TEACHERS, SchoolAlert.ADDED_CLASSES, SchoolAlert.REMOVED_CLASSES,
     ),
-    R.string.school_group_notices to listOf(SchoolAlert.TEACHER_ABSENCES, SchoolAlert.ASSESSMENTS, SchoolAlert.SCHOOL_DAYS),
+    R.string.school_group_notices to listOf(SchoolAlert.TEACHER_ABSENCES, SchoolAlert.ASSESSMENTS, SchoolAlert.SCHOOL_DAYS, SchoolAlert.ADMINISTRATION_MESSAGES),
     R.string.school_group_connection to listOf(SchoolAlert.CONNECTION_PROBLEMS),
 )
 
@@ -132,6 +132,7 @@ private fun SchoolAlert.label(): Int = when (this) {
     SchoolAlert.ASSESSMENTS -> R.string.school_alert_assessments
     SchoolAlert.SCHOOL_DAYS -> R.string.school_alert_school_days
     SchoolAlert.CONNECTION_PROBLEMS -> R.string.school_alert_connection
+    SchoolAlert.ADMINISTRATION_MESSAGES -> R.string.school_alert_administration
 }
 
 private fun SchoolError.message(): Int = when (this) {
@@ -145,6 +146,7 @@ private fun SchoolError.message(): Int = when (this) {
     SchoolError.STORAGE -> R.string.school_error_storage
     SchoolError.LEGACY_COLLISION -> R.string.school_error_existing_classes
     SchoolError.CALENDAR_CHANGED -> R.string.school_error_calendar_changed
+    SchoolError.CALENDAR_LIMIT -> R.string.school_error_calendar_limit
 }
 
 private fun Context.notificationsAllowed(): Boolean =
@@ -165,7 +167,7 @@ private fun zoneLabel(id: String): String {
 }
 
 @Composable
-fun SchoolScheduleScreen(controller: SchoolScheduleController, onBack: () -> Unit, onChooseCalendars: () -> Unit) {
+fun SchoolScheduleScreen(controller: SchoolScheduleController, onBack: () -> Unit, onChooseCalendars: () -> Unit, onOpenMessages: (() -> Unit)? = null) {
     val p = LocalPalette.current
     val state by controller.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -220,6 +222,7 @@ fun SchoolScheduleScreen(controller: SchoolScheduleController, onBack: () -> Uni
                     onCategory = { alert, enabled -> launchAction({ controller.setCategory(alert, enabled) }) },
                     onChangeConnection = { changing = true },
                     onDisconnect = { remove -> launchAction({ controller.disconnect(remove) }) { changing = false } },
+                    onOpenMessages = onOpenMessages,
                 )
             }
         }
@@ -408,6 +411,7 @@ private fun ConnectedContent(
     onCategory: (SchoolAlert, Boolean) -> Unit,
     onChangeConnection: () -> Unit,
     onDisconnect: (Boolean) -> Unit,
+    onOpenMessages: (() -> Unit)? = null,
 ) {
     val p = LocalPalette.current
     var more by rememberSaveable { mutableStateOf(false) }
@@ -415,6 +419,7 @@ private fun ConnectedContent(
 
     state.pendingChanges?.let { PendingCard(it, state.busy, onApply, onDiscard) }
     StatusCard(state, onSync, onChangeConnection)
+    onOpenMessages?.let { SchoolClickRow(stringResource(R.string.school_messages_open), stringResource(R.string.school_messages_open_sub), onClick = it) }
 
     NotificationsSection(state, onNotificationsEnabled, onCategory)
 

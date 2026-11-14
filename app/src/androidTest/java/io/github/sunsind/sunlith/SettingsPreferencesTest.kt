@@ -67,7 +67,8 @@ class SettingsPreferencesTest {
         assertEquals(100, settings.dayTimelineZoom)
         assertEquals(100, settings.weekTimelineZoom)
         assertFalse(settings.groupEmptyHours)
-        assertFalse(settings.fiveDayWorkweek)
+        assertFalse(settings.rollingFiveDays)
+        assertFalse(settings.weekHeaderSelection)
         assertEquals(7, settings.visibleWeekDays)
         assertEquals("sunlith", settings.layoutPreset)
     }
@@ -253,17 +254,67 @@ class SettingsPreferencesTest {
     }
 
     @Test
-    fun workweekIsOptionalAndPersistsWithoutChangingListDefaults() {
+    fun fiveDayWorkweekIsDefaultAndRollingOptInPreservesListDefaults() {
         val settings = SettingsStore(isolated)
-        assertFalse(settings.fiveDayWorkweek)
-        settings.fiveDayWorkweek = true
+        assertFalse(settings.rollingFiveDays)
+        settings.rollingFiveDays = true
         val restored = SettingsStore(isolated)
-        assertTrue(restored.fiveDayWorkweek)
+        assertTrue(restored.rollingFiveDays)
         assertEquals("list", restored.weekLayout)
         assertEquals("cards", restored.dayLayout)
         assertEquals(7, restored.visibleWeekDays)
-        restored.fiveDayWorkweek = false
-        assertFalse(SettingsStore(isolated).fiveDayWorkweek)
+        restored.rollingFiveDays = false
+        assertFalse(SettingsStore(isolated).rollingFiveDays)
+    }
+
+    @Test
+    fun workweekMigrationPreservesExplicitLegacyChoicesAndUsesTheNewDefaultWhenUnset() {
+        val prefs = isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
+        listOf(null to false, true to false, false to true).forEach { (legacy, rolling) ->
+            prefs.edit().clear().putBoolean("list_defaults_v2", true)
+                .putString("day_layout", "timeline").putString("week_layout", "list")
+                .putInt("visible_week_days", 5).putInt("day_timeline_zoom", 150)
+                .putBoolean("monday", false).apply {
+                    if (legacy != null) putBoolean("five_day_workweek", legacy)
+                }.commit()
+            val unrelated = prefs.all.filterKeys { it != "five_day_workweek" }
+            val restored = SettingsStore(isolated)
+            assertEquals("Legacy workweek=$legacy must preserve an explicit choice or take the new default.", rolling, restored.rollingFiveDays)
+            assertFalse("The opposite legacy switch must not be migrated again.", prefs.contains("five_day_workweek"))
+            assertEquals(unrelated, prefs.all.filterKeys { it != "rolling_five_days" })
+            assertEquals(rolling, SettingsStore(isolated).rollingFiveDays)
+            assertFalse(restored.weekHeaderSelection)
+        }
+    }
+
+    @Test
+    fun existingRollingPreferenceWinsOverALeftoverLegacySwitch() {
+        val prefs = isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
+        listOf(false, true).forEach { rolling ->
+            listOf(false, true).forEach { legacy ->
+                prefs.edit().clear().putBoolean("list_defaults_v2", true)
+                    .putBoolean("rolling_five_days", rolling).putBoolean("five_day_workweek", legacy).commit()
+                assertEquals(rolling, SettingsStore(isolated).rollingFiveDays)
+                assertFalse(prefs.contains("five_day_workweek"))
+            }
+        }
+    }
+
+    @Test
+    fun weekHeaderSelectionIsAnIndependentOptIn() {
+        val settings = SettingsStore(isolated)
+        assertFalse(settings.weekHeaderSelection)
+        settings.weekHeaderSelection = true
+        settings.rollingFiveDays = true
+        val restored = SettingsStore(isolated)
+        assertTrue(restored.weekHeaderSelection)
+        assertTrue(restored.rollingFiveDays)
+        restored.weekHeaderSelection = false
+        assertFalse(SettingsStore(isolated).weekHeaderSelection)
+        assertTrue(SettingsStore(isolated).rollingFiveDays)
+        assertEquals("list", restored.weekLayout)
+        assertEquals("cards", restored.dayLayout)
+        assertEquals(7, restored.visibleWeekDays)
     }
 
     @Test

@@ -9,6 +9,7 @@ import android.content.ContextWrapper
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -83,6 +84,66 @@ class SchoolConnectorFixtureTest {
     private fun record() = SchoolRecord("https://example.invalid/colnet/mobile/", "synthetic-user", "synthetic-password", zone.id, calendar,
         "synthetic-account-hash", UUID.randomUUID().toString(), "synthetic-token", Long.MAX_VALUE, calendarIdentity = SchoolCalendarWriter(context).calendarIdentity(calendar))
     private fun feed(items: List<SchoolItem>) = SchoolFeed("synthetic-account-hash", term, items)
+    private data class Legacy(val id: Long, val uid: String, val item: SchoolItem)
+    private fun fullTerm(): List<SchoolItem> {
+        val classes = (0 until 260).map { index ->
+            val date = day.plusDays((index / 20).toLong())
+            val (course, name) = COURSES[index % COURSES.size]
+            val lab = index % 2 == 0
+            val start = date.atTime(7, 0).plusMinutes(index % 20 * 40L).atZone(zone).toInstant().toEpochMilli()
+            SchoolItem("cle-unique-$index", "classe-$course-${index % 3}", "$name – ${if (lab) "Laboratoire" else "Théorie"}", course, "0100${index % 3 + 1}",
+                if (lab) "2" else "1", "01", date, start, start + 35 * 60_000L, false, zone.id,
+                listOf(TEACHERS[index % TEACHERS.size], TEACHERS[(index + 2) % TEACHERS.size]), listOf(ROOMS[index % ROOMS.size]),
+                if (lab) listOf("Apportez votre multimètre, votre cahier de laboratoire et vos lunettes de sécurité.") else emptyList(), false,
+                period = "${index % 20 + 1}", periodTitle = "Période de cours régulière")
+        }
+        val inserts = (0 until 30).map { index ->
+            val date = day.plusDays((index % 10).toLong())
+            val utc = date.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+            when (index / 10) {
+                0 -> SchoolItem("examen-$index", "", "Examen ${index + 1} – ${COURSES[index % COURSES.size].second}", "", "", "", "07", date,
+                    utc, utc + 86_400_000L, true, "UTC", emptyList(), emptyList(), emptyList(), false)
+                1 -> SchoolItem("journee-$index", "", "Journée pédagogique – aucun cours", "", "", "", "08", date,
+                    utc, utc + 86_400_000L, true, "UTC", emptyList(), emptyList(), emptyList(), false)
+                else -> {
+                    val start = date.atTime(21, 0).atZone(zone).toInstant().toEpochMilli()
+                    SchoolItem("rattrapage-$index", "classe-rattrapage-$index", "Séance de rattrapage – Électronique analogique", "243RT9MO", "02001", "1", "01", date,
+                        start, start + 3_600_000L, false, zone.id, listOf(TEACHERS[index % TEACHERS.size]), listOf(ROOMS[1]), emptyList(), false)
+                }
+            }
+        }
+        return classes + inserts
+    }
+    private fun saveLegacy(items: List<SchoolItem>): List<Legacy> = items.filter { it.id.startsWith("cle-unique-") }.chunked(100).flatMap { chunk ->
+        val uids = chunk.map { "${UUID.randomUUID()}@import.invalid" }
+        val operations = ArrayList(chunk.mapIndexed { index, item ->
+            ContentProviderOperation.newInsert(Events.CONTENT_URI).withValues(ContentValues().apply {
+                put(Events.CALENDAR_ID, calendar); put(Events.TITLE, item.title); put(Events.DESCRIPTION, "${item.course}-${item.group}")
+                put(Events.EVENT_LOCATION, item.rooms.single()); put(Events.UID_2445, uids[index])
+                put(Events.DTSTART, item.startMillis); put(Events.DTEND, item.endMillis); put(Events.ALL_DAY, 0)
+                put(Events.EVENT_TIMEZONE, zone.id); put(Events.STATUS, Events.STATUS_CONFIRMED); put(Events.HAS_ALARM, 0)
+            }).build()
+        })
+        context.contentResolver.applyBatch(CalendarContract.AUTHORITY, operations).mapIndexed { index, result ->
+            Legacy(ContentUris.parseId(result.uri!!), uids[index], chunk[index])
+        }
+    }
+    private fun assertFullTermLinked(items: List<SchoolItem>, legacy: List<Legacy>, ledger: List<SchoolOwned>) {
+        val repository = CalendarRepository(context)
+        assertEquals(items.map { it.id }.toSet(), ledger.map { it.item.id }.toSet())
+        assertEquals(items.size, ledger.size)
+        assertEquals(ledger.size, ledger.map { it.rowId }.toSet().size)
+        assertEquals(ledger.size, ledger.map { it.marker }.toSet().size)
+        assertEquals(ledger.size, ledger.map { it.uid }.toSet().size)
+        legacy.forEach { row ->
+            val owned = ledger.single { it.item.id == row.item.id }
+            assertEquals(row.id, owned.rowId)
+            assertEquals(row.uid, owned.uid)
+            assertEquals(row.uid, repository.revision(row.id)!![Events.UID_2445])
+        }
+        assertEquals(items.size, repository.storedEvents(setOf(calendar)).size)
+        assertEquals(ledger.map { it.rowId }.toSet(), repository.storedEvents(setOf(calendar)).map { it.draft.id }.toSet())
+    }
 
     @Test fun presentationGroupsPreservedPastRowsWithoutChangingProviderEvents() {
         val first = source().copy(teacherAbsent = true)
@@ -257,6 +318,86 @@ class SchoolConnectorFixtureTest {
         assertEquals(179, writer.summary(current, plan).linked)
         assertEquals(179, writer.commit(current, plan).size)
         assertEquals(179, CalendarRepository(context).storedEvents(setOf(calendar)).size)
+    }
+    @Test fun realisticFullTermLegacyLinkExceedsOneBatchAndCommitsInBoundedSteps() {
+        val items = fullTerm()
+        val legacy = saveLegacy(items)
+        val writer = SchoolCalendarWriter(context); val current = record()
+        val before = legacy.associate { it.id to CalendarRepository(context).revision(it.id) }
+        val plan = writer.plan(current, feed(items), day)
+        assertEquals(SchoolChangeSummary(30, 0, 0, 260), writer.summary(current, plan))
+        assertEquals(legacy.map { it.id }.toSet(), plan.linked.map { it.rowId }.toSet())
+        val naive = SchoolCalendarWriter.batchBytes(writer.operations(current, plan))
+        assertTrue("One atomic batch is $naive bytes", naive > SchoolCalendarWriter.BATCH_LIMIT)
+        assertEquals(SchoolError.CALENDAR_LIMIT, assertThrows(SchoolFailure::class.java) { writer.commit(current, plan) }.reason)
+        assertEquals(before, legacy.associate { it.id to CalendarRepository(context).revision(it.id) })
+        assertEquals(260, CalendarRepository(context).storedEvents(setOf(calendar)).size)
+        val sizes = mutableListOf<Int>()
+        val persisted = mutableListOf<SchoolRecord>()
+        val stepping = SchoolCalendarWriter(context) { operations ->
+            sizes += SchoolCalendarWriter.batchBytes(operations)
+            assertTrue("Step ${sizes.size} is ${sizes.last()} bytes", sizes.last() <= SchoolCalendarWriter.BATCH_LIMIT)
+            context.contentResolver.applyBatch(CalendarContract.AUTHORITY, operations)
+        }
+        val ledger = stepping.commitSteps(current, plan) { SchoolStore(context).save(it); persisted += it }
+        Log.i("SunlithSchoolTest", "Full-term link naive=$naive steps=$sizes")
+        assertTrue(sizes.size >= 2)
+        val journals = persisted.mapNotNull { it.journal }
+        assertEquals(sizes.size, journals.size)
+        assertTrue(journals.dropLast(1).all { !it.complete && it.baseline.isEmpty() })
+        assertTrue(journals.last().complete)
+        assertTrue(persisted.all { !it.initialized && it.baseline.isEmpty() && it.lastSuccess == null })
+        assertEquals(legacy.map { it.id }.toSet(), journals.flatMap { it.linked }.map { it.rowId }.toSet())
+        assertEquals(260, journals.sumOf { it.linked.size })
+        assertFullTermLinked(items, legacy, ledger)
+        val done = current.copy(ledger = ledger, baseline = items, initialized = true)
+        assertEquals(SchoolChangeSummary(0, 0, 0), writer.summary(done, writer.plan(done, feed(items), day)))
+    }
+    @Test fun interruptedStepRecoversLedgerOnlyAndReplanLinksTheRest() {
+        val items = fullTerm()
+        val legacy = saveLegacy(items)
+        val writer = SchoolCalendarWriter(context); val current = record()
+        val plan = writer.plan(current, feed(items), day)
+        var applied = 0
+        val crashing = SchoolCalendarWriter(context) { operations ->
+            assertTrue(SchoolCalendarWriter.batchBytes(operations) <= SchoolCalendarWriter.BATCH_LIMIT)
+            context.contentResolver.applyBatch(CalendarContract.AUTHORITY, operations)
+            if (++applied == 1) throw IllegalStateException("Synthetic crash after the first committed step")
+        }
+        assertThrows(IllegalStateException::class.java) { crashing.commitSteps(current, plan) { SchoolStore(context).save(it) } }
+        val durable = SchoolStore(context).load()!!
+        val journal = durable.journal!!
+        assertFalse(journal.complete)
+        assertFalse(durable.initialized)
+        assertTrue(durable.ledger.isEmpty())
+        val committed = writer.verify(durable, journal)!!
+        val recovered = durable.copy(ledger = committed, journal = null)
+        val firstLinked = committed.filter { owned -> legacy.any { it.item.id == owned.item.id } }
+        assertTrue(firstLinked.isNotEmpty())
+        assertTrue(committed.size < items.size)
+        assertEquals(firstLinked.map { it.rowId }.toSet(), journal.linked.map { it.rowId }.toSet())
+        firstLinked.forEach { owned -> assertEquals(legacy.single { it.id == owned.rowId }.uid, owned.uid) }
+        val rest = writer.plan(recovered, feed(items), day)
+        assertEquals(SchoolChangeSummary(items.size - legacy.size - (committed.size - firstLinked.size), 0, 0, legacy.size - firstLinked.size), writer.summary(recovered, rest))
+        assertEquals(legacy.map { it.id }.toSet() - firstLinked.map { it.rowId }.toSet(), rest.linked.map { it.rowId }.toSet())
+        val ledger = writer.commitSteps(recovered, rest) { SchoolStore(context).save(it) }
+        assertFullTermLinked(items, legacy, ledger)
+        committed.forEach { owned -> assertEquals(owned.rowId, ledger.single { it.item.id == owned.item.id }.rowId) }
+    }
+    @Test fun singleOversizedRowFailsAsCalendarLimitWithoutWriting() {
+        val writer = SchoolCalendarWriter(context); val current = record()
+        val longName = "Enseignante remplaçante en électronique ".repeat(500).take(20_000)
+        val oversized = source("oversized").copy(teachers = List(25) { "$it $longName" }, notes = List(3) { "$it $longName" })
+        val failure = assertThrows(SchoolFailure::class.java) { writer.plan(current, feed(listOf(oversized, source("small", day.plusDays(1)))), day) }
+        assertEquals(SchoolError.CALENDAR_LIMIT, failure.reason)
+        assertTrue(CalendarRepository(context).storedEvents(setOf(calendar)).isEmpty())
+    }
+    @Test fun journalCompletionFlagIsBackwardCompatible() {
+        val writer = SchoolCalendarWriter(context); val current = record()
+        val plan = writer.plan(current, feed(listOf(source())), day)
+        assertTrue(SchoolJournal.read(plan.json().apply { remove("complete") }).complete)
+        assertFalse(SchoolJournal.read(plan.copy(complete = false).json()).complete)
+        assertEquals(plan, SchoolJournal.read(plan.json()))
     }
     @Test fun removeSchoolEventsNeverDeletesCalendarOrPersonalRows() {
         val item = source(); val personal = savePersonal(item.copy(startMillis = item.startMillis + 1000, endMillis = item.endMillis + 1000))
@@ -842,5 +983,12 @@ class SchoolConnectorFixtureTest {
         override fun getCipherSuite() = "SYNTHETIC"
         override fun getLocalCertificates(): Array<Certificate>? = null
         override fun getServerCertificates(): Array<Certificate> = emptyArray()
+    }
+
+    private companion object {
+        val COURSES = listOf("243EL1MO" to "Électronique analogique", "243CN2MO" to "Circuits numériques et VHDL", "243CO3MO" to "Communications numériques",
+            "243RS4MO" to "Réseaux locaux et Packet Tracer", "201NYAMO" to "Calcul différentiel", "601MOAMO" to "Écriture et littérature", "340EEAMO" to "Éthique et politique")
+        val TEACHERS = listOf("Marie-Ève Tremblay-Gagnon", "Jean-François Bélanger", "Geneviève Ouellet-Côté", "Stéphane Bérubé", "Nathalie Lévesque", "François-Xavier Thériault")
+        val ROOMS = listOf("C-2.14 Laboratoire d'électronique", "A-1.07", "B-3.22 Salle de classe", "E-0.45 Laboratoire de télécommunications")
     }
 }

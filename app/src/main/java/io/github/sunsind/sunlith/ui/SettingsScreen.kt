@@ -196,8 +196,9 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                             }
                         }
                         if (vm.weekLayout == "timeline" && vm.visibleWeekDays == 5) {
-                            ToggleRow(stringResource(R.string.settings_five_day_workweek), stringResource(R.string.settings_five_day_workweek_summary), vm.fiveDayWorkweek, vm::changeFiveDayWorkweek)
+                            ToggleRow(stringResource(R.string.settings_rolling_five_days), stringResource(R.string.settings_rolling_five_days_summary), vm.rollingFiveDays, vm::changeRollingFiveDays)
                         }
+                        ToggleRow(stringResource(R.string.settings_week_header_selection), stringResource(R.string.settings_week_header_selection_summary), vm.weekHeaderSelection, vm::changeWeekHeaderSelection)
                         if (vm.weekLayout != "list") TimelineZoomRow(stringResource(R.string.settings_week_zoom), vm.weekTimelineZoom, vm::changeWeekTimelineZoom)
                         DropdownRow(
                             stringResource(R.string.view_day), vm.dayLayout,
@@ -206,7 +207,6 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                                 "schedule" to stringResource(R.string.custom_schedule)),
                             vm::changeDayLayout,
                         )
-                        if (vm.dayLayout == "timeline") TimelineZoomRow(stringResource(R.string.settings_day_zoom), vm.dayTimelineZoom, vm::changeDayTimelineZoom)
                         ToggleRow(stringResource(R.string.settings_group_empty_hours), stringResource(R.string.settings_group_empty_hours_summary), vm.groupEmptyHours, vm::changeGroupEmptyHours)
                         ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
                         SectionTitle(stringResource(R.string.custom_colors))
@@ -660,7 +660,8 @@ private fun Messages(messages: List<String>) {
 
 @Composable
 private fun TimelineZoomRow(title: String, value: Int, onChange: (Int) -> Unit) {
-    DropdownRow(title, value.toString(), listOf(50, 75, 100, 125, 150, 200).map {
+    // Pinching saves any 5% step, so the current value stays listed and checked.
+    DropdownRow(title, value.toString(), (listOf(50, 75, 100, 125, 150, 200) + value).distinct().sorted().map {
         it.toString() to "$it%"
     }) { onChange(it.toInt()) }
 }
