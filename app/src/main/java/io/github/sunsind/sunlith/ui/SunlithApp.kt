@@ -10,12 +10,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,6 +58,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -105,20 +107,23 @@ fun SunlithApp(vm: SunlithViewModel) {
                 else -> {
                     LaunchedEffect(vm.stack.lastOrNull()) { vm.openRequestedComputerSetup() }
                     BackHandler(enabled = vm.stack.isNotEmpty() || vm.hasDayParent) { vm.back() }
-                    val covered = vm.stack.isNotEmpty()
                     val motion = rememberMotion(vm.navigationAnimation)
+                    val top = vm.stack.lastOrNull()
+                    val layer = ScreenLayer(top, vm.stack.size, instant = top != null && top == vm.instantScreen)
+                    // Fades only run between two screens, each drawn opaque. Going back to the calendar is a cut, so the
+                    // calendar is never seen through a half faded screen and the cover can follow the stack directly.
+                    val covered = top != null
                     CalendarScreen(vm, if (covered) Modifier.clearAndSetSemantics { } else Modifier)
                     AnimatedContent(
+                        targetState = layer,
                         modifier = Modifier.fillMaxSize().then(if (covered) Modifier.background(p.background) else Modifier),
-                        targetState = vm.stack.lastOrNull(),
-                        transitionSpec = {
-                            (if (motion) fadeIn(tween(180)) togetherWith fadeOut(tween(120))
-                            else EnterTransition.None togetherWith ExitTransition.None).using(null)
-                        },
+                        contentKey = { it.screen to it.depth },
+                        transitionSpec = { screenTransition(initialState, targetState, motion) },
                         label = "screens",
-                    ) { screen ->
+                    ) { shown ->
+                        val screen = shown.screen
+                        if (screen != null) Box(Modifier.fillMaxSize().background(p.background).pointerInput(Unit) { }) {
                         when (screen) {
-                            null -> Unit
                             Screen.Search -> SearchScreen(vm)
                             Screen.Todo -> TodoScreen(vm)
                             Screen.Settings -> settingsState.SaveableStateProvider("settings") { SettingsScreen(vm) }
@@ -144,6 +149,7 @@ fun SunlithApp(vm: SunlithViewModel) {
                             Screen.Editor -> EventEditorScreen(vm)
                             is Screen.Details -> DetailsScreen(vm, screen.event)
                         }
+                        }
                     }
                 }
             }
@@ -154,6 +160,28 @@ fun SunlithApp(vm: SunlithViewModel) {
         }
     }
 }
+
+/** The screen on top of the calendar, how many screens are open, and whether it must appear without a fade. */
+internal data class ScreenLayer(val screen: Screen?, val depth: Int, val instant: Boolean = false)
+
+internal enum class ScreenMotion { Enter, Return, Cut }
+
+/**
+ * Screens fade over an opaque screen below them. Entering or leaving the calendar is a cut, so opening a destination
+ * never spends its fade on an empty cover and the calendar never shows through a half faded screen.
+ */
+internal fun screenMotion(from: ScreenLayer, to: ScreenLayer, motion: Boolean): ScreenMotion = when {
+    !motion || to.instant || to.screen == null || from.screen == null -> ScreenMotion.Cut
+    to.depth >= from.depth -> ScreenMotion.Enter
+    else -> ScreenMotion.Return
+}
+
+private fun AnimatedContentTransitionScope<ScreenLayer>.screenTransition(from: ScreenLayer, to: ScreenLayer, motion: Boolean): ContentTransform =
+    when (screenMotion(from, to, motion)) {
+        ScreenMotion.Enter -> ContentTransform(fadeIn(tween(180)), ExitTransition.KeepUntilTransitionsFinished, targetContentZIndex = 1f, sizeTransform = null)
+        ScreenMotion.Return -> ContentTransform(EnterTransition.None, fadeOut(tween(150)), targetContentZIndex = -1f, sizeTransform = null)
+        ScreenMotion.Cut -> ContentTransform(EnterTransition.None, ExitTransition.None, sizeTransform = null)
+    }
 
 @Composable
 private fun ComputerWelcome(vm: SunlithViewModel) {

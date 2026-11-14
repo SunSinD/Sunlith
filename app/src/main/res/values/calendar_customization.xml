@@ -20,7 +20,6 @@
     <string name="custom_material_you">Material You</string>
     <string name="custom_neutral">Neutral</string>
     <string name="custom_material_you_desc">Material You uses your phone\'s wallpaper colors. Neutral uses black, white and grey.</string>
-    <string name="custom_material_you_fallback">Wallpaper colors need Android 12 or newer. This phone uses the app colors.</string>
     <string name="custom_presets">Layout presets</string>
     <string name="custom_presets_desc">A preset changes the month, week and day layouts. You can adjust each one below.</string>
     <string name="custom_preset_active">Custom layout selected</string>

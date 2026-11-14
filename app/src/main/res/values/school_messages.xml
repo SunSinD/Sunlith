@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="school_messages_title">College messages</string>
-    <string name="school_messages_open">Messages</string>
+    <string name="school_messages_open">College messages</string>
     <string name="school_messages_open_sub">Messages from the Col.NET administration</string>
     <string name="school_admin_open_notice">Open notice</string>
     <string name="school_messages_refresh">Refresh</string>
@@ -32,7 +32,13 @@
     <string name="school_admin_not_loaded">Administration messages haven\'t been loaded yet.</string>
     <string name="school_admin_open_portal">Open Col.NET</string>
     <string name="school_admin_portal_links">Col.NET links</string>
-    <string name="school_admin_portal_links_empty">No links available.</string>
+    <string name="school_admin_portal_links_sign_in">Col.NET didn\'t accept the sign in, so its links couldn\'t be loaded.</string>
+    <string name="school_admin_portal_links_network">Couldn\'t reach Col.NET to load its links. Try again or open Col.NET.</string>
+    <string name="school_admin_portal_links_unrecognized">Col.NET answered in a way this app doesn\'t recognize, so no links are shown. Open Col.NET instead.</string>
+    <string name="school_admin_classes_marked">This notice covers classes on this day. Local edits stay unchanged. Check the exceptions in the notice.</string>
+    <string name="school_sync_lifted_title">Class cancelled: %1$s</string>
+    <string name="school_sync_lifted_note">Cancelled by the college notice of %1$s (classes lifted). Check the notice for exceptions.</string>
+    <string name="school_sync_lifted_note_until">Cancelled by the college notice of %1$s (classes lifted until %2$s). Check the notice for exceptions.</string>
     <string name="school_admin_portal_link_failed">Couldn\'t open that link.</string>
     <string name="school_admin_source">Source: %1$s</string>
     <string name="school_admin_category">Category: %1$s</string>

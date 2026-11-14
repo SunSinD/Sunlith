@@ -89,7 +89,7 @@ internal fun FullMonthGrid(
                         val targetRow = (java.time.temporal.ChronoUnit.DAYS.between(start, selected) / 7).coerceIn(0, 5)
                         scroll.scrollTo((targetRow * rowPx).toInt())
                     }
-                    LaunchedEffect(scroll, today, start, monthDirection, rowPx, dateHeightPx, heightPx) {
+                    LaunchedEffect(scroll, today, start, monthDirection, rowPx, dateHeightPx, heightPx, onTodayDirectionChanged) {
                         snapshotFlow {
                             val firstRow = kotlin.math.ceil(scroll.value / rowPx).toInt().coerceIn(0, 5)
                             val lastRow = kotlin.math.floor((scroll.value + heightPx + 1 - dateHeightPx) / rowPx).toInt().coerceIn(firstRow, 5)

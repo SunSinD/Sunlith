@@ -59,7 +59,11 @@ fun projectSchoolEvents(events: List<CalendarEvent>, zone: ZoneId): List<Calenda
     }
 
     val projected = mutableListOf<CalendarEvent>()
-    candidates.groupBy { event -> listOf(identity(event), event.timeZone, event.school!!.classKind) }.values.forEach { rows ->
+    // A confirmed lifting can end between periods. Keep its marked run separate from the class that resumes later.
+    candidates.groupBy { event ->
+        val info = requireNotNull(event.school)
+        listOf(identity(event), event.timeZone, info.classKind, info.lift)
+    }.values.forEach { rows ->
         val runs = mutableListOf<MutableList<CalendarEvent>>()
         rows.sortedWith(compareBy<CalendarEvent> { it.startMillis }.thenBy { it.endMillis }.thenBy { it.id }).forEach { event ->
             val previous = runs.lastOrNull()?.lastOrNull()
@@ -74,7 +78,7 @@ fun projectSchoolEvents(events: List<CalendarEvent>, zone: ZoneId): List<Calenda
                 val absences = run.flatMap { it.school!!.absences }.distinct().sortedBy { it.startMillis }
                 projected += actual.copy(
                     id = run.first().id,
-                    title = actual.school!!.courseTitle,
+                    title = if (actual.school!!.lift != null) actual.title else actual.school.courseTitle,
                     startMillis = run.first().startMillis,
                     endMillis = run.last().endMillis,
                     location = periods.map { it.location }.filter { it.isNotBlank() }.distinct().joinToString("; "),

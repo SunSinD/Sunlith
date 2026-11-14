@@ -4,6 +4,7 @@
 -keep,allowoptimization,allowobfuscation class androidx.activity.ComponentActivity {
     void addContentView(android.view.View,android.view.ViewGroup$LayoutParams);
     androidx.lifecycle.ViewModelStore getViewModelStore();
+    void setContentView(android.view.View);
 }
 -keep,allowoptimization,allowobfuscation class androidx.activity.compose.ComponentActivityKt {
     void setContent$default(androidx.activity.ComponentActivity,androidx.compose.runtime.CompositionContext,kotlin.jvm.functions.Function2,int,java.lang.Object);
@@ -49,6 +50,9 @@
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.foundation.layout.BoxScopeInstance {
     androidx.compose.foundation.layout.BoxScopeInstance INSTANCE;
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.foundation.layout.PaddingKt {
+    androidx.compose.ui.Modifier padding-3ABfNKs(androidx.compose.ui.Modifier,float);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.foundation.layout.SizeKt {
     androidx.compose.ui.Modifier fillMaxSize$default(androidx.compose.ui.Modifier,float,int,java.lang.Object);
@@ -118,6 +122,7 @@
     void endMovableGroup();
     void endNode();
     void endReplaceGroup();
+    androidx.compose.runtime.ScopeUpdateScope endRestartGroup();
     androidx.compose.runtime.Applier getApplier();
     androidx.compose.runtime.CompositionLocalMap getCurrentCompositionLocalMap();
     boolean getInserting();
@@ -126,6 +131,7 @@
     void skipToGroupEnd();
     void startMovableGroup(int,java.lang.Object);
     void startReplaceGroup(int);
+    androidx.compose.runtime.Composer startRestartGroup(int);
     void startReusableNode();
     void updateRememberedValue(java.lang.Object);
     void useNode();
@@ -165,6 +171,13 @@
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.LongState {
     long getLongValue();
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.MonotonicFrameClockKt {
+    java.lang.Object withFrameNanos(kotlin.jvm.functions.Function1,kotlin.coroutines.Continuation);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.MutableFloatState {
+    float getFloatValue();
+    void setFloatValue(float);
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.MutableIntState {
     int getIntValue();
     void setIntValue(int);
@@ -176,11 +189,20 @@
     java.lang.Object getValue();
     void setValue(java.lang.Object);
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.PrimitiveSnapshotStateKt {
+    androidx.compose.runtime.MutableFloatState mutableFloatStateOf(float);
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.ProvidableCompositionLocal {
     androidx.compose.runtime.ProvidedValue provides(java.lang.Object);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.ProvidedValue {
     int $stable;
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.RecomposeScopeImplKt {
+    int updateChangedFlags(int);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.ScopeUpdateScope {
+    void updateScope(kotlin.jvm.functions.Function2);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.SnapshotIntStateKt {
     androidx.compose.runtime.MutableIntState mutableIntStateOf(int);
@@ -256,6 +278,10 @@
     androidx.compose.runtime.ProvidableCompositionLocal getLocalConfiguration();
     androidx.compose.runtime.ProvidableCompositionLocal getLocalContext();
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.platform.ComposeView {
+    <init>(android.content.Context,android.util.AttributeSet,int,int,kotlin.jvm.internal.DefaultConstructorMarker);
+    void setContent(kotlin.jvm.functions.Function2);
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.platform.CompositionLocalsKt {
     androidx.compose.runtime.ProvidableCompositionLocal getLocalDensity();
     androidx.compose.runtime.ProvidableCompositionLocal getLocalLayoutDirection();
@@ -276,6 +302,7 @@
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.TextLayoutResult {
     androidx.compose.ui.geometry.Rect getBoundingBox(int);
     androidx.compose.ui.text.style.ResolvedTextDirection getParagraphDirection(int);
+    long getSize-YbymL2g();
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.text.TextMeasurer {
     androidx.compose.ui.text.TextLayoutResult measure-wNUYSr0$default(androidx.compose.ui.text.TextMeasurer,java.lang.String,androidx.compose.ui.text.TextStyle,int,boolean,int,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.text.font.FontFamily$Resolver,boolean,int,java.lang.Object);
@@ -461,6 +488,7 @@
     int beta_widget_calendar_name;
     int beta_widget_days;
     int beta_widget_empty_days;
+    int calendar_class_cancelled_until;
     int calendar_next_five_days;
     int calendar_prev_five_days;
     int calendar_teacher_absent;
@@ -559,9 +587,11 @@
     int school_portal;
     int school_portal_help;
     int school_portal_short;
+    int school_settings_managed_event;
     int school_sign_in_again;
     int school_sync_absent_title;
     int school_sync_connection_notification;
+    int school_sync_lifted_title;
     int school_sync_now;
     int school_sync_review_notification;
     int school_sync_sign_in_notification;
@@ -612,6 +642,7 @@
     long allDayMillis(java.time.LocalDate);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.CalendarEvent {
+    int $stable;
     <init>(long,long,java.lang.String,java.lang.String,java.lang.String,long,long,boolean,java.lang.String,java.lang.String,int,java.lang.String,io.github.sunsind.sunlith.data.SchoolEventInfo,int,kotlin.jvm.internal.DefaultConstructorMarker);
     io.github.sunsind.sunlith.data.CalendarEvent copy$default(io.github.sunsind.sunlith.data.CalendarEvent,long,long,java.lang.String,java.lang.String,java.lang.String,long,long,boolean,java.lang.String,java.lang.String,int,java.lang.String,io.github.sunsind.sunlith.data.SchoolEventInfo,int,java.lang.Object);
     boolean getAllDay();
@@ -622,6 +653,7 @@
     java.lang.String getLocation();
     io.github.sunsind.sunlith.data.SchoolEventInfo getSchool();
     long getStartMillis();
+    java.lang.String getTimeZone();
     java.lang.String getTitle();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.CalendarRepository {
@@ -683,12 +715,16 @@
     io.github.sunsind.sunlith.data.SchoolAbsenceCoverage PARTIAL;
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.SchoolEventInfo {
+    <init>(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.List,java.util.List,io.github.sunsind.sunlith.school.SchoolClassLift);
+    io.github.sunsind.sunlith.data.SchoolEventInfo copy$default(io.github.sunsind.sunlith.data.SchoolEventInfo,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.List,java.util.List,io.github.sunsind.sunlith.school.SchoolClassLift,int,java.lang.Object);
     io.github.sunsind.sunlith.data.SchoolAbsenceCoverage getAbsenceCoverage();
     java.lang.String getCourse();
     java.lang.String getCourseKey();
+    io.github.sunsind.sunlith.school.SchoolClassLift getLift();
     java.util.List getPeriods();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.data.SchoolEventPeriod {
+    <init>(long,long,long,java.lang.String,java.lang.String);
     long getEndMillis();
     long getEventId();
     java.lang.String getLocation();
@@ -912,6 +948,7 @@
     java.util.List commitSteps(io.github.sunsind.sunlith.school.SchoolRecord,io.github.sunsind.sunlith.school.SchoolJournal,kotlin.jvm.functions.Function1);
     void disconnect(io.github.sunsind.sunlith.school.SchoolRecord,boolean);
     java.util.ArrayList operations$app_distribution(io.github.sunsind.sunlith.school.SchoolRecord,io.github.sunsind.sunlith.school.SchoolJournal);
+    io.github.sunsind.sunlith.school.SchoolJournal plan(io.github.sunsind.sunlith.school.SchoolRecord,io.github.sunsind.sunlith.school.SchoolFeed,java.time.LocalDate,boolean);
     io.github.sunsind.sunlith.school.SchoolJournal plan$default(io.github.sunsind.sunlith.school.SchoolCalendarWriter,io.github.sunsind.sunlith.school.SchoolRecord,io.github.sunsind.sunlith.school.SchoolFeed,java.time.LocalDate,boolean,int,java.lang.Object);
     java.util.List pruneHistory(io.github.sunsind.sunlith.school.SchoolRecord,io.github.sunsind.sunlith.school.SchoolTerm,java.time.LocalDate);
     io.github.sunsind.sunlith.school.SchoolChangeSummary summary(io.github.sunsind.sunlith.school.SchoolRecord,io.github.sunsind.sunlith.school.SchoolJournal);
@@ -929,13 +966,19 @@
     int getLinked();
     int getRemoved();
 }
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolClassLift {
+    <init>(java.time.LocalDate,java.time.LocalTime,java.time.LocalDate,boolean,int,kotlin.jvm.internal.DefaultConstructorMarker);
+    boolean getPreserveOnly();
+}
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolClassicPortal {
     <init>(java.net.URI,java.util.List);
     java.lang.Object readAdministration(java.lang.String,java.lang.String,java.util.Map,java.time.LocalDate,kotlin.coroutines.Continuation);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolCollegeNotice {
-    <init>(java.lang.String,java.time.LocalDate,io.github.sunsind.sunlith.school.SchoolNoticeStatus,java.time.LocalTime,java.time.LocalTime,java.time.LocalDate,java.lang.String,java.time.LocalDate,java.lang.String,java.lang.String,java.util.List,java.lang.String,java.util.List,boolean);
-    io.github.sunsind.sunlith.school.SchoolCollegeNotice copy$default(io.github.sunsind.sunlith.school.SchoolCollegeNotice,java.lang.String,java.time.LocalDate,io.github.sunsind.sunlith.school.SchoolNoticeStatus,java.time.LocalTime,java.time.LocalTime,java.time.LocalDate,java.lang.String,java.time.LocalDate,java.lang.String,java.lang.String,java.util.List,java.lang.String,java.util.List,boolean,int,java.lang.Object);
+    <init>(java.lang.String,java.time.LocalDate,io.github.sunsind.sunlith.school.SchoolNoticeStatus,java.time.LocalTime,java.time.LocalTime,java.time.LocalDate,java.lang.String,java.time.LocalDate,java.lang.String,java.lang.String,java.util.List,java.lang.String,java.util.List,boolean,boolean,int,kotlin.jvm.internal.DefaultConstructorMarker);
+    io.github.sunsind.sunlith.school.SchoolCollegeNotice copy$default(io.github.sunsind.sunlith.school.SchoolCollegeNotice,java.lang.String,java.time.LocalDate,io.github.sunsind.sunlith.school.SchoolNoticeStatus,java.time.LocalTime,java.time.LocalTime,java.time.LocalDate,java.lang.String,java.time.LocalDate,java.lang.String,java.lang.String,java.util.List,java.lang.String,java.util.List,boolean,boolean,int,java.lang.Object);
+    boolean getClassesMarked();
+    boolean getDetailRead();
     java.time.LocalDate getSourceDate();
     io.github.sunsind.sunlith.school.SchoolNoticeStatus getStatus();
     java.time.LocalDate getTargetDate();
@@ -965,9 +1008,11 @@
     io.github.sunsind.sunlith.school.SchoolTerm getTerm();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolItem {
-    <init>(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.time.LocalDate,long,long,boolean,java.lang.String,java.util.List,java.util.List,java.util.List,boolean,int,java.lang.String,java.lang.String,int,kotlin.jvm.internal.DefaultConstructorMarker);
-    io.github.sunsind.sunlith.school.SchoolItem copy$default(io.github.sunsind.sunlith.school.SchoolItem,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.time.LocalDate,long,long,boolean,java.lang.String,java.util.List,java.util.List,java.util.List,boolean,int,java.lang.String,java.lang.String,int,java.lang.Object);
+    io.github.sunsind.sunlith.school.SchoolItem$Companion Companion;
+    <init>(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.time.LocalDate,long,long,boolean,java.lang.String,java.util.List,java.util.List,java.util.List,boolean,int,java.lang.String,java.lang.String,java.lang.String,int,kotlin.jvm.internal.DefaultConstructorMarker);
+    io.github.sunsind.sunlith.school.SchoolItem copy$default(io.github.sunsind.sunlith.school.SchoolItem,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.time.LocalDate,long,long,boolean,java.lang.String,java.util.List,java.util.List,java.util.List,boolean,int,java.lang.String,java.lang.String,java.lang.String,int,java.lang.Object);
     boolean getAllDay();
+    java.lang.String getCollegeLift();
     java.lang.String getCourse();
     java.time.LocalDate getDate();
     long getEndMillis();
@@ -982,6 +1027,10 @@
     java.lang.String getTitle();
     java.lang.String getZone();
     int hashCode();
+    org.json.JSONObject json();
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolItem$Companion {
+    io.github.sunsind.sunlith.school.SchoolItem read(org.json.JSONObject);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolJournal {
     io.github.sunsind.sunlith.school.SchoolJournal$Companion Companion;
@@ -1016,25 +1065,30 @@
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolMessagesController {
     kotlinx.coroutines.flow.StateFlow getState();
+    java.lang.Object loadPortalLinks(kotlin.coroutines.Continuation);
     java.lang.Object portalLinks(kotlin.coroutines.Continuation);
     java.lang.Object refresh(kotlin.coroutines.Continuation);
     java.lang.Object resolvePortalLink(java.lang.String,kotlin.coroutines.Continuation);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolMessagesManager {
     <init>(android.content.Context,kotlin.jvm.functions.Function2,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function0,kotlin.jvm.functions.Function2,kotlin.jvm.functions.Function0);
+    java.util.List classLifts(io.github.sunsind.sunlith.school.SchoolRecord,io.github.sunsind.sunlith.school.SchoolTerm);
     void clear();
     kotlinx.coroutines.flow.StateFlow getState();
+    java.util.List items(io.github.sunsind.sunlith.school.SchoolRecord,io.github.sunsind.sunlith.school.SchoolTerm,boolean);
+    java.lang.Object loadPortalLinks(kotlin.coroutines.Continuation);
     java.lang.Object refresh(kotlin.coroutines.Continuation);
     java.lang.Object refreshForJob(kotlin.coroutines.Continuation);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolMessagesState {
-    <init>(boolean,boolean,java.util.List,io.github.sunsind.sunlith.school.SchoolAdminStatus,java.lang.Long,java.util.List,java.util.List,java.lang.String,int,kotlin.jvm.internal.DefaultConstructorMarker);
-    io.github.sunsind.sunlith.school.SchoolMessagesState copy$default(io.github.sunsind.sunlith.school.SchoolMessagesState,boolean,boolean,java.util.List,io.github.sunsind.sunlith.school.SchoolAdminStatus,java.lang.Long,java.util.List,java.util.List,java.lang.String,int,java.lang.Object);
+    <init>(boolean,boolean,java.util.List,io.github.sunsind.sunlith.school.SchoolAdminStatus,java.lang.Long,java.util.List,java.util.List,java.lang.String,java.lang.Boolean,int,kotlin.jvm.internal.DefaultConstructorMarker);
+    io.github.sunsind.sunlith.school.SchoolMessagesState copy$default(io.github.sunsind.sunlith.school.SchoolMessagesState,boolean,boolean,java.util.List,io.github.sunsind.sunlith.school.SchoolAdminStatus,java.lang.Long,java.util.List,java.util.List,java.lang.String,java.lang.Boolean,int,java.lang.Object);
     java.util.List getAdmin();
     io.github.sunsind.sunlith.school.SchoolAdminStatus getAdminStatus();
     boolean getBusy();
     java.util.List getCollegeNotices();
     boolean getConnected();
+    java.lang.Boolean getPortalLinksAvailable();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolMessagesStore {
     <init>(android.content.Context);
@@ -1044,6 +1098,7 @@
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolNoticeInterpreter {
     io.github.sunsind.sunlith.school.SchoolNoticeInterpreter INSTANCE;
+    java.util.List applyLifts(java.util.List,java.util.List,java.util.List,java.time.LocalDate);
     java.util.List interpret(java.util.List);
     java.util.List items(java.util.List,boolean);
 }
@@ -1077,11 +1132,18 @@
     void review(io.github.sunsind.sunlith.school.SchoolRecord,java.util.List);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolOwned {
+    io.github.sunsind.sunlith.school.SchoolOwned$Companion Companion;
+    io.github.sunsind.sunlith.school.SchoolOwned copy$default(io.github.sunsind.sunlith.school.SchoolOwned,io.github.sunsind.sunlith.school.SchoolItem,long,java.lang.String,java.lang.String,java.util.Map,java.util.Map,int,java.lang.Object);
     io.github.sunsind.sunlith.school.SchoolItem getItem();
     java.lang.String getMarker();
     java.util.Map getRevision();
     long getRowId();
     java.lang.String getUid();
+    java.util.Map getWrittenRevision();
+    org.json.JSONObject json();
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolOwned$Companion {
+    io.github.sunsind.sunlith.school.SchoolOwned read(org.json.JSONObject);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolPortalClient {
     io.github.sunsind.sunlith.school.SchoolPortalClient$Companion Companion;
@@ -1089,6 +1151,7 @@
     java.lang.Object fetch(java.lang.String,java.time.ZoneId,java.util.List,boolean,java.lang.String,kotlin.coroutines.Continuation);
     java.lang.Object fetch$default(io.github.sunsind.sunlith.school.SchoolPortalClient,java.lang.String,java.time.ZoneId,java.util.List,boolean,java.lang.String,kotlin.coroutines.Continuation,int,java.lang.Object);
     java.lang.Object login(java.lang.String,java.lang.String,kotlin.coroutines.Continuation);
+    java.lang.Object portalLinks(java.lang.String,kotlin.coroutines.Continuation);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolPortalClient$Companion {
     java.net.URI normalize(java.lang.String);
@@ -1096,6 +1159,14 @@
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolPortalLink {
     <init>(java.lang.String,java.lang.String);
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolPortalLinks {
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolPortalLinks$Failed {
+    <init>(io.github.sunsind.sunlith.school.SchoolAdminStatus);
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolPortalLinks$Loaded {
+    <init>(java.util.List);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.school.SchoolRecord {
     io.github.sunsind.sunlith.school.SchoolRecord$Companion Companion;
@@ -1297,6 +1368,7 @@
     void setCompleted$default(io.github.sunsind.sunlith.system.TodoStore,java.lang.String,boolean,long,int,java.lang.Object);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.CalendarEventStyleKt {
+    void CalendarEventCard(io.github.sunsind.sunlith.data.CalendarEvent,java.time.LocalDate,io.github.sunsind.sunlith.ui.Formats,kotlin.jvm.functions.Function0,androidx.compose.ui.Modifier,androidx.compose.runtime.Composer,int,int);
     io.github.sunsind.sunlith.ui.EventColors courseColors(int,boolean);
     io.github.sunsind.sunlith.ui.EventColors eventColors$default(io.github.sunsind.sunlith.data.CalendarEvent,io.github.sunsind.sunlith.ui.SunlithPalette,io.github.sunsind.sunlith.ui.CourseColors,boolean,int,java.lang.Object);
     io.github.sunsind.sunlith.data.CalendarEvent focusTarget(java.util.List,java.time.LocalDate,java.time.ZoneId);
@@ -1352,6 +1424,7 @@
     java.lang.String dayMonth(java.time.LocalDate);
     java.lang.String numericDayMonth(java.time.LocalDate);
     java.lang.String time(long);
+    java.lang.String time(java.time.LocalTime);
     java.lang.String timeRange(long,long);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.ImportUi {
@@ -1419,6 +1492,7 @@
     void changeCollapseCalendarOnScroll(boolean);
     void changeDayLayout(java.lang.String);
     void changeDayTimelineZoom(int);
+    void changeDrilldownLayout(java.lang.String);
     void changeGroupEmptyHours(boolean);
     void changeKeepSelectedDate(boolean);
     void changeMaterialYou(boolean);
@@ -1441,6 +1515,7 @@
     void extendAgenda(boolean);
     void finishAiIntro();
     void finishLayoutSetup();
+    java.lang.String getActiveDayLayout();
     java.util.Set getActiveIds();
     java.lang.String getAgendaDisplay();
     java.lang.String getAgendaRange();
@@ -1449,6 +1524,7 @@
     int getDayFocusRequest();
     java.lang.String getDayLayout();
     int getDayTimelineZoom();
+    java.lang.String getDrilldownLayout();
     io.github.sunsind.sunlith.ui.EditorState getEditor();
     boolean getEditorDirty();
     java.util.List getEvents();
@@ -1503,6 +1579,7 @@
     void handleLink$default(io.github.sunsind.sunlith.ui.SunlithViewModel,long,long,boolean,java.time.LocalDate,int,java.lang.Object);
     void handleSchoolLink$default(io.github.sunsind.sunlith.ui.SunlithViewModel,java.time.LocalDate,boolean,int,java.lang.Object);
     void newEvent(java.time.LocalDate);
+    void onProviderChanged();
     void open(io.github.sunsind.sunlith.ui.Screen);
     void openCalendar();
     void openDay(java.time.LocalDate);

@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -78,7 +77,6 @@ fun SearchScreen(vm: SunlithViewModel) {
                         IconButton(onClick = { vm.updateSearch("") }) { Icon(Icons.Outlined.Close, stringResource(R.string.action_clear), tint = p.muted) }
                     }
                 }
-                if (vm.searchLoading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = p.muted, trackColor = p.line)
             }
         },
     ) { pad ->
@@ -89,7 +87,9 @@ fun SearchScreen(vm: SunlithViewModel) {
         ) {
             when {
                 vm.searchQuery.isBlank() -> item { Hint(stringResource(R.string.search_scope)) }
-                !vm.searchLoading && vm.searchResults.isEmpty() -> item { Hint(stringResource(R.string.search_none)) }
+                // Loading no longer draws a line under the search field. Results already shown stay while it runs.
+                vm.searchLoading && vm.searchResults.isEmpty() -> item(key = "loading") { ListLoading() }
+                vm.searchResults.isEmpty() -> item { Hint(stringResource(R.string.search_none)) }
             }
             results(groups.first, null, f, vm)
             results(groups.second, R.string.search_past, f, vm)

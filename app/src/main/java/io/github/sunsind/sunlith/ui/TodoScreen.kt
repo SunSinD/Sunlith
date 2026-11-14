@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,15 +21,17 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,8 +80,9 @@ fun TodoScreen(vm: SunlithViewModel) {
             }
         },
     ) { pad ->
+        // No progress bar under the toolbar: it drew a light line for a frame or two on every open. The list keeps its
+        // last items while it refreshes, and only an empty first load shows a small spinner in the list.
         Column(Modifier.fillMaxSize().padding(pad)) {
-            if (vm.todoLoading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = p.muted, trackColor = p.line)
             LazyColumn(
                 Modifier.fillMaxSize().testTag("todo_list"),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -90,6 +95,9 @@ fun TodoScreen(vm: SunlithViewModel) {
                             TextButton(onClick = vm::reloadTodos) { Text(stringResource(R.string.todo_retry)) }
                         }
                     }
+                }
+                if (vm.todoLoading && vm.todoItems.isEmpty() && vm.todoError == null) {
+                    item(key = "loading") { ListLoading() }
                 }
                 if (pending.isEmpty() && vm.todoError == null && !vm.todoLoading) {
                     item(key = "empty") {
@@ -116,6 +124,21 @@ fun TodoScreen(vm: SunlithViewModel) {
         }
     }
 }
+
+/**
+ * Small spinner for a list that has nothing to show yet. It only appears when loading takes long enough to notice,
+ * so a quick load never blinks a spinner on and off.
+ */
+@Composable
+internal fun ListLoading() {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(LIST_LOADING_VISIBLE_AFTER_MS); visible = true }
+    Box(Modifier.fillMaxWidth().heightIn(min = 72.dp), contentAlignment = Alignment.Center) {
+        if (visible) CircularProgressIndicator(Modifier.size(24.dp), color = LocalPalette.current.muted, strokeWidth = 2.dp)
+    }
+}
+
+internal const val LIST_LOADING_VISIBLE_AFTER_MS = 400L
 
 @Composable
 private fun TodoRow(item: TodoItem, done: Boolean, f: Formats, zone: ZoneId, onComplete: () -> Unit, onOpen: () -> Unit) {

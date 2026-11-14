@@ -105,6 +105,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -730,7 +731,6 @@ class CalendarRefinementTest {
                 val target = nodeBounds(selector)
                 return abs(base.top - target.top) + abs(base.bottom - target.bottom) <= 1 &&
                     inset(base) in 0f..6f &&
-                    abs(base.top - baselineViewport.top - (32 + inset(base))) <= 1 &&
                     base.top >= baselineViewport.top && base.bottom <= baselineViewport.bottom
             }
             while (!baselineReady() && SystemClock.elapsedRealtime() < baselineDeadline) {
@@ -748,6 +748,16 @@ class CalendarRefinementTest {
             }
             assertTrue("The focus outline must fade before measuring the card's fixed gap: layout=$layout painted=$base target=${nodeBounds(selector)}",
                 baselineReady())
+            // Position the fixture at a true 11:30 after measuring the rail's leading room. The same physical
+            // minute is then expected at every scale; a fixed extra inset in each zoom assertion would be wrong.
+            val correction = (base.top - baselineViewport.top - (32 + inset(base))).roundToInt()
+            if (correction != 0) {
+                val wanted = scroll.value + correction
+                onMain { CoroutineScope(Dispatchers.Main.immediate).launch { scroll.scrollTo(wanted) } }
+                awaitState("The zoom fixture must include the room above midnight.") { scroll.value == wanted }
+                base = paintedTimelineBounds(selector)
+                baselineViewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
+            }
             val description = readNode(selector) { it.contentDescription }
             assertTrue("The full title must remain accessible at every zoom.", description.contains(event.title))
             assertTrue("The baseline class must be completely inside the viewport: layout=$layout base=$base viewport=$baselineViewport", base.height() > 0 &&
@@ -1320,7 +1330,7 @@ class CalendarRefinementTest {
     }
 
     @Test
-    fun openingADayFromFullMonthKeepsItsParentAndOffersTodayWhenAway() {
+    fun openingADayFromFullMonthKeepsItsParentWithoutAWeekStripOrTodayArrow() {
         onMain { vm.changeMonthLayout("full") }
         val original = vm.selectedDate
         val chosen = original.withDayOfMonth(if (original.dayOfMonth == 15) 16 else 15)
@@ -1328,10 +1338,11 @@ class CalendarRefinementTest {
         awaitState("Tapping a month date must open that day with a parent.") {
             vm.viewMode == ViewMode.Day && vm.selectedDate == chosen && vm.hasDayParent
         }
-        if (chosen == LocalDate.now()) {
-            assertFalse(device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))))
-        } else {
-            node(By.pkg(context.packageName).res("calendar_today_${if (chosen < LocalDate.now()) "next" else "previous"}"))
+        assertFalse("A Month date opens only that date, without the standalone Day selector.",
+            device.hasObject(By.pkg(context.packageName).res("calendar_day_picker")))
+        listOf("previous", "next", "up", "down").forEach { direction ->
+            assertFalse("The focused Month date must not show a floating Today arrow: $direction",
+                device.hasObject(By.pkg(context.packageName).res("calendar_today_$direction")))
         }
         assertFalse("Drilled-in Day uses Back to return to its calendar", device.hasObject(By.pkg(context.packageName).res("calendar_view_menu")))
         node(By.pkg(context.packageName).desc(english.getString(R.string.action_back))).click()

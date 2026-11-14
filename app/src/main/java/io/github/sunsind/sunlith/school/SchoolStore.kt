@@ -13,12 +13,21 @@ import javax.crypto.spec.GCMParameterSpec
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal data class SchoolOwned(val item: SchoolItem, val rowId: Long, val uid: String, val marker: String, val revision: Map<String, String?>) {
-    fun json() = JSONObject().put("item", item.json()).put("row", rowId).put("uid", uid).put("marker", marker).put("revision", JSONObject().also { j -> revision.forEach { (k, v) -> j.put(k, v ?: JSONObject.NULL) } })
+internal data class SchoolOwned(
+    val item: SchoolItem, val rowId: Long, val uid: String, val marker: String, val revision: Map<String, String?>,
+    /** Last content this sync wrote, separate from later observations of a row edited in another app. Null in older records. */
+    val writtenRevision: Map<String, String?>? = null,
+) {
+    fun json() = JSONObject().put("item", item.json()).put("row", rowId).put("uid", uid).put("marker", marker)
+        .put("revision", JSONObject().also { j -> revision.forEach { (k, v) -> j.put(k, v ?: JSONObject.NULL) } })
+        .also { json -> writtenRevision?.let { values -> json.put("writtenRevision", JSONObject().also { j -> values.forEach { (k, v) -> j.put(k, v ?: JSONObject.NULL) } }) } }
     companion object {
         fun read(j: JSONObject): SchoolOwned {
             val r = j.getJSONObject("revision")
-            return SchoolOwned(SchoolItem.read(j.getJSONObject("item")), j.getLong("row"), j.getString("uid"), j.getString("marker"), r.keys().asSequence().associateWith { if (r.isNull(it)) null else r.getString(it) })
+            val written = j.optJSONObject("writtenRevision")
+            return SchoolOwned(SchoolItem.read(j.getJSONObject("item")), j.getLong("row"), j.getString("uid"), j.getString("marker"),
+                r.keys().asSequence().associateWith { if (r.isNull(it)) null else r.getString(it) },
+                written?.let { values -> values.keys().asSequence().associateWith { if (values.isNull(it)) null else values.getString(it) } })
         }
     }
 }

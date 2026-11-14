@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -85,8 +86,14 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
     var page by rememberSaveable { mutableStateOf("connection") }
     var history by remember { mutableStateOf(emptyList<DeviceLinkChange>()) }
     var diagnostics by remember { mutableStateOf(DeviceLinkDiagnostics(null, null)) }
-    var paired by remember { mutableStateOf(false) }
-    var ids by rememberSaveable { mutableStateOf(emptySet<Long>()) }
+    // Null until the saved pairing is read. The last known answer is reused, so the screen never draws the
+    // unpaired setup with every calendar first and then collapses to the shared ones.
+    var paired by remember { mutableStateOf(DeviceLinkScreenMemory.paired) }
+    var ids by rememberSaveable { mutableStateOf(if (DeviceLinkScreenMemory.paired == true) DeviceLinkScreenMemory.ids else emptySet()) }
+    SideEffect {
+        DeviceLinkScreenMemory.paired = paired
+        if (paired == true) DeviceLinkScreenMemory.ids = ids
+    }
     var hosts by remember { mutableStateOf(emptyList<String>()) }
     var addressKinds by remember { mutableStateOf(emptyMap<String, DeviceLinkAddressKind>()) }
     var tailscaleAddress by remember { mutableStateOf<Boolean?>(null) }
@@ -128,15 +135,15 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
         val data = withContext(Dispatchers.IO) {
             DeviceLink.isPaired(context) to DeviceLink.pairedCalendarIds(context)
         }
+        if (data.first) ids = data.second
         paired = data.first
-        if (paired) ids = data.second
         // Re-offer the same pairing file after a restart without rotating its token; absent cache -> no button.
-        if (paired && sharedUri == null) {
+        if (data.first && sharedUri == null) {
             sharedUri = withContext(Dispatchers.IO) {
                 DeviceLink.cachedPairingShare(context)?.let(::providerUri)
             }
         }
-        if (!paired) sharedUri = null
+        if (!data.first) sharedUri = null
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle, refresh) {
@@ -257,7 +264,7 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                 item { ConnectionDetail(stringResource(R.string.device_link_status), stringResource(if (connection.running) R.string.device_link_on else R.string.device_link_off)) }
                 item { TailscaleStatus(tailscaleAddress) }
                 item { ConnectionDetail(stringResource(R.string.device_link_paired_since), diagnostics.pairedAtMillis?.let { connectionDate(context, it) }
-                    ?: stringResource(if (paired) R.string.device_link_older_pairing else R.string.device_link_not_paired)) }
+                    ?: stringResource(if (paired == true) R.string.device_link_older_pairing else R.string.device_link_not_paired)) }
                 item { ConnectionDetail(stringResource(R.string.device_link_last_request), diagnostics.lastSuccessMillis?.let { connectionDate(context, it) } ?: stringResource(R.string.device_link_no_contact)) }
                 item { ConnectionDetail(stringResource(R.string.device_link_address), hosts.joinToString("\n").ifBlank { context.getString(R.string.device_link_no_network) }) }
                 item { Text(stringResource(R.string.device_link_details_help), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
@@ -285,7 +292,7 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                         TextButton(onClick = { page = "history" }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.device_link_history)) }
                         TextButton(onClick = { page = "details" }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.device_link_details)) }
                     }
-                    if (paired) {
+                    if (paired == true) {
                         Text(stringResource(if (connection.running) R.string.device_link_on else R.string.device_link_off), style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.connection_setup_paired_body), color = p.muted, style = MaterialTheme.typography.bodyMedium)
                         val startOrStop: () -> Unit = {
@@ -315,23 +322,23 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                             }
                         }
                         TextButton(onClick = { context.openAppSettings() }) { Text(stringResource(R.string.device_link_background)) }
-                    } else {
+                    } else if (paired == false) {
                         Text(stringResource(R.string.connection_setup_step1_title), style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.connection_setup_step1_body), color = p.muted, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
-            if (!paired) {
+            if (paired == false) {
                 item { SectionTitle(stringResource(R.string.connection_setup_step2_title)) }
                 item { Text(stringResource(R.string.connection_setup_step2_body), Modifier.padding(horizontal = 16.dp), color = p.muted, style = MaterialTheme.typography.bodyMedium) }
                 item { Text(stringResource(R.string.device_link_consent), Modifier.padding(horizontal = 16.dp), color = p.muted, style = MaterialTheme.typography.bodySmall) }
-            } else {
+            } else if (paired == true) {
                 item { SectionTitle(stringResource(R.string.device_link_access)) }
             }
-            items(vm.calendars.filter { !paired || it.id in ids }, key = { it.id }) { calendar ->
+            if (paired != null) items(vm.calendars.filter { paired == false || it.id in ids }, key = { it.id }) { calendar ->
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                        .toggleable(calendar.id in ids, enabled = !paired && !busy, role = Role.Checkbox) {
+                        .toggleable(calendar.id in ids, enabled = paired == false && !busy, role = Role.Checkbox) {
                             ids = if (it) ids + calendar.id else ids - calendar.id
                         }.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -346,11 +353,11 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                         )
                         if (!calendar.writable) Text(stringResource(R.string.calendar_read_only), color = p.muted, style = MaterialTheme.typography.bodySmall)
                     }
-                    Checkbox(calendar.id in ids, onCheckedChange = null, enabled = !paired && !busy,
+                    Checkbox(calendar.id in ids, onCheckedChange = null, enabled = paired == false && !busy,
                         colors = CheckboxDefaults.colors(checkedColor = p.accent, checkmarkColor = p.onAccent))
                 }
             }
-            if (!paired) {
+            if (paired == false) {
                 if (!vm.hasSunlithCalendar) item {
                     TextButton(onClick = { vm.createLocalCalendar(showInApp = false) { ids = ids + it } }, enabled = !busy, modifier = Modifier.padding(horizontal = 8.dp)) {
                         Text(stringResource(R.string.action_create_local))
@@ -395,12 +402,12 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
                         }
                     }
                 }
-            } else item {
+            } else if (paired == true) item {
                 TextButton(onClick = { unpair = true }, enabled = !busy, modifier = Modifier.padding(horizontal = 8.dp).heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.device_link_unpair))
                 }
             }
-            item {
+            if (paired != null) item {
                 HorizontalDivider(color = p.line, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 TextButton(onClick = { context.openUrl("https://github.com/SunSinD/Sunlith/blob/main/docs/AI-INTEGRATION.md#direct-phone-connection", vm) }, modifier = Modifier.padding(horizontal = 8.dp)) {
                     Text(stringResource(R.string.device_link_guide))
@@ -428,6 +435,12 @@ fun DeviceLinkScreen(vm: SunlithViewModel) {
         }) { Text(stringResource(R.string.device_link_unpair)) } },
         dismissButton = { TextButton(onClick = { unpair = false }) { Text(stringResource(R.string.action_cancel)) } },
     )
+}
+
+/** Last pairing answer in this process, so reopening the screen starts in the right state. */
+private object DeviceLinkScreenMemory {
+    var paired: Boolean? = null
+    var ids: Set<Long> = emptySet()
 }
 
 private const val PAIRING_SHARE_DIR = "pairing-share"

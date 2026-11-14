@@ -64,16 +64,7 @@ internal class SchoolClassicPortal(mobileBase: URI, private val routes: List<(UR
     private suspend fun signIn(username: String, password: String): SchoolHtmlPage {
         schoolRequire(username.isNotBlank() && password.isNotEmpty())
         val page = get(loginPage)
-        val forms = SchoolHtml.forms(SchoolHtml.tokens(page.html)).filter { form ->
-            form.inputs.any { it["name"] == USER } && form.inputs.any { it["name"] == PASSWORD }
-        }
-        if (forms.size != 1) throw SchoolFailure(SchoolError.INVALID_DATA)
-        val form = forms.single()
-        val submit = form.inputs.singleOrNull { it["name"] == SUBMIT && it["type"].equals("image", true) } ?: throw SchoolFailure(SchoolError.INVALID_DATA)
-        val action = SchoolAdminParser.sameFolder(form.action.ifBlank { page.uri.toString() }, page.uri, colnet) ?: throw SchoolFailure(SchoolError.INVALID_DATA)
-        val fields = form.inputs.filter { it["type"].equals("hidden", true) && !it["name"].isNullOrBlank() }.map { it.getValue("name") to it["value"].orEmpty() } +
-            listOf(USER to username, PASSWORD to password, "${submit.getValue("name")}.x" to "12", "${submit.getValue("name")}.y" to "8")
-        val body = fields.joinToString("&") { (k, v) -> "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}" }
+        val (action, body) = loginRequest(page, colnet, username, password)
         val landing = send(action, body)
         if (SchoolHtml.forms(SchoolHtml.tokens(landing.html)).any { f -> f.inputs.any { it["name"] == PASSWORD } }) throw SchoolFailure(SchoolError.SIGN_IN)
         return landing
@@ -169,6 +160,36 @@ internal class SchoolClassicPortal(mobileBase: URI, private val routes: List<(UR
         private const val MAX_BYTES = 2 * 1024 * 1024
         private const val MAX_REQUESTS = 40
         private const val MAX_DETAILS = 15
+
+        /**
+         * Builds the sign-in POST from the one form that has both credential fields.
+         * Col.NET serves two layouts of login.asp. Desktop browsers get an image button named btnConnecter.
+         * Android user agents (this app's HttpsURLConnection included) get a phone layout with no button: its link runs
+         * DoPostBack, which only fills the _PostBack hidden fields and submits. Verified on Montmorency, 2026-11-14: that
+         * server signs in only when btnConnecter.x and .y are posted, in both layouts. The phone layout is accepted only
+         * when it has no other submit control and carries the _PostBackInfo field, so an unknown form still fails closed.
+         */
+        internal fun loginRequest(page: SchoolHtmlPage, colnet: URI, username: String, password: String): Pair<URI, String> {
+            val forms = SchoolHtml.forms(SchoolHtml.tokens(page.html)).filter { form ->
+                form.inputs.any { it["name"] == USER } && form.inputs.any { it["name"] == PASSWORD }
+            }
+            if (forms.size != 1) throw SchoolFailure(SchoolError.INVALID_DATA)
+            val form = forms.single()
+            fun type(input: Map<String, String>) = input["type"].orEmpty().trim().lowercase(Locale.ROOT)
+            val image = form.inputs.singleOrNull { it["name"] == SUBMIT && type(it) == "image" }
+            val controls = form.inputs.filter { type(it) in setOf("submit", "image") || (it["tag"] == "button" && type(it) in setOf("", "submit")) }
+            val postBack = form.inputs.any { it["name"] == POST_BACK && type(it) == "hidden" }
+            val submit = when {
+                image != null -> image.getValue("name")
+                controls.isEmpty() && postBack -> SUBMIT
+                else -> throw SchoolFailure(SchoolError.INVALID_DATA)
+            }
+            val action = SchoolAdminParser.sameFolder(form.action.ifBlank { page.uri.toString() }, page.uri, colnet) ?: throw SchoolFailure(SchoolError.INVALID_DATA)
+            val fields = form.inputs.filter { type(it) == "hidden" && !it["name"].isNullOrBlank() }.map { it.getValue("name") to it["value"].orEmpty() } +
+                listOf(USER to username, PASSWORD to password, "$submit.x" to "12", "$submit.y" to "8")
+            return action to fields.joinToString("&") { (k, v) -> "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}" }
+        }
+        internal const val POST_BACK = "_PostBackInfo"
 
         internal fun decode(bytes: ByteArray, contentType: String): String {
             val declared = Regex("charset=\"?([A-Za-z0-9_\\-]+)", RegexOption.IGNORE_CASE).find(contentType)?.groupValues?.get(1)

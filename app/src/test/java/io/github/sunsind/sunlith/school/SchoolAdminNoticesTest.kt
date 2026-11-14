@@ -1,14 +1,17 @@
 package io.github.sunsind.sunlith.school
 
 import java.net.URI
+import java.net.URLDecoder
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * SYNTHETIC HTML. The real authenticated Col.NET markup was not captured; these fixtures only reproduce the visible
- * structure (Date / Objet / De list, label/value detail) and the notice wording transcribed from screenshots of 2026-11-12/13.
+ * SYNTHETIC HTML, except the fixtures marked ANONYMIZED LIVE SHAPES: those copy the tags and attributes of the real
+ * Montmorency Col.NET pages read on 2026-11-14 with every value, token and personal text replaced. The notice wording
+ * is the public college notice of 2026-11-12/13. No private HTML, credential or session value is stored here.
  */
 class SchoolAdminNoticesTest {
     @Test fun administrationDetailsKeepLongFrenchTextWithoutTranslationOrTruncation() {
@@ -159,8 +162,10 @@ class SchoolAdminNoticesTest {
         assertEquals("same calendar identity as the warning", warned.id, item.id)
         assertEquals("Levée des cours jusqu'à 18 h (avis du Collège)", item.title)
         assertEquals(SchoolNoticeInterpreter.NOTICE_KIND, item.kind)
-        assertTrue(item.notes.any { it.contains("Vos cours n'ont pas été modifiés") })
+        assertTrue(n.classesMarked)
+        assertTrue(item.notes.any { it.contains("Cet avis concerne les cours qui commencent avant 18 h") })
         assertTrue(item.notes.any { it == "Reprise des cours le 2026-11-16." })
+        assertEquals(listOf(SchoolClassLift(LocalDate.of(2026, 11, 13), LocalTime.of(18, 0), LocalDate.of(2026, 11, 13))), SchoolNoticeInterpreter.lifts(notices))
     }
 
     @Test fun titleOnlyRowsStillClassifyButSayTheTextWasNotRead() {
@@ -229,6 +234,348 @@ class SchoolAdminNoticesTest {
         assertEquals(emptyList<SchoolAdminRow>(), SchoolAdminParser.list(SchoolHtml.tables(SchoolHtml.tokens(listHtml())), page, colnet))
         val unrelated = confirmed.copy(subject = "Boycott commercial le 13 novembre", body = "Le commerce sera fermé.")
         assertTrue(SchoolNoticeInterpreter.interpret(listOf(unrelated)).isEmpty())
+    }
+
+    // ANONYMIZED LIVE SHAPES, Montmorency Col.NET, read only on 2026-11-14. Values, tokens and text were replaced; tags,
+    // attributes and the order of fields are kept. Phone layout = what an Android user agent (Dalvik) receives.
+    private val phoneLogin = """<form method=post  name="frmLogin" action=/colnet/login.asp>
+        <input type=text name='txtLibWebBidon' style='visibility:hidden;display:none;'>
+        <input type=text name='txtLibWebBidon' style='visibility:hidden;display:none;'>
+        <input id=txtCodeUsager type=text name=txtCodeUsager size=17 maxlength=15 value="" >
+        <input id=txtMotDePasse type=password name=txtMotDePasse size=32 maxlength=50 value="" >
+        <a href="javascript:DoPostBack('TOKEN','?TOKEN')">Connexion</a>
+        <input type=hidden name=_PostBackInfo value="">
+        <input type=hidden name=_PostBackPar value="">
+        <input type=hidden name=_NoSeqWeb value="seq&amp;1">
+        <input type=hidden name=_InfoSupp value="">
+        <input type=hidden id=txtUsagerAut name=txtUsagerAut value="">
+        <input type=hidden id=txtPassAut name=txtPassAut value="">
+        </form>"""
+    private val desktopLogin = phoneLogin.replace("size=17", "size=32").replace("""<a href="javascript:DoPostBack('TOKEN','?TOKEN')">Connexion</a>""",
+        """<input type=image src='Images/Bouton_LoginFRA.png' id='btnConnecter' name=btnConnecter value="" onMouseOver="this.src='x.png'">""")
+    private val liveColnet = URI("https://portal.example.invalid/colnet/")
+
+    private fun fields(body: String) = body.split('&').associate { pair ->
+        val parts = pair.split('=', limit = 2)
+        URLDecoder.decode(parts[0], "UTF-8") to URLDecoder.decode(parts.getOrElse(1) { "" }, "UTF-8")
+    }
+
+    @Test fun phoneLoginLayoutWithoutAnImageButtonStillPostsTheVerifiedSubmitFields() {
+        for (html in listOf(phoneLogin, desktopLogin)) {
+            val (action, body) = SchoolClassicPortal.loginRequest(SchoolHtmlPage(liveColnet.resolve("login.asp"), html), liveColnet, "student+1", "p&ss")
+            assertEquals(URI("https://portal.example.invalid/colnet/login.asp"), action)
+            val posted = fields(body)
+            assertEquals("student+1", posted[SchoolClassicPortal.USER])
+            assertEquals("p&ss", posted[SchoolClassicPortal.PASSWORD])
+            assertEquals("12", posted["btnConnecter.x"])
+            assertEquals("8", posted["btnConnecter.y"])
+            assertEquals("seq&1", posted["_NoSeqWeb"])
+            assertFalse("hidden decoy text fields are never sent", posted.containsKey("txtLibWebBidon"))
+        }
+    }
+
+    @Test fun unknownLoginLayoutsStillFailClosed() {
+        val noPostBack = phoneLogin.replace("<input type=hidden name=_PostBackInfo value=\"\">", "")
+        val otherSubmit = phoneLogin.replace("</form>", "<input type=submit name=Envoyer value=OK></form>")
+        val otherButton = phoneLogin.replace("</form>", "<button>OK</button></form>")
+        val twoForms = phoneLogin + phoneLogin
+        val crossOrigin = phoneLogin.replace("action=/colnet/login.asp", "action=https://other.invalid/colnet/login.asp")
+        for (html in listOf(noPostBack, otherSubmit, otherButton, twoForms, crossOrigin, "<p>Maintenance</p>")) {
+            val failure = assertThrows(SchoolFailure::class.java) {
+                SchoolClassicPortal.loginRequest(SchoolHtmlPage(liveColnet.resolve("login.asp"), html), liveColnet, "student", "password")
+            }
+            assertEquals(SchoolError.INVALID_DATA, failure.reason)
+        }
+    }
+
+    @Test fun liveListAndDetailShapesAreRecognized() {
+        val onclick = "fen = window.open('affmessdir.asp?TOKEN1','MyWindowlnk','toolbar=no,location=no,scrollbars=yes,width=550,height=600'); if (window.focus) fen.focus(); return false;"
+        val landing = """<table class=BluePanelSimple cellspacing=0 cellpadding=4 width=100% border=0>
+            <tr><td class=Tab width=100%><b>Message(s) de l'administration</b></td></tr>
+            <tr class=Content><td>
+            <table class='BlueTableau' cellpadding='0' cellspacing='0' width='100%'><tr class='Header'><td  align=left >Date</td><td  align=left >Objet</td><td  align=left >De</td></tr><tr><td nowrap class='Even'  align=left >2026/11/13</td><td class='Even'  align=left ><a href=#  class=Lien onClick="$onclick">Levée des cours le 13 novembre &#8211; Boycott par les étudiantes et les étudiants</a></td><td class='Even'  align=left >Direction générale</td></tr><tr><td nowrap class='Odd'  align=left >2026/11/04</td><td class='Odd'  align=left ><a href=#  class=Lien onClick="${onclick.replace("TOKEN1", "TOKEN2")}">Rappel important</a></td><td class='Odd'  align=left >Service</td></tr></table>
+            </td></tr></table>"""
+        val page = liveColnet.resolve("accueil.asp?TOKEN")
+        val rows = SchoolAdminParser.list(SchoolHtml.tables(SchoolHtml.tokens(landing)), page, liveColnet)!!
+        assertEquals(2, rows.size)
+        assertEquals(URI("https://portal.example.invalid/colnet/affmessdir.asp?TOKEN1"), rows[0].link)
+        assertEquals(URI("https://portal.example.invalid/colnet/affmessdir.asp?TOKEN2"), rows[1].link)
+        val detail = """<table class='Content' border='0' cellpadding='0' cellspacing='0'><tr><td nowrap class='BorderLeft'></td><td class='Content'><div class='Panel'>
+            <table border=0 cellspacing=6><tr><td><b>Date</b></td><td>2026/11/13</td></tr><tr><td><b>Objet</b></td><td>Levée des cours le 13 novembre – Boycott par les étudiantes et les étudiants</td></tr>
+            <tr><td><b>Source du message</b></td><td>Direction générale</td></tr><tr><td><b>Catégorie</b></td><td>Annonce</td></tr>
+            <tr><td valign=top><b>Message</b></td><td>${confirmedBody.replace("\n\n", "<br><br>")}</td></tr></table></div></td></tr></table>"""
+        val read = SchoolAdminParser.detail(SchoolHtml.tables(SchoolHtml.tokens(detail)))!!
+        assertTrue(SchoolAdminParser.matches(rows[0], read))
+        assertEquals("Annonce", read.category)
+        val notice = SchoolNoticeInterpreter.interpret(listOf(SchoolAdminNotice(rows[0].id, rows[0].date, rows[0].subject, rows[0].sender, read.category, read.body, true))).single()
+        assertEquals(SchoolNoticeStatus.CONFIRMED, notice.status)
+        assertTrue(notice.classesMarked)
+    }
+
+    private val zone = ZoneId.of("America/Toronto")
+    private fun lesson(id: String, day: LocalDate, hour: Int, kind: String = "01", allDay: Boolean = false, lift: String = ""): SchoolItem {
+        val start = day.atTime(hour, 0).atZone(zone).toInstant().toEpochMilli()
+        return SchoolItem(id, "class-$id", "Cours $id", "243SYN", "0001", "1", kind, day, start, start + 3 * 3_600_000, allDay, zone.id,
+            emptyList(), emptyList(), emptyList(), false, collegeLift = lift)
+    }
+
+    @Test fun confirmedLiftingMarksOnlyClassesBeforeItsEndTimeAndKeepsEveryIdAndTime() {
+        val day = LocalDate.of(2026, 11, 13)
+        val morning = lesson("a", day, 8); val evening = lesson("b", day, 18); val exam = lesson("c", day, 10, kind = "07")
+        val other = lesson("d", day.plusDays(3), 8); val allDay = lesson("e", day, 0, allDay = true)
+        val lifts = SchoolNoticeInterpreter.lifts(SchoolNoticeInterpreter.interpret(listOf(warning, confirmed)))
+        val marked = SchoolNoticeInterpreter.applyLifts(listOf(morning, evening, exam, other, allDay), lifts, emptyList(), day.minusDays(14))
+        assertEquals("2026-11-13@18:00", marked[0].collegeLift)
+        assertEquals(listOf("", "", "", ""), marked.drop(1).map { it.collegeLift })
+        assertEquals(listOf(morning, evening, exam, other, allDay).map { listOf(it.id, it.startMillis, it.endMillis, it.title) },
+            marked.map { listOf(it.id, it.startMillis, it.endMillis, it.title) })
+        assertEquals(LocalDate.of(2026, 11, 13) to LocalTime.of(18, 0), SchoolClassLift.parse(marked[0].collegeLift))
+    }
+
+    @Test fun strikeWarningThenConfirmationThenWithdrawalKeepsOneIdentityAndUnmarksClasses() {
+        val day = LocalDate.of(2026, 11, 13)
+        val classes = listOf(lesson("a", day, 8))
+        val warned = SchoolNoticeInterpreter.interpret(listOf(warning))
+        assertTrue(SchoolNoticeInterpreter.lifts(warned).isEmpty())
+        val confirmedNotices = SchoolNoticeInterpreter.interpret(listOf(warning, confirmed))
+        val marked = SchoolNoticeInterpreter.applyLifts(classes, SchoolNoticeInterpreter.lifts(confirmedNotices), emptyList(), day.minusDays(14))
+        assertTrue(marked.single().collegeLift.isNotEmpty())
+        val withdrawal = SchoolAdminNotice("x", day, "Annulation de la levée des cours le 13 novembre", "Direction générale", "Annonce",
+            "La levée des cours du 13 novembre est annulée. Les cours sont maintenus.", true)
+        val withdrawn = SchoolNoticeInterpreter.interpret(listOf(warning, confirmed, withdrawal)).single()
+        assertEquals(SchoolNoticeStatus.UPDATED, withdrawn.status)
+        assertFalse(withdrawn.classesMarked)
+        assertEquals(SchoolNoticeInterpreter.items(warned, false).single().id, SchoolNoticeInterpreter.items(listOf(withdrawn), false).single().id)
+        val restored = SchoolNoticeInterpreter.applyLifts(marked, SchoolNoticeInterpreter.lifts(listOf(withdrawn)), marked, day.minusDays(14))
+        assertEquals(classes, restored)
+        val changes = SchoolDiff.changes(marked, restored, day)
+        assertEquals(setOf(SchoolAlert.SCHOOL_DAYS), changes.single().categories)
+    }
+
+    @Test fun unknownNoticeStateAndOldHistoryKeepTheMarksTheyHad() {
+        val day = LocalDate.of(2026, 11, 13)
+        val marked = lesson("a", day, 8, lift = "2026-11-13@18:00")
+        val fresh = lesson("a", day, 8)
+        assertEquals(listOf(marked), SchoolNoticeInterpreter.applyLifts(listOf(fresh), null, listOf(marked), day.minusDays(14)))
+        assertEquals("days before the window are never rewritten", listOf(marked),
+            SchoolNoticeInterpreter.applyLifts(listOf(fresh), emptyList(), listOf(marked), day.plusDays(1)))
+        assertEquals(listOf(fresh), SchoolNoticeInterpreter.applyLifts(listOf(fresh), emptyList(), listOf(marked), day.minusDays(14)))
+        val moved = lesson("a", day.plusDays(1), 8)
+        assertEquals("a moved class does not inherit an old mark", listOf(moved), SchoolNoticeInterpreter.applyLifts(listOf(moved), null, listOf(marked), day.minusDays(14)))
+    }
+
+    @Test fun titleOnlyWarningOrNarrowLiftingsNeverMarkClasses() {
+        val titleOnly = confirmed.copy(body = null, detailAvailable = false)
+        val continuing = confirmed.copy(subject = "Avis du 13 novembre", body = "Les cours de la formation continue sont levés le 13 novembre.")
+        val program = confirmed.copy(subject = "Avis du 13 novembre", body = "Les cours du programme 243 sont annulés le 13 novembre seulement.")
+        listOf(titleOnly, continuing, program, warning).forEach { notice ->
+            val read = SchoolNoticeInterpreter.interpret(listOf(notice))
+            assertTrue(notice.subject, read.none { it.classesMarked })
+            assertTrue(SchoolNoticeInterpreter.lifts(read).isEmpty())
+            assertTrue(SchoolNoticeInterpreter.items(read, false).single().notes.any { it.contains("Vos cours n'ont pas été modifiés") })
+        }
+    }
+
+    @Test fun datelessCorrectionsCannotRewriteAnotherScopeOrDay() {
+        val partial = confirmed.copy(body = confirmedBody + "\n\nLes cours sont maintenus pour la formation continue.")
+        assertEquals("a dateless partial scope sentence is not a correction", SchoolNoticeStatus.CONFIRMED,
+            SchoolNoticeInterpreter.interpret(listOf(partial)).single().status)
+        val otherDay = confirmed.copy(body = confirmedBody + "\n\nLa levée des cours du 20 novembre est annulée.")
+        assertEquals(SchoolNoticeStatus.CONFIRMED, SchoolNoticeInterpreter.interpret(listOf(otherDay)).single { it.targetDate == LocalDate.of(2026, 11, 13) }.status)
+        val undated = SchoolAdminNotice("u", LocalDate.of(2026, 11, 14), "Information", "Direction générale", body = "Les cours sont maintenus.")
+        assertTrue("no affected day means no notice at all", SchoolNoticeInterpreter.interpret(listOf(undated)).isEmpty())
+        val corrected = SchoolNoticeInterpreter.interpret(listOf(confirmed, undated.copy(subject = "Mise à jour du 13 novembre"))).single()
+        assertEquals(SchoolNoticeStatus.UPDATED, corrected.status)
+        assertFalse(corrected.classesMarked)
+    }
+
+    @Test fun partialCorrectionsKeepTheNoticeWithoutMarkingAnUnknownScope() {
+        listOf(
+            "Les cours sont maintenus pour la formation continue." to true,
+            "Les cours sont maintenus pour la formation continue le 13 novembre." to true,
+            "La levée des cours du 13 novembre est annulée pour le programme 243 seulement." to false,
+            "Les cours du soir sont maintenus le 13 novembre." to false,
+            "Les cours du groupe 101 sont maintenus le 13 novembre." to false,
+            "Les cours du département 243 sont maintenus le 13 novembre." to false,
+            "Les cours de la formation continue et du programme 243 sont maintenus." to false,
+            "Les cours de la formation continue et du programme 243 auront lieu comme prévu." to false,
+        ).forEach { (exception, canMark) ->
+            val result = SchoolNoticeInterpreter.interpret(listOf(confirmed.copy(body = "$confirmedBody\n\n$exception"))).single()
+            assertEquals(exception, SchoolNoticeStatus.CONFIRMED, result.status)
+            assertEquals(exception, canMark, result.classesMarked)
+            assertEquals(exception, LocalTime.of(18, 0), result.until)
+        }
+    }
+
+    @Test fun generalMaintainedCorrectionsWithExceptionsWithdrawTheBlanketLifting() {
+        val day = LocalDate.of(2026, 11, 13)
+        val marked = lesson("a", day, 8, lift = "2026-11-13@18:00")
+        listOf(
+            "Les cours sont maintenus le 13 novembre, sauf les cours du soir.",
+            "Les cours sont maintenus, sauf les cours du soir.",
+            "Les cours sont maintenus, à l'exception des cours de la formation continue.",
+            "Les cours sont finalement maintenus le 13 novembre.",
+            "Les cours seront finalement maintenus, sauf ceux du programme 243.",
+            "La levée des cours du 13 novembre est annulée, sauf pour la formation continue.",
+        ).forEach { body ->
+            val result = SchoolNoticeInterpreter.interpret(listOf(confirmed.copy(body = body))).single()
+            assertEquals(body, SchoolNoticeStatus.UPDATED, result.status)
+            assertFalse(body, result.classesMarked)
+            assertNull(body, result.until)
+            assertEquals(body, "", SchoolNoticeInterpreter.applyLifts(listOf(marked),
+                SchoolNoticeInterpreter.lifts(listOf(result)), listOf(marked), day.minusDays(14)).single().collegeLift)
+        }
+        val conditional = confirmed.copy(body = "$confirmedBody\n\nSi les portes sont ouvertes, les cours sont maintenus.")
+        // Unknown conditional phrasing cannot withdraw a confirmed blanket cancellation.
+        assertEquals(SchoolNoticeStatus.CONFIRMED, SchoolNoticeInterpreter.interpret(listOf(conditional)).single().status)
+    }
+
+    @Test fun negatedMaintenanceNeverWithdrawsAConfirmedCancellation() {
+        listOf("Les cours ne seront pas maintenus le 13 novembre.", "Les cours ne sont pas maintenus.",
+            "Les cours ne seront plus maintenus le 13 novembre.", "Les cours sont non maintenus le 13 novembre.",
+            "Les cours ne peuvent pas être maintenus le 13 novembre.", "Les cours ne seront jamais maintenus.",
+            "Les cours n'ont pas été maintenus le 13 novembre.").forEach { sentence ->
+            val read = SchoolNoticeInterpreter.interpret(listOf(confirmed.copy(body = "$confirmedBody\n\n$sentence"))).single()
+            assertEquals(sentence, SchoolNoticeStatus.CONFIRMED, read.status)
+            assertTrue(sentence, read.classesMarked)
+            assertEquals(sentence, LocalTime.of(18, 0), SchoolNoticeInterpreter.lifts(listOf(read)).single().until)
+        }
+    }
+
+    @Test fun anUnrelatedNegationNeverSuppressesAnAffirmativeMaintenanceCorrection() {
+        val day = LocalDate.of(2026, 11, 13)
+        val marked = lesson("a", day, 8, lift = "2026-11-13@18:00")
+        listOf(
+            "MISE À JOUR : Le Collège ne sera pas fermé le 13 novembre, les cours sont maintenus.",
+            "La grève n'aura pas lieu, les cours sont maintenus le 13 novembre.",
+            "Contrairement à ce qui a été annoncé, la levée n'aura pas lieu : les cours sont maintenus le 13 novembre.",
+            "Il n'y a plus de boycott le 13 novembre; les cours sont maintenus.",
+        ).forEach { sentence ->
+            listOf(sentence, "$sentence\n\n$confirmedBody").forEach { body ->
+                val read = SchoolNoticeInterpreter.interpret(listOf(confirmed.copy(body = body))).single()
+                assertEquals(body, SchoolNoticeStatus.UPDATED, read.status)
+                assertFalse(body, read.classesMarked)
+                assertNull(body, read.until)
+                assertTrue(body, SchoolNoticeInterpreter.lifts(listOf(read)).isEmpty())
+                assertEquals(body, "", SchoolNoticeInterpreter.applyLifts(listOf(marked),
+                    SchoolNoticeInterpreter.lifts(listOf(read)), listOf(marked), day.minusDays(14)).single().collegeLift)
+            }
+            val correction = confirmed.copy(id = "correction", subject = "Mise à jour du 13 novembre", body = sentence)
+            listOf(listOf(confirmed, correction), listOf(correction, confirmed)).forEach { notices ->
+                val chosen = SchoolNoticeInterpreter.interpret(notices).single()
+                assertEquals(sentence, "correction", chosen.sourceId)
+                assertEquals(sentence, SchoolNoticeStatus.UPDATED, chosen.status)
+                assertFalse(sentence, chosen.classesMarked)
+            }
+        }
+    }
+
+    @Test fun continuingEducationJoinedToASiteNeverCancelsEveryImportedClass() {
+        val day = LocalDate.of(2026, 11, 13)
+        val original = lesson("unrelated-site", day, 9)
+        listOf(
+            "Les cours de la formation continue et ceux du pavillon B auront lieu comme prévu.",
+            "Les activités de la Formation continue ainsi que les cours au Campus de l'est de Laval auront lieu comme prévu.",
+            "Les cours de la formation continue de même que ceux du bâtiment B pourront avoir lieu.",
+        ).forEach { exception ->
+            val read = SchoolNoticeInterpreter.interpret(listOf(confirmed.copy(body = "$confirmedBody\n\n$exception"))).single()
+            assertEquals(exception, SchoolNoticeStatus.CONFIRMED, read.status)
+            assertFalse(exception, read.classesMarked)
+            assertTrue(exception, SchoolNoticeInterpreter.lifts(listOf(read)).isEmpty())
+            assertEquals(exception, listOf(original), SchoolNoticeInterpreter.applyLifts(listOf(original),
+                SchoolNoticeInterpreter.lifts(listOf(read)), emptyList(), day.minusDays(14)))
+        }
+    }
+
+    @Test fun unsupportedPartialDayTimingNeverBecomesAWholeDayLifting() {
+        listOf(
+            "Les cours sont levés le 13 novembre après 13h.",
+            "Les cours sont levés le 13 novembre à partir de 13h.",
+            "Les cours sont levés le 13 novembre en matinée.",
+            "Les cours sont levés le 13 novembre dans l'après-midi.",
+            "Les cours sont levés le 13 novembre de 8h à 13h.",
+            "Les cours sont levés le 13 novembre. Les cours reprendront à 13h.",
+            "Les cours sont levés le 13 novembre. Les cours reprennent à 13h.",
+            "Les cours sont levés le 13 novembre jusqu'à 25h.",
+            "Les cours sont levés le 13 novembre jusqu'à 180h.",
+            "Les cours sont levés le 13 novembre jusqu'à180h.",
+            "Les cours sont levés le 13 novembre jusqu'à 18h000.",
+            "Les cours sont levés le 13 novembre jusqu'à 13h et jusqu'à 18h.",
+            "Les cours sont levés le 13 novembre jusqu'à 13h. Les cours sont levés jusqu'à 18h.",
+            "Les cours sont levés le 13 novembre jusqu'à 18h. Les cours reprendront à 13h.",
+        ).forEach { body ->
+            val result = SchoolNoticeInterpreter.interpret(listOf(confirmed.copy(body = body))).single()
+            assertFalse(body, result.classesMarked)
+            assertTrue(body, SchoolNoticeInterpreter.lifts(listOf(result)).isEmpty())
+        }
+        val contradictoryTitle = confirmed.copy(subject = "Levée des cours le 13 novembre jusqu'à 18h",
+            body = "Les cours sont levés le 13 novembre jusqu'à 13h.")
+        assertFalse(SchoolNoticeInterpreter.interpret(listOf(contradictoryTitle)).single().classesMarked)
+        val supported = confirmed.copy(body = "Les cours sont levés le 13 novembre jusqu'à 13h. Les cours reprendront à 13h.")
+        val bounded = SchoolNoticeInterpreter.interpret(listOf(supported)).single()
+        assertTrue(bounded.classesMarked)
+        assertEquals(LocalTime.of(13, 0), bounded.until)
+    }
+
+    @Test fun aBroadSubjectNeverMakesANarrowConditionalOrDifferentDayBodyCancelAllClasses() {
+        listOf(
+            "Les cours de la formation continue sont levés le 13 novembre.",
+            "Les cours du programme 243 sont annulés le 13 novembre seulement.",
+            "Le Collège pourrait décréter une levée des cours le 13 novembre si une ligne de piquetage est constatée.",
+            "Les cours sont levés le 20 novembre.",
+            "Consultez le portail pour connaître les modalités.",
+        ).forEach { body ->
+            val result = SchoolNoticeInterpreter.interpret(listOf(confirmed.copy(body = body))).single()
+            assertFalse(body, result.classesMarked)
+            assertTrue(body, SchoolNoticeInterpreter.lifts(listOf(result)).isEmpty())
+        }
+        val broad = confirmed.copy(body = "Les cours sont levés le 13 novembre jusqu'à 18 h.")
+        assertTrue(SchoolNoticeInterpreter.interpret(listOf(broad)).single().classesMarked)
+    }
+
+    @Test fun buildingAndDeliveryRestrictionsNeverCancelEveryImportedClass() {
+        val cases = listOf(
+            "Fermeture du pavillon B le 13 novembre" to "Le pavillon B est fermé le 13 novembre. Les cours qui s'y donnent sont annulés.",
+            "Fermeture du bâtiment B le 13 novembre" to "Le bâtiment B est fermé le 13 novembre. Les cours sont annulés.",
+            "Fermeture du campus de Laval le 13 novembre" to "Le campus de Laval est fermé le 13 novembre. Les cours sont annulés.",
+            "Fermeture du Collège le 13 novembre" to "Le Collège est fermé le 13 novembre. Les cours en ligne sont maintenus.",
+            "Levée des cours le 13 novembre" to "Les cours en présentiel sont annulés le 13 novembre.",
+            "Levée des cours le 13 novembre" to "Les cours sont levés le 13 novembre. Les cours à distance seront maintenus.",
+            "Levée des cours le 13 novembre" to "Les cours hybrides sont annulés le 13 novembre.",
+            "Fermeture du Collège le 13 novembre" to "Le Collège est fermé le 13 novembre. Les cours en ligne ne sont pas annulés.",
+            "Fermeture du Collège le 13 novembre" to "Le Collège est fermé le 13 novembre. Les cours à distance auront lieu comme prévu.",
+            "Levée des cours le 13 novembre" to "Les cours sont annulés au Pavillon principal, à Espace Montmorency et au Campus de l'est de Laval, mais les cours du campus sont maintenus.",
+            "Levée des cours le 13 novembre" to "Les cours au Pavillon principal sont annulés le 13 novembre, tandis que ceux à Espace Montmorency et au Campus de l'est de Laval auront lieu comme prévu.",
+        )
+        val day = LocalDate.of(2026, 11, 13)
+        cases.forEach { (subject, body) ->
+            val read = SchoolNoticeInterpreter.interpret(listOf(confirmed.copy(subject = subject, body = body)))
+            assertEquals(body, 1, read.size)
+            assertFalse(body, read.single().classesMarked)
+            assertTrue(body, SchoolNoticeInterpreter.lifts(read).isEmpty())
+            val original = lesson("unrelated-building-or-online", day, 9)
+            assertEquals(body, listOf(original), SchoolNoticeInterpreter.applyLifts(listOf(original),
+                SchoolNoticeInterpreter.lifts(read), emptyList(), day.minusDays(14)))
+        }
+        // The actual college notice explicitly covers every regular teaching site and still qualifies.
+        assertTrue(SchoolNoticeInterpreter.interpret(listOf(confirmed)).single().classesMarked)
+        assertTrue(SchoolNoticeInterpreter.interpret(listOf(confirmed.copy(body =
+            "Le Collège est fermé le 13 novembre. Les cours sont annulés."))).single().classesMarked)
+    }
+
+    @Test fun anUnreadReplacementKeepsExistingMarksWithoutMarkingNewOrMovedClasses() {
+        val day = LocalDate.of(2026, 11, 13)
+        val marked = lesson("a", day, 8, lift = "2026-11-13@18:00")
+        val newClass = lesson("b", day, 9)
+        val moved = lesson("a", day.plusDays(1), 8)
+        val unknown = listOf(SchoolClassLift(day, null, day, preserveOnly = true))
+        assertEquals(listOf(marked, newClass, moved), SchoolNoticeInterpreter.applyLifts(
+            listOf(marked.copy(collegeLift = ""), newClass, moved), unknown, listOf(marked), day.minusDays(14)))
+        val nextDay = lesson("c", day.plusDays(1), 10)
+        val withKnownLifting = unknown + SchoolClassLift(day.plusDays(1), LocalTime.of(18, 0), day)
+        val result = SchoolNoticeInterpreter.applyLifts(listOf(marked, nextDay), withKnownLifting, listOf(marked), day.minusDays(14))
+        assertEquals(marked, result.first())
+        assertEquals("2026-11-13@18:00", result.last().collegeLift)
     }
 
     @Test fun noticeUpdatesAreReportedAsSchoolDayChanges() {

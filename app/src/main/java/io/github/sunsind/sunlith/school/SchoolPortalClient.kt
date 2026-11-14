@@ -66,7 +66,9 @@ internal class SchoolPortalClient private constructor(address: String, private v
     }
     suspend fun portalLinks(token: String): List<Pair<String, String>> {
         val info = request("api/informations", token, false) as JSONObject
-        val links = info.optJSONArray("Liens") ?: return emptyList()
+        // A missing or null list means the college publishes no links. Any other non-list value is an unexpected answer.
+        if (!info.has("Liens") || info.isNull("Liens")) return emptyList()
+        val links = info.get("Liens") as? JSONArray ?: throw SchoolFailure(SchoolError.INVALID_DATA)
         schoolRequire(links.length() <= 200)
         return (0 until links.length()).mapNotNull { links.optJSONObject(it) }.mapNotNull { j ->
             val code = j.text("Code"); val description = j.text("Description")

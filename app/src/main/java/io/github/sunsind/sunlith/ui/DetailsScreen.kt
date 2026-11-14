@@ -70,24 +70,53 @@ import io.github.sunsind.sunlith.data.TodoMarker
 import java.time.Instant
 import java.time.ZoneId
 
+/** Provider facts that need a query: the stored draft and why editing is blocked. Loaded together, replaced only when ready. */
+private class DetailsMeta(val draft: EventDraft?, val blockReason: EditBlockReason?)
+
+/** The opened event as the calendar shows it now, with its school projection, or null when its date is not loaded. */
+internal fun liveDetailsEvent(opened: CalendarEvent, loaded: List<CalendarEvent>): CalendarEvent? {
+    val key = opened.key()
+    loaded.firstOrNull { it.key() == key }?.let { return it }
+    if (!opened.rrule.isNullOrBlank()) return null
+    return loaded.singleOrNull { it.id == opened.id && it.calendarId == opened.calendarId && it.rrule.isNullOrBlank() }
+}
+
+/** What can be known about editing before the provider answers. A school projection means the school sync owns it. */
+internal fun knownDetailsBlock(shown: CalendarEvent): EditBlockReason? =
+    if (shown.school != null) EditBlockReason.SCHOOL_MANAGED else null
+
+/** Notes come from the shown event. The stored draft is only used for an event the calendar has not loaded. */
+internal fun detailsDescription(shown: CalendarEvent, live: Boolean, draftDescription: String?): String =
+    if (live) shown.description else draftDescription ?: shown.description
+
 @Composable
-fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
+fun DetailsScreen(vm: SunlithViewModel, opened: CalendarEvent) {
     val p = LocalPalette.current
     val f = rememberFormats()
     val context = LocalContext.current
     val zone = ZoneId.systemDefault()
+    // Screen.Details keeps the copy that was tapped. Reloads replace it with the current projection, so a To-do or
+    // Search copy gains its school details and an edited event never shows stale text.
+    val found = remember(opened, vm.events) { liveDetailsEvent(opened, vm.events) }
+    val event = found ?: opened
+    val live = found != null
     val calendar = vm.calendars.firstOrNull { it.id == event.calendarId }
     val writable = calendar?.writable == true
     val series = !event.rrule.isNullOrBlank()
-    var draft by remember(event.id) { mutableStateOf<EventDraft?>(null) }
-    var blockReason by remember(event.id) { mutableStateOf<EditBlockReason?>(null) }
-    var permissionsLoaded by remember(event.id) { mutableStateOf(false) }
-    LaunchedEffect(event.id, vm.events, vm.todoRevision) {
-        permissionsLoaded = false
-        draft = vm.loadDraft(event.id)
-        blockReason = vm.editBlockReason(event.id)
-        permissionsLoaded = true
+    var meta by remember(event.id) { mutableStateOf<DetailsMeta?>(null) }
+    val revision = listOf(event.title, event.description, event.location, event.startMillis, event.endMillis, event.rrule,
+        event.allDay, knownDetailsBlock(event), calendar?.writable, vm.todoRevision)
+    LaunchedEffect(event.id, revision) {
+        // The previous answer stays on screen while this refresh runs, so rows never disappear and come back.
+        val draft = vm.loadDraft(event.id)
+        meta = DetailsMeta(draft, vm.editBlockReason(event.id))
     }
+    val loaded = meta
+    val draft = loaded?.draft
+    // A school projection is only attached after the school ledger matched the provider row, which is the same check
+    // the provider query starts with. So the managed notice is known in the first frame, with the title.
+    val blockReason = knownDetailsBlock(event) ?: loaded?.blockReason
+    val permissionsLoaded = loaded != null
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var confirmSeriesEdit by rememberSaveable { mutableStateOf(false) }
     BackHandler { vm.back() }
@@ -154,14 +183,14 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
                     SecondaryText(stringResource(R.string.details_timezone, event.timeZone))
                 }
             }
-            val rule = draft?.rrule ?: event.rrule
+            val rule = if (live) event.rrule else draft?.rrule ?: event.rrule
             if (!rule.isNullOrBlank()) DetailRow(Icons.Outlined.Repeat) { PrimaryText(f.repeat(rule)) }
             DetailRow(Icons.Outlined.Event) {
                 PrimaryText(calendar?.name ?: event.calendarName.ifBlank { stringResource(R.string.unknown_calendar) })
                 calendar?.account?.takeIf { it.isNotBlank() && it != calendar.name }?.let { SecondaryText(it) }
             }
             if (calendar != null && !calendar.writable) DetailRow(Icons.Outlined.Lock) { SecondaryText(stringResource(R.string.details_read_only)) }
-            if (writable && permissionsLoaded && blockReason != null) DetailRow(Icons.Outlined.Lock) {
+            if ((writable || !permissionsLoaded) && blockReason != null) DetailRow(Icons.Outlined.Lock) {
                 SecondaryText(stringResource(when (blockReason) {
                     EditBlockReason.GUESTS -> R.string.details_guests
                     EditBlockReason.RECURRENCE_EXCEPTION -> R.string.details_exceptions
@@ -171,6 +200,9 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
                     else -> R.string.details_unsupported
                 }))
             }
+            // Everything below depends on the provider query. It appears once, complete, below rows already on screen,
+            // and a later refresh keeps the previous answer until the new one is ready.
+            if (permissionsLoaded) {
             DetailRow(Icons.Outlined.CheckBox) {
                 val todoLabel = stringResource(R.string.todo_tag)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -179,9 +211,9 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
                         SecondaryText(stringResource(if (series) R.string.todo_tag_series_hint else R.string.todo_tag_hint))
                     }
                     Switch(
-                        checked = TodoMarker.has(draft?.description ?: event.description),
+                        checked = TodoMarker.has(detailsDescription(event, live, draft?.description)),
                         onCheckedChange = { vm.setEventTodo(event, it) },
-                        enabled = writable && permissionsLoaded && blockReason == null && event.id !in vm.todoSavingIds,
+                        enabled = writable && blockReason == null && event.id !in vm.todoSavingIds,
                         colors = switchColors(),
                         modifier = Modifier.semantics { contentDescription = todoLabel },
                     )
@@ -209,7 +241,7 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
             draft?.reminderMinutes?.takeIf { it.isNotEmpty() && periods.isEmpty() }?.let { reminders ->
                 DetailRow(Icons.Outlined.Notifications) { reminders.sorted().forEach { PrimaryText(f.reminder(it)) } }
             }
-            val notes = TodoMarker.strip(if (periods.isNotEmpty()) event.description else draft?.description ?: event.description)
+            val notes = TodoMarker.strip(if (periods.isNotEmpty()) event.description else detailsDescription(event, live, draft?.description))
             if (absences.isNotEmpty()) {
                 DetailRow(Icons.Outlined.EventBusy) {
                     SecondaryText(stringResource(R.string.details_teacher_absence))
@@ -232,6 +264,7 @@ fun DetailsScreen(vm: SunlithViewModel, event: CalendarEvent) {
                 DetailRow(Icons.AutoMirrored.Outlined.Notes) {
                     SelectionContainer { Text(notes, color = p.ink, style = MaterialTheme.typography.bodyLarge) }
                 }
+            }
             }
         }
         }

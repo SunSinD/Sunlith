@@ -1,6 +1,6 @@
 # Versioning
 
-The current version is **v0.6.9**. Android and the companion use `0.6.9`; Android's `versionCode` is `20`. This update improves timeline navigation, adds pinch zoom and view layout shortcuts, and supports larger school imports. Earlier published binaries remain unchanged.
+The current version is **v0.6.10**. Android and the companion use `0.6.10`; Android's `versionCode` is `21`. This update refines calendar transitions, timeline labels and school message loading. Earlier published binaries remain unchanged.
 
 Use plain `MAJOR.MINOR.PATCH` numbers, without testing suffixes or an extra build counter. The `v` prefix belongs to the Git tag and release title. Major zero means initial development under [Semantic Versioning](https://semver.org/). Physical-device and integration testing are still in progress.
 

@@ -1,0 +1,4 @@
+<resources>
+    <string name="calendar_class_cancelled">Cours levé</string>
+    <string name="calendar_class_cancelled_until">Cours levés jusqu\'à %1$s</string>
+</resources>

@@ -1,6 +1,8 @@
 package io.github.sunsind.sunlith.data
 
+import io.github.sunsind.sunlith.school.SchoolClassLift
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import org.junit.Assert.*
 import org.junit.Test
@@ -136,5 +138,40 @@ class SchoolEventProjectionTest {
         assertEquals(2, project(first, overlapping).size)
         val joined = project(first, event(3, at(10, 45), at(11, 35)))
         assertEquals(joined, projectSchoolEvents(joined, zone))
+    }
+
+    @Test fun cancelledPeriodsKeepTheirNoticeWhenCombinedAndKeepEveryOriginalId() {
+        val lift = SchoolClassLift(day, LocalTime.of(18, 0), day.minusDays(1))
+        fun marked(event: CalendarEvent) = event.copy(title = "Class cancelled: Synthetic course",
+            school = event.school!!.copy(lift = lift))
+        val first = marked(event(1))
+        val second = marked(event(2, at(10, 45), at(11, 35)))
+        val joined = project(first, second).single()
+        assertEquals(lift, joined.school!!.lift)
+        assertEquals("Class cancelled: Synthetic course", joined.title)
+        assertEquals(listOf(1L, 2L), joined.school.periods.map { it.eventId })
+        assertEquals(first.startMillis, joined.startMillis)
+        assertEquals(second.endMillis, joined.endMillis)
+        assertEquals(SchoolAbsenceCoverage.NONE, joined.school.absenceCoverage)
+        assertEquals(listOf(joined), projectSchoolEvents(listOf(joined), zone))
+    }
+
+    @Test fun aClassThatResumesAfterTheNoticeBoundaryNeverJoinsTheCancelledRun() {
+        val before = event(1, at(17), at(17, 55)).let {
+            it.copy(title = "Class cancelled: Synthetic course", school = it.school!!.copy(
+                lift = SchoolClassLift(day, LocalTime.of(18, 0), day.minusDays(1))))
+        }
+        val after = event(2, at(18), at(18, 50))
+        val classes = project(before, after)
+        assertEquals(listOf(1L, 2L), classes.map { it.id })
+        assertNotNull(classes.first().school!!.lift)
+        assertNull(classes.last().school!!.lift)
+        assertEquals(before.endMillis, classes.first().endMillis)
+        assertEquals(after.startMillis, classes.last().startMillis)
+
+        val withdrawn = project(before.copy(title = "Synthetic course", school = before.school!!.copy(lift = null)), after).single()
+        assertNull(withdrawn.school!!.lift)
+        assertEquals("Synthetic course", withdrawn.title)
+        assertEquals(listOf(1L, 2L), withdrawn.school.periods.map { it.eventId })
     }
 }

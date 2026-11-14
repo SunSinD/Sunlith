@@ -1,11 +1,8 @@
 <resources>
     <string name="settings_rolling_five_days">Commencer au jour sélectionné</string>
-    <string name="settings_rolling_five_days_summary">Désactivé : du lundi au vendredi. Activé : 5 jours à partir de la date sélectionnée.</string>
     <string name="settings_week_header_selection">Toucher une date pour la sélectionner</string>
-    <string name="settings_week_header_selection_summary">Semaine seulement. Désactivé, les dates indiquent le jour sélectionné sans le changer au toucher.</string>
     <string name="calendar_layout_chooser_title">Disposition : %1$s</string>
     <string name="calendar_layout_chooser_action">Choisir la disposition</string>
-    <string name="settings_day_zoom">Zoom de la grille Jour</string>
     <string name="settings_week_zoom">Zoom de la grille Semaine</string>
     <string name="connection_tailscale">Tailscale / VPN</string>
     <string name="connection_tailscale_detected">Adresse VPN détectée</string>
@@ -24,7 +21,7 @@
     <string name="settings_group_empty_hours">Regrouper les heures vides dans Semaine</string>
     <string name="timeline_empty_hours">Aucun événement</string>
     <string name="timeline_loading_day">Chargement des événements</string>
-    <string name="settings_group_empty_hours_summary">Semaine seulement. Les longues plages vides sont regroupées dans une bande compacte.</string>
+    <string name="timeline_event_open">Ouvrir l’événement</string>
     <plurals name="timeline_short_event_count">
         <item quantity="one">%1$d événement court</item>
         <item quantity="other">%1$d événements courts</item>

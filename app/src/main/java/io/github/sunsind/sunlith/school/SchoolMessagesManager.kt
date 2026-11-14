@@ -36,6 +36,8 @@ import org.json.JSONObject
 /** Hooks the schedule sync uses. [items] reads only the local cache and never touches the network. */
 internal interface SchoolNoticeProvider {
     fun items(record: SchoolRecord, term: SchoolTerm, english: Boolean): List<SchoolItem>
+    /** Confirmed class liftings from the local cache, or null when no notice read has succeeded yet (keep existing marks). */
+    fun classLifts(record: SchoolRecord, term: SchoolTerm): List<SchoolClassLift>? = null
     fun refreshSoon()
     suspend fun refreshForJob()
     fun clear()
@@ -185,13 +187,37 @@ internal class SchoolMessagesManager(
         val today = LocalDate.now(ZoneId.of(record.zone))
         val inTerm = { item: SchoolItem -> !item.date.isBefore(term.start) && !item.date.isAfter(term.end) }
         if (cached?.adminAt == null) return record.baseline.filter { it.kind == SchoolNoticeInterpreter.NOTICE_KIND && inTerm(it) }
-        val titleOnly = cached.admin.filter { it.body == null }.map { it.subject }.toSet()
-        val preserved = record.baseline.filter { item -> item.kind == SchoolNoticeInterpreter.NOTICE_KIND &&
-            item.notes.any { note -> titleOnly.any { note == "Objet : $it" || note == "Subject: $it" } } }
+        val notices = SchoolNoticeInterpreter.interpret(cached.admin)
+        val unknownDates = unresolvedNoticeDates(cached.admin, notices, record.baseline)
+        val preserved = record.baseline.filter { it.kind == SchoolNoticeInterpreter.NOTICE_KIND && it.date in unknownDates }
         val preservedIds = preserved.map { it.id }.toSet()
-        return (SchoolNoticeInterpreter.items(SchoolNoticeInterpreter.interpret(cached.admin), english = false)
+        return (SchoolNoticeInterpreter.items(notices, english = false)
             .filterNot { it.id in preservedIds } + preserved)
             .filter { inTerm(it) && !it.date.isBefore(today.minusDays(14)) }
+    }
+
+    override fun classLifts(record: SchoolRecord, term: SchoolTerm): List<SchoolClassLift>? {
+        val cached = synchronized(SchoolMessagesStore.LOCK) { cache?.takeIf { it.account == record.account && it.connection == record.connection } }
+        if (cached?.adminAt == null) return null
+        val notices = SchoolNoticeInterpreter.interpret(cached.admin)
+        val unknownDates = unresolvedNoticeDates(cached.admin, notices, record.baseline)
+        // An unread or missing source is not a withdrawal. Keep only marks already on each class for that day; a
+        // newly arriving class must not gain a cancellation without a read confirmation.
+        return (SchoolNoticeInterpreter.lifts(notices) + unknownDates.map { SchoolClassLift(it, null, it, preserveOnly = true) })
+            .filter { !it.date.isBefore(term.start) && !it.date.isAfter(term.end) }
+    }
+
+    private fun unresolvedNoticeDates(admin: List<SchoolAdminNotice>, notices: List<SchoolCollegeNotice>, baseline: List<SchoolItem>): Set<LocalDate> {
+        val knownDates = notices.filter { it.detailRead }.map { it.targetDate }.toSet()
+        val titles = admin.filter { it.body == null }.map { it.subject }.toSet()
+        val previousDates = baseline.filter { item -> item.kind == SchoolNoticeInterpreter.NOTICE_KIND &&
+            item.notes.any { note -> titles.any { note == "Objet : $it" || note == "Subject: $it" } } }.map { it.date }
+        val interpretedDates = notices.map { it.targetDate }.toSet()
+        val missingDates = baseline.filter {
+            it.kind == SchoolNoticeInterpreter.NOTICE_KIND || it.collegeLift.isNotEmpty()
+        }.map { it.date }.filterNot { it in interpretedDates }
+        return (notices.filter { !it.detailRead }.map { it.targetDate } + previousDates + missingDates)
+            .filterNot { it in knownDates }.toSet()
     }
 
     override fun clear() {
@@ -202,13 +228,27 @@ internal class SchoolMessagesManager(
         mutableState.value = SchoolMessagesState()
     }
 
-    override suspend fun portalLinks(): List<SchoolPortalLink> = scope.async {
+    override suspend fun portalLinks(): List<SchoolPortalLink> = when (val result = loadPortalLinks()) {
+        is SchoolPortalLinks.Loaded -> result.links
+        is SchoolPortalLinks.Failed -> throw SchoolFailure(when (result.status) { SchoolAdminStatus.SIGN_IN -> SchoolError.SIGN_IN; SchoolAdminStatus.UNRECOGNIZED -> SchoolError.INVALID_DATA; SchoolAdminStatus.UNAVAILABLE -> SchoolError.UNAVAILABLE; else -> SchoolError.NETWORK })
+    }
+
+    override suspend fun loadPortalLinks(): SchoolPortalLinks = scope.async {
         val stamp = generation.get()
-        val record = record() ?: return@async emptyList()
+        val record = record()?.takeIf { it.disconnecting == null } ?: return@async SchoolPortalLinks.Failed(SchoolAdminStatus.NOT_LOADED)
         val client = clientFactory(record.portal, language())
-        val links = withSession(client, record) { token -> client.portalLinks(token) }.map { SchoolPortalLink(it.first, it.second) }
+        val result = try {
+            SchoolPortalLinks.Loaded(withTimeout(60_000) { withSession(client, record) { token -> client.portalLinks(token) } }.map { SchoolPortalLink(it.first, it.second) })
+        } catch (e: Exception) {
+            if (e is CancellationException && e !is TimeoutCancellationException) throw e
+            diagnose("links", e)
+            SchoolPortalLinks.Failed(when (reason(e)) { SchoolError.SIGN_IN, SchoolError.MFA_REQUIRED -> SchoolAdminStatus.SIGN_IN; SchoolError.NETWORK -> SchoolAdminStatus.NETWORK; SchoolError.UNAVAILABLE -> SchoolAdminStatus.UNAVAILABLE; else -> SchoolAdminStatus.UNRECOGNIZED })
+        }
         val current = record()
-        if (generation.get() == stamp && current?.account == record.account && current.connection == record.connection && current.disconnecting == null) links else emptyList()
+        if (generation.get() == stamp && current?.account == record.account && current.connection == record.connection && current.disconnecting == null) {
+            if (result is SchoolPortalLinks.Loaded) mutableState.value = mutableState.value.copy(portalLinksAvailable = result.links.isNotEmpty())
+            result
+        } else SchoolPortalLinks.Failed(SchoolAdminStatus.NOT_LOADED)
     }.await()
 
     override suspend fun resolvePortalLink(code: String): String? = scope.async {

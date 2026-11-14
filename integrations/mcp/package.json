@@ -1,6 +1,6 @@
 {
   "name": "@sunlith/calendar-mcp",
-  "version": "0.6.9",
+  "version": "0.6.10",
   "private": true,
   "description": "Local MCP companion for Sunlith phone calendars.",
   "type": "module",

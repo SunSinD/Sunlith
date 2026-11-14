@@ -13,6 +13,8 @@ import android.os.Parcel
 import android.util.Log
 import io.github.sunsind.sunlith.R
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 internal class SchoolCalendarWriter(
     private val context: Context,
@@ -82,15 +84,32 @@ internal class SchoolCalendarWriter(
         val linked = mutableListOf<SchoolOwned>()
         val usedCandidates = mutableSetOf<Long>()
         val incoming = feed.items.associateBy { it.id }
+        // A class whose only change is a college lifting mark is updated in place, also during a notice only sync and for
+        // recent past days, so a lifting or its withdrawal shows on the class itself. Older history stays untouched, and
+        // a row you edited yourself since the last sync keeps your edit (the mark is then not written to it).
+        val liftOnly = feed.items.filter { item ->
+            val owned = old[item.id] ?: return@filter false
+            item.kind != SchoolNoticeInterpreter.NOTICE_KIND && owned.item.collegeLift != item.collegeLift && owned.item.copy(collegeLift = item.collegeLift) == item
+        }.map { it.id }.toSet()
+        val liftChanged = liftOnly.filter { id ->
+            val owned = old.getValue(id)
+            // Older ledgers did not retain what we wrote separately. Reconstruct those conservatively; their observed
+            // revision may already contain a local edit and must never be adopted as a last-written baseline.
+            val ours = writtenValues(record.calendarId, owned)
+            USER_COLUMNS.all { ours[it].orEmpty() == owned.revision[it].orEmpty() } &&
+                !incoming.getValue(id).date.isBefore(today.minusDays(SchoolScheduleManager.NOTICE_DAYS))
+        }.toSet()
+        val liftKept = liftOnly - liftChanged
         val after = expected.filter { owned ->
-            (noticeOnly && owned.item.kind != SchoolNoticeInterpreter.NOTICE_KIND) ||
+            (noticeOnly && owned.item.kind != SchoolNoticeInterpreter.NOTICE_KIND && owned.item.id !in liftChanged) ||
                 (owned.item.id !in incoming && (owned.item.date.isBefore(today) || owned.item.date.isBefore(feed.term.start) || owned.item.date.isAfter(feed.term.end)))
         }.toMutableList()
         feed.items.forEach { item ->
-            if (noticeOnly && item.kind != SchoolNoticeInterpreter.NOTICE_KIND) return@forEach
+            if (noticeOnly && item.kind != SchoolNoticeInterpreter.NOTICE_KIND && item.id !in liftChanged) return@forEach
             var existing = old[item.id]
+            if (existing != null && item.id in liftKept) { after += existing; return@forEach }
             if (existing == null && item.date.isBefore(today) && (item.id in lostIds || item.id in baselineIds)) return@forEach
-            if (existing != null && item.date.isBefore(today) && item.kind != SchoolNoticeInterpreter.NOTICE_KIND) { after += existing; return@forEach }
+            if (existing != null && item.date.isBefore(today) && item.kind != SchoolNoticeInterpreter.NOTICE_KIND && item.id !in liftChanged) { after += existing; return@forEach }
             if (existing == null && !record.initialized) {
                 val provenance = rows.filter { row ->
                     row[Events._ID]!!.toLong() !in ownedIds && row[Events.CUSTOM_APP_PACKAGE] == context.packageName &&
@@ -126,7 +145,7 @@ internal class SchoolCalendarWriter(
             val changed = values(record.calendarId, item, uid, marker)
             val revision = existing?.revision?.managedRevision()?.toMutableMap() ?: NEW_REVISION.toMutableMap()
             revision.putAll(changed)
-            after += SchoolOwned(item, existing?.rowId ?: -1, uid, marker, revision)
+            after += SchoolOwned(item, existing?.rowId ?: -1, uid, marker, revision, changed.filterKeys { it in USER_COLUMNS })
         }
         val retained = after.map { it.item.id }.toSet()
         val removed = expected.filter { it.item.id !in retained }
@@ -338,9 +357,26 @@ internal class SchoolCalendarWriter(
         val occupied = rows.mapNotNull { it[Events.CUSTOM_APP_URI] }.toSet() + record.ledger.map { it.marker }
         return generateSequence(0) { it + 1 }.map { if (it == 0) base else "$base/$it" }.first { it !in occupied }
     }
-    private fun values(calendar: Long, item: SchoolItem, uid: String, marker: String): Map<String, String?> = linkedMapOf(
-        Events.CALENDAR_ID to calendar.toString(), Events.TITLE to when { item.kind == "absence" -> context.getString(R.string.school_sync_absence_notice, item.title); item.teacherAbsent -> context.getString(R.string.school_sync_absent_title, item.title); else -> item.title },
+    /** Old ledgers may contain observed local edits, so only reconstruct imported content when the written copy is absent. */
+    fun writtenValues(calendar: Long, entry: SchoolOwned): Map<String, String?> =
+        entry.writtenRevision ?: values(calendar, entry.item, entry.uid, entry.marker)
+
+    private fun values(calendar: Long, item: SchoolItem, uid: String, marker: String): Map<String, String?> {
+        val lift = item.collegeLift.takeIf { it.isNotEmpty() }?.let { SchoolClassLift.parse(it) }
+        return values(calendar, item, uid, marker, lift)
+    }
+    private fun values(calendar: Long, item: SchoolItem, uid: String, marker: String, lift: Pair<LocalDate, java.time.LocalTime?>?): Map<String, String?> = linkedMapOf(
+        Events.CALENDAR_ID to calendar.toString(), Events.TITLE to when {
+            item.kind == "absence" -> context.getString(R.string.school_sync_absence_notice, item.title)
+            lift != null -> context.getString(R.string.school_sync_lifted_title, item.title)
+            item.teacherAbsent -> context.getString(R.string.school_sync_absent_title, item.title)
+            else -> item.title
+        },
         Events.DESCRIPTION to buildString {
+            if (lift != null) appendLine(lift.second?.let { until ->
+                context.getString(R.string.school_sync_lifted_note_until, lift.first.toString(),
+                    until.format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(context.resources.configuration.locales[0])))
+            } ?: context.getString(R.string.school_sync_lifted_note, lift.first.toString()))
             if (item.teacherAbsent) appendLine(context.getString(R.string.school_sync_teacher_absent))
             if (item.course.isNotBlank()) appendLine(context.getString(R.string.school_sync_course, item.course, item.group))
             if (item.classKind in setOf("1", "2", "3")) appendLine(context.getString(R.string.school_sync_class_kind, when (item.classKind) { "1" -> context.getString(R.string.school_sync_theory); "2" -> context.getString(R.string.school_sync_lab); else -> context.getString(R.string.school_sync_stage) }))
@@ -369,6 +405,9 @@ internal class SchoolCalendarWriter(
             Events.CUSTOM_APP_PACKAGE, Events.CUSTOM_APP_URI, Events.HAS_ALARM, Events.HAS_ATTENDEE_DATA, Events._SYNC_ID)
         private val CALENDAR_COLUMNS = arrayOf(Calendars.ACCOUNT_NAME, Calendars.ACCOUNT_TYPE, Calendars.NAME, Calendars.OWNER_ACCOUNT, Calendars.CALENDAR_ACCESS_LEVEL)
         private val NEW_REVISION: Map<String, String?> = mapOf(Events.DELETED to "0")
+        /** Columns a person edits in a calendar app. A difference from what this app last wrote means a local edit. */
+        private val USER_COLUMNS = listOf(Events.TITLE, Events.DESCRIPTION, Events.EVENT_LOCATION, Events.DTSTART, Events.DTEND,
+            Events.DURATION, Events.ALL_DAY, Events.EVENT_TIMEZONE, Events.RRULE, Events.RDATE, Events.EXRULE, Events.EXDATE, Events.STATUS)
         private val MANAGED_COLUMNS = setOf(Events.CALENDAR_ID, Events.TITLE, Events.DESCRIPTION, Events.EVENT_LOCATION,
             Events.DTSTART, Events.DTEND, Events.DURATION, Events.ALL_DAY, Events.EVENT_TIMEZONE, Events.RRULE, Events.RDATE,
             Events.EXRULE, Events.EXDATE, Events.STATUS, Events.UID_2445, Events.DELETED, Events.CUSTOM_APP_PACKAGE, Events.CUSTOM_APP_URI)

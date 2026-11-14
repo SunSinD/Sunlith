@@ -55,7 +55,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 
-/** Fill and text colors for an event drawn as a solid block. [border] is set for the outlined (fully absent) style. */
+/** Fill and text colors for an event block. [border] marks a full teacher absence or a verified college cancellation. */
 @Immutable
 internal data class EventColors(val container: Color, val content: Color, val border: Color? = null)
 
@@ -120,14 +120,14 @@ internal fun rememberCourseColors(eventsByDay: Map<LocalDate, List<CalendarEvent
 }
 
 /**
- * School classes take their saved course color; personal events use a stable title color. A class the teacher misses
- * entirely is drawn outlined, and its text always says so, so color is never the only signal.
+ * School classes take their saved course color; personal events use a stable title color. A college cancellation or
+ * full teacher absence is drawn outlined, with explicit text so color is never the only signal.
  */
 internal fun eventColors(event: CalendarEvent, palette: SunlithPalette, courses: CourseColors, dimmed: Boolean = false): EventColors {
     if (dimmed) return eventColors(event.color, palette, dimmed = true)
     val base = event.courseKeyOrNull()?.let { courseColors(courses.slot(it), palette.dark) }
         ?: courseColors(preferredCourseSlot("event:${event.title.trim().lowercase(Locale.ROOT)}"), palette.dark)
-    if (event.school?.absenceCoverage != SchoolAbsenceCoverage.FULL) return base
+    if (event.school?.absenceCoverage != SchoolAbsenceCoverage.FULL && event.school?.lift == null) return base
     val border = if (base.container == palette.raised) palette.ink else base.container
     return EventColors(palette.surface, palette.ink, border)
 }
@@ -145,9 +145,9 @@ internal fun eventAccent(event: CalendarEvent): Color {
     return eventColors(event, p, LocalCourseColors.current).let { it.border ?: it.container }
 }
 
-/** The course name for school classes, whose stored title can carry a status prefix; the stored title otherwise. */
+/** Keep a verified college cancellation in even the smallest Month chip. Teacher absence has its own status line. */
 internal fun CalendarEvent.displayTitle(): String =
-    school?.takeIf { it.kind == "01" && it.courseTitle.isNotBlank() }?.courseTitle ?: title
+    school?.takeIf { it.kind == "01" && it.lift == null && it.courseTitle.isNotBlank() }?.courseTitle ?: title
 
 /** Absence ranges inside this event, clipped to it and merged. Empty for a full or all-day absence. */
 internal fun CalendarEvent.partialAbsences(): List<Pair<Long, Long>> {
@@ -327,19 +327,26 @@ internal fun startMinuteOn(event: CalendarEvent, day: LocalDate, zone: ZoneId): 
 }
 
 /**
- * The teacher-absence line for a school class: "Teacher absent" when every period is missed, or the missed time only
- * ("Teacher absent 1:30 - 2:20 p.m.") when the class continues afterwards. Null when nothing is missed. [compact]
- * gives the shorter form for narrow timeline blocks.
+ * School status keeps college cancellations distinct from teacher absences. Teacher absences include the exact missed
+ * time when only part of the class is affected. Null when neither applies. [compact] shortens narrow timeline labels.
  */
 @Composable
 internal fun absenceStatus(event: CalendarEvent, f: Formats, compact: CompactTimes? = null): String? {
     val info = event.school ?: return null
-    return when (info.absenceCoverage) {
+    val cancellation = info.lift?.let { lift ->
+        val until = lift.until
+        if (until == null) stringResource(R.string.calendar_class_cancelled)
+        else {
+            val time = compact?.time(until) ?: f.time(until)
+            stringResource(R.string.calendar_class_cancelled_until, time)
+        }
+    }
+    val teacher = when (info.absenceCoverage) {
         SchoolAbsenceCoverage.NONE -> null
         SchoolAbsenceCoverage.FULL -> stringResource(if (compact != null) R.string.calendar_absent_short else R.string.calendar_teacher_absent)
         SchoolAbsenceCoverage.PARTIAL -> {
             val ranges = event.partialAbsences()
-            if (ranges.isEmpty()) return null
+            if (ranges.isEmpty()) return cancellation
             val zone = ZoneId.systemDefault()
             val text = ranges.joinToString(", ") { (start, end) ->
                 if (compact == null) f.timeRange(start, end)
@@ -348,10 +355,11 @@ internal fun absenceStatus(event: CalendarEvent, f: Formats, compact: CompactTim
             stringResource(if (compact != null) R.string.calendar_absent_short_range else R.string.calendar_teacher_absent_range, text)
         }
     }
+    return listOfNotNull(cancellation, teacher).takeIf { it.isNotEmpty() }?.joinToString("\n")
 }
 
 /**
- * An event card for lists: title, then any teacher absence, the time and the room. Combined school classes list
+ * An event card for lists: title, then any school status, the time and the room. Combined school classes list
  * each period's room with its start time when the rooms differ.
  */
 @Composable

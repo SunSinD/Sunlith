@@ -3,6 +3,7 @@ package io.github.sunsind.sunlith.ui
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.SpringSpec
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Immutable
@@ -37,6 +38,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -46,7 +49,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +65,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -75,9 +83,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -92,6 +101,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.intl.LocaleList
@@ -131,6 +143,11 @@ private val TIMELINE_BLOCK_INSET = 1.dp
 private val TIMELINE_CARD_SIDE_INSET = 2.dp
 private val TIMELINE_CARD_SHAPE = RoundedCornerShape(8.dp)
 private val TIMELINE_LABEL_PADDING = 3.dp
+/**
+ * Room below Day's lowest card for the floating Add button (56dp, 16dp from the edge) and the Today pill (48dp touch
+ * target, 20dp from the edge), with a margin so the card stays fully visible and tappable above both.
+ */
+internal val TIMELINE_ACTION_CLEARANCE = 104.dp
 
 internal fun timelineMinimumBlockHeight(titleLine: Dp, density: Density): Dp = with(density) {
     val pixels = ceil(titleLine.toPx()).toInt() + (TIMELINE_BLOCK_INSET.roundToPx() + TIMELINE_LABEL_PADDING.roundToPx()) * 2
@@ -356,6 +373,13 @@ internal fun unbandedZoomPercent(live: Float): Float {
     }
 }
 
+/**
+ * The glide from a released scale to the saved one. Critically damped, so a pinch released past the range returns
+ * to its limit without dipping below it and bouncing back.
+ */
+internal fun timelineZoomSettleSpec(): SpringSpec<Float> =
+    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+
 /** A released pinch settles inside the saved range, in 5% steps. */
 internal fun settledZoomPercent(live: Float): Int =
     ((live.coerceIn(TIMELINE_ZOOM_MIN.toFloat(), TIMELINE_ZOOM_MAX.toFloat()) / 5f).roundToInt() * 5).coerceIn(TIMELINE_ZOOM_MIN, TIMELINE_ZOOM_MAX)
@@ -363,6 +387,28 @@ internal fun settledZoomPercent(live: Float): Int =
 /** The scroll offset that keeps [minute] under [focalY], kept inside the content like the scroll state would. */
 internal fun focalScroll(axis: TimelineAxis, minute: Float, focalY: Float, contentHeight: Float, viewportHeight: Float): Float =
     (axis.minuteToY(minute) - focalY).coerceIn(0f, (contentHeight - viewportHeight).coerceAtLeast(0f))
+
+/**
+ * A [minute] and the viewport y ([focalY]) where it is drawn. Keeping it there while the grid around it is rescaled
+ * or regrouped keeps that spot of the day physically still on screen.
+ */
+internal class TimelineAnchor(val minute: Float, val focalY: Float) {
+    /** The scroll offset that draws [minute] at [focalY] on [axis], whose grid starts [top] px into the content. */
+    fun scrollOn(axis: TimelineAxis, top: Float): Float = top + axis.minuteToY(minute) - focalY
+
+    /** The same minute after the content scrolled by [delta] px, for example under a finger that is already dragging. */
+    fun scrolledBy(delta: Float): TimelineAnchor = TimelineAnchor(minute, focalY - delta)
+}
+
+/**
+ * The minute drawn at viewport [focalY] when the content is scrolled to [scrollY] and the grid starts [top] px into
+ * it. Above midnight (the leading edge) or below the grid's end, the anchor is the edge minute at the y where it is
+ * actually drawn, so a scroll inside the edge room is kept instead of snapping to the grid.
+ */
+internal fun timelineAnchor(axis: TimelineAxis, top: Float, scrollY: Float, focalY: Float = 0f): TimelineAnchor {
+    val minute = axis.yToMinute(scrollY + focalY - top)
+    return TimelineAnchor(minute, top + axis.minuteToY(minute) - scrollY)
+}
 
 /**
  * Below this width a multi-day timeline scrolls sideways inside its page. At normal text sizes a seven-day week uses
@@ -378,9 +424,21 @@ internal fun timelineOverflowThreshold(dayCount: Int, titleSize: Dp, fontScale: 
 /** Narrowest seven-day column at normal text sizes: room for a hyphenated word and the date circle's digits. */
 internal fun timelineCompactColumn(titleSize: Dp): Dp = maxOf(30.dp, titleSize * 2.4f)
 
-internal fun timelineTodayDirection(axis: TimelineAxis, minute: Int, scrollY: Int, viewportHeight: Int): TodayDirection? {
+/** Today shows the hour before [currentMinute], so the last hour stays in view above the now line. */
+internal fun timelineTodayMinute(currentMinute: Int): Int = (currentMinute / 60 - 1).coerceAtLeast(0) * 60
+
+/**
+ * The scroll offset that puts [minute] at the very top of the viewport on a grid that starts [top] px into the
+ * scrolling content, where its events are actually drawn. Midnight keeps the room above it, so the 00:00 label is
+ * never cut off.
+ */
+internal fun timelineTodayScroll(axis: TimelineAxis, minute: Int, top: Float): Float =
+    if (minute <= 0) 0f else top + axis.minuteToY(minute)
+
+/** [top] is the room above midnight inside the scrolling content, so the check uses where the time is really drawn. */
+internal fun timelineTodayDirection(axis: TimelineAxis, minute: Int, scrollY: Int, viewportHeight: Int, top: Float = 0f): TodayDirection? {
     if (viewportHeight <= 0) return null
-    val y = axis.minuteToY(minute)
+    val y = top + axis.minuteToY(minute)
     return when {
         y < scrollY -> TodayDirection.Up
         y > scrollY + viewportHeight -> TodayDirection.Down
@@ -397,15 +455,67 @@ internal class TimelineZoom {
     var target: Int? = null
     /** True while a two-finger gesture owns the timeline, false during the spring. */
     var pinching by mutableStateOf(false)
+    /**
+     * The saved zoom that card packing, short event rows and grouped empty hours keep from the moment a pinch starts
+     * until its settle ends. Committing on release then cannot regroup the grid under a scale that is still moving;
+     * the regroup happens once, together with the end of the live scale.
+     */
+    var frozen by mutableStateOf<Int?>(null)
+
+    /**
+     * The minute under the fingers when the scale settled, and the scroll it was read at. Clearing [frozen] can
+     * regroup empty hours between the top of the screen and the fingers, so the timeline restores this point
+     * instead of its top minute. Read once by the next settled composition ([takeHandoff]).
+     */
+    private var handoff: TimelineAnchor? = null
+    private var handoffScroll = 0
+
+    /** Ends the live scale and the frozen layout in one snapshot write, so one composition shows the settled grid. */
+    fun finish(anchor: TimelineAnchor? = null, scrollY: Int = 0) {
+        handoff = anchor
+        handoffScroll = scrollY
+        live = null
+        frozen = null
+    }
+
+    /** The settled anchor, moved by any scrolling since [finish] so a drag that already started is kept, then cleared. */
+    fun takeHandoff(scrollY: Int): TimelineAnchor? =
+        handoff?.scrolledBy((scrollY - handoffScroll).toFloat()).also { handoff = null }
 }
+
+/**
+ * Scroll positions computed from the newest grid are applied after the scrolling content below this modifier is
+ * measured and before it is placed. A rescaled, regrouped or newly opened grid is therefore first drawn already at
+ * its position, without hiding it for the frames an effect would need. [target] returns the wanted offset or null.
+ */
+internal fun Modifier.timelinePosition(scroll: ScrollState, target: () -> Float?): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    layout(placeable.width, placeable.height) {
+        target()?.let { y ->
+            val wanted = y.roundToInt().coerceIn(0, scroll.maxValue.coerceAtLeast(0))
+            if (wanted != scroll.value) scroll.dispatchRawDelta((wanted - scroll.value).toFloat())
+        }
+        placeable.place(0, 0)
+    }
+}
+
+/**
+ * Height of Day's scrolling content. The grid ends with [labelRoom] for its midnight label. The floating Add and
+ * Today controls only need [clearance] below the lowest card, so an empty evening no longer ends in a tall blank
+ * band while a late card can still scroll above them.
+ */
+internal fun timelineContentHeight(gridHeight: Float, lowestCardBottom: Float, labelRoom: Float, clearance: Float): Float =
+    maxOf(gridHeight + labelRoom, lowestCardBottom + clearance)
 
 /**
  * Two-finger pinch on the vertical distance between the fingers. One finger is never consumed, so page swipes, vertical
  * scrolling and taps behave as before. Two fingers must deliberately change their separation beyond twice the system
  * touch slop and 8% of their starting span. Multi-touch cancels event clicks; only an active pinch drives the scale.
  * The minute under the fingers stays under them, the
- * value is saved on release, then the scale springs to it with a little bounce. A new finger pair continues from the
- * current scale. A touch during the spring, or a cancelled gesture, lands on the saved value without a remap.
+ * value is saved on release, then the scale glides to it without overshoot, still anchored at the fingers. A new
+ * finger pair continues from the current scale. A touch during the glide, or a cancelled gesture, lands on the saved
+ * value without a remap. The layout stays [TimelineZoom.frozen] until the scale is settled; the minute under the
+ * fingers (or under the new touch) then stays at that same screen y when the settled grid regroups empty hours.
  */
 internal fun Modifier.timelinePinch(
     zoom: TimelineZoom,
@@ -413,14 +523,20 @@ internal fun Modifier.timelinePinch(
     scope: CoroutineScope,
     motion: Boolean,
     saved: () -> Int,
-    minuteAt: (percent: Float, contentY: Float) -> Float,
+    /** The minute drawn at viewport y [focalY] on the grid at [percent], with the content scrolled to [scrollY]. */
+    anchorAt: (percent: Float, scrollY: Float, focalY: Float) -> TimelineAnchor,
     scrollFor: (percent: Float, minute: Float, focalY: Float) -> Float,
     onCommit: (Int) -> Unit,
 ): Modifier = pointerInput(zoom, scroll, scope, motion) {
     val minSpan = 48.dp.toPx()
     val spanSlop = viewConfiguration.touchSlop * 2f
+    fun minuteAt(percent: Float, focalY: Float) = anchorAt(percent, scroll.value.toFloat(), focalY).minute
     fun follow(percent: Float, minute: Float, focalY: Float) {
         scroll.dispatchRawDelta(scrollFor(percent, minute, focalY) - scroll.value)
+    }
+    // Ends the live scale and hands the point under the fingers, read from the actual scroll, to the settled grid.
+    fun settle(percent: Float, focalY: Float) {
+        zoom.finish(anchorAt(percent, scroll.value.toFloat(), focalY), scroll.value)
     }
     // Shows the saved scale for one frame while still live, so clearing it changes neither the axis nor the scroll.
     fun land(target: Int, minute: Float, focalY: Float) {
@@ -431,10 +547,9 @@ internal fun Modifier.timelinePinch(
         scroll.dispatchRawDelta(placed - scroll.value)
         zoom.settle = scope.launch {
             withFrameNanos { }
-            // A just committed zoom may have regrouped empty hours in that frame. Shift by that change only, so a
-            // drag that already started keeps its own movement.
+            // Shift by any change of the target position only, so a drag that already started keeps its own movement.
             scroll.dispatchRawDelta(scrollFor(value, minute, focalY) - placed)
-            zoom.live = null
+            settle(value, focalY)
         }
     }
     awaitEachGesture {
@@ -442,9 +557,9 @@ internal fun Modifier.timelinePinch(
         if (zoom.settle?.isActive == true) {
             zoom.settle?.cancel()
             zoom.settle = null
-            zoom.live?.let { live ->
-                land(zoom.target ?: saved(), minuteAt(live, scroll.value + down.position.y), down.position.y)
-            }
+            val live = zoom.live
+            if (live != null) land(zoom.target ?: saved(), minuteAt(live, down.position.y), down.position.y)
+            else zoom.finish()
         }
         var pinching = false
         var pair: Pair<PointerId, PointerId>? = null
@@ -476,7 +591,7 @@ internal fun Modifier.timelinePinch(
                         val current = zoom.live ?: saved().toFloat()
                         startPercent = unbandedZoomPercent(current)
                         startSpan = span
-                        minute = minuteAt(current, scroll.value + focalY)
+                        minute = minuteAt(current, focalY)
                     } else {
                         if (!pinching) {
                             if (abs(span - startSpan) <= maxOf(spanSlop, startSpan * 0.08f)) {
@@ -485,12 +600,13 @@ internal fun Modifier.timelinePinch(
                             }
                             pinching = true
                             zoom.pinching = true
+                            if (zoom.frozen == null) zoom.frozen = saved()
                             zoom.settle?.cancel()
                             zoom.settle = null
                             scope.launch { scroll.stopScroll() }
                             // Activation starts at the current fingers without applying the ignored jitter as a jump.
                             startSpan = span
-                            minute = minuteAt(saved().toFloat(), scroll.value + focalY)
+                            minute = minuteAt(saved().toFloat(), focalY)
                         }
                         val percent = pinchZoomPercent(startPercent, span / startSpan)
                         zoom.live = percent
@@ -509,7 +625,7 @@ internal fun Modifier.timelinePinch(
                 onCommit(target)
                 if (scope.isActive) {
                     land(target, minute, focalY)
-                } else zoom.live = null
+                } else zoom.finish()
             }
         }
         val from = zoom.live
@@ -520,20 +636,20 @@ internal fun Modifier.timelinePinch(
         val anchor = minute
         val y = focalY
         zoom.settle = scope.launch {
-            // The committed zoom can regroup empty hours. Hold the focal minute on that composition before moving.
-            withFrameNanos { }
+            // The layout is frozen, so the commit above changes nothing on screen while the scale moves.
             follow(from, anchor, y)
             if (motion && from != target.toFloat()) {
-                animate(from, target.toFloat(), animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow)) { value, _ ->
+                animate(from, target.toFloat(), animationSpec = timelineZoomSettleSpec()) { value, _ ->
                     zoom.live = value
                     follow(value, anchor, y)
                 }
-            } else {
-                zoom.live = target.toFloat()
-                withFrameNanos { }
-                follow(target.toFloat(), anchor, y)
             }
-            zoom.live = null
+            // Compose the saved scale once while still live, so clearing it changes neither the axis nor the scroll.
+            zoom.live = target.toFloat()
+            follow(target.toFloat(), anchor, y)
+            withFrameNanos { }
+            follow(target.toFloat(), anchor, y)
+            settle(target.toFloat(), y)
         }
     }
 }
@@ -615,8 +731,16 @@ internal fun Timeline(
         labelMeasurer.measure("Ag", titleStyle.copy(fontWeight = FontWeight.SemiBold), maxLines = 1).size.height.toDp()
     }
     val minBlock = timelineMinimumBlockHeight(maxOf(titleLine, measuredTitle), density)
-    // Packing follows the saved zoom, so short-event rows and grouped hours stay put while two fingers pinch.
-    val minMinutes = ceil(minBlock / timelineHourHeight(zoomPercent) * 60f).toInt()
+    // Packing follows the saved zoom, frozen while a pinch or its glide runs, so short-event rows and grouped hours
+    // stay put until the scale has settled.
+    val minMinutes = ceil(minBlock / timelineHourHeight(zoom.frozen ?: zoomPercent) * 60f).toInt()
+    // Midnight sits a little below the all-day area, with its rail label centered on the line instead of pushed down.
+    val railLabelPx = remember(railStyle, density) { labelMeasurer.measure("Ag", railStyle, maxLines = 1).size.height }
+    val edgePx = with(density) { (railLabelPx / 2f + 3.dp.toPx()).roundToInt() }
+    val edge = with(density) { edgePx.toDp() }
+    val topPx = edgePx.toFloat()
+    // Day's footer room is its own; Week only needs room for the last rail label.
+    val bottomPadPx = if (readableLabels) 0f else topPx
     val minColumn = if (days.size > 5 && density.fontScale <= 1.15f) timelineCompactColumn(titleSize) else maxOf(40.dp, titleSize * 3.2f)
     val overflowThreshold = timelineOverflowThreshold(days.size, titleSize, density.fontScale)
     val readableColumn = maxOf(80.dp, titleSize * 6.5f)
@@ -649,17 +773,19 @@ internal fun Timeline(
     fun axisFor(px: Float) = TimelineAxis(px, occupied, groupEmpty = groupEmptyHours, gapPx = gapPx)
     val axis = remember(occupied, hourPx, gapPx, groupEmptyHours) { axisFor(hourPx) }
     val minBlockPx = with(density) { minBlock.toPx() }
-    val bottomRoomPx = with(density) { if (readableLabels) 104.dp.toPx() else 0f }
+    val actionClearancePx = with(density) { TIMELINE_ACTION_CLEARANCE.toPx() }
+    /** Height of the grid content itself, without the top and bottom edges added around it. */
     fun contentHeightPx(a: TimelineAxis): Float {
+        if (!readableLabels) return a.totalHeight
         // Packing rounds the label up to whole minutes; reserve its actual rounded pixel height. A compact group
-        // reserves one label from its first start, like any other card.
-        fun below(start: Int, height: Int) = (a.minuteToY(start).roundToInt() + height - a.totalHeight).coerceAtLeast(0f)
+        // reserves one label from its first start, like any other card. Cards may run past midnight.
         val labelHeight = maxOf(minBlockPx, minMinutes * a.hourPx / 60f).roundToInt()
-        val footer = if (readableLabels) packed.single().maxOfOrNull { cluster ->
-            cluster.blocks.maxOf { below(it.cardStart, labelHeight) }
-        } ?: 0f else 0f
-        // Let the last label scroll above the floating Add and Today controls.
-        return a.totalHeight + footer + bottomRoomPx
+        fun y(minute: Int) = a.minuteToY(minute.coerceAtMost(DAY_MINUTES)) + (minute - DAY_MINUTES).coerceAtLeast(0) / 60f * a.hourPx
+        val lowest = packed.single().maxOfOrNull { cluster ->
+            cluster.blocks.maxOf { maxOf(a.minuteToY(it.cardStart).roundToInt() + labelHeight.toFloat(), y(it.end)) }
+        } ?: 0f
+        // The lowest card scrolls above the floating Add and Today controls; an empty evening keeps only label room.
+        return timelineContentHeight(a.totalHeight, lowest, topPx, actionClearancePx)
     }
     // While pinching, the content keeps its largest height, so scrolling to the focal minute is never clamped early.
     val timelineHeight = with(density) {
@@ -674,64 +800,48 @@ internal fun Timeline(
     val reportDirection by rememberUpdatedState(onDirectionChanged)
     // One clock for the line, the dot, the rail pill and the Today direction.
     val currentMinute by rememberCurrentMinute()
-    LaunchedEffect(scroll, autoScroll, days, today, axis, currentMinute) {
+    LaunchedEffect(scroll, autoScroll, days, today, axis, currentMinute, topPx, onDirectionChanged) {
         if (!autoScroll) return@LaunchedEffect
         if (today !in days) {
             reportDirection(null)
             return@LaunchedEffect
         }
-        snapshotFlow { timelineTodayDirection(axis, currentMinute, scroll.value, scroll.viewportSize) }
+        snapshotFlow { timelineTodayDirection(axis, currentMinute, scroll.value, scroll.viewportSize, topPx) }
             .distinctUntilChanged().collect { reportDirection(it) }
     }
     var previousAxis by remember(scroll) { mutableStateOf(axis) }
-    var pendingAxisMinute by remember(scroll) { mutableStateOf<Float?>(null) }
+    var previousTop by remember(scroll) { mutableFloatStateOf(topPx) }
+    var pendingAnchor by remember(scroll) { mutableStateOf<TimelineAnchor?>(null) }
     SideEffect {
         if (liveZoom != null) {
-            // The pinch keeps its own focal minute in place; a remap would hide the grid and fight the fingers.
+            // The pinch keeps its own focal minute in place; a remap would fight the fingers, and an older one must
+            // not replay once the scale settles.
             previousAxis = axis
-        } else if (pendingAxisMinute == null && (previousAxis.gaps != axis.gaps || previousAxis.hourPx != axis.hourPx)) {
-            // A shorter grid can clamp ScrollState during measure. Read its old minute first.
-            pendingAxisMinute = previousAxis.yToMinute(scroll.value.toFloat())
-        }
-    }
-    LaunchedEffect(axis, scroll) {
-        if (pendingAxisMinute != null) {
-            awaitScrollable(scroll)
-            withFrameNanos { }
-            pendingAxisMinute?.let { minute ->
-                val target = axis.minuteToY(minute).coerceIn(0f, scroll.maxValue.toFloat())
-                scroll.dispatchRawDelta(target - scroll.value)
+            previousTop = topPx
+            pendingAnchor = null
+            zoom.takeHandoff(scroll.value)
+        } else {
+            val settled = zoom.takeHandoff(scroll.value)
+            if (previousAxis.gaps != axis.gaps || previousAxis.hourPx != axis.hourPx || previousTop != topPx) {
+                // A shorter grid can clamp ScrollState during measure. Read the old position first; placement of the
+                // new grid restores it in the same frame (see timelinePosition). A settled pinch keeps the minute
+                // under the fingers, since regrouped hours between the top and the fingers would move it.
+                pendingAnchor = settled ?: pendingAnchor ?: timelineAnchor(previousAxis, previousTop, scroll.value.toFloat())
+                previousAxis = axis
+                previousTop = topPx
             }
-            pendingAxisMinute = null
         }
-        previousAxis = axis
     }
     var sharedPositioned by remember {
         mutableStateOf(sharedMinute == null || (scroll.value == 0 && sharedMinute.floatValue == 0f))
     }
-    LaunchedEffect(scroll) {
-        if (!sharedPositioned) {
-            try {
-                if (awaitScrollable(scroll)) {
-                    withFrameNanos { }
-                    scroll.scrollTo(axis.minuteToY(sharedMinute!!.floatValue).roundToInt())
-                }
-            } finally { sharedPositioned = true }
-        }
-    }
+    var positionedAsActive by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(scroll, autoScroll, axis, sharedMinute) {
-        if (sharedMinute == null) return@LaunchedEffect
-        if (autoScroll) {
-            snapshotFlow { if (sharedPositioned && previousAxis === axis) axis.yToMinute(scroll.value.toFloat()) else null }
-                .collect { if (it != null) sharedMinute.floatValue = it }
-        } else {
-            snapshotFlow { sharedMinute.floatValue }.collect { minute ->
-                if (awaitScrollable(scroll)) {
-                    withFrameNanos { }
-                    scroll.scrollTo(axis.minuteToY(minute).roundToInt())
-                }
-            }
-        }
+        // Only the active page publishes. Other pages take the shared minute during their own placement, so a page
+        // that becomes active already shows it and never publishes a stale offset.
+        if (sharedMinute == null || !autoScroll) return@LaunchedEffect
+        snapshotFlow { if (positionedAsActive == true && sharedPositioned && pendingAnchor == null) axis.yToMinute(scroll.value.toFloat()) else null }
+            .collect { if (it != null) sharedMinute.floatValue = it }
     }
     val gutterLabels = if (allDay.any { it.isNotEmpty() }) {
         hourLabels + listOf(allDayLabel.substringBeforeLast(' '), allDayLabel.substringAfterLast(' '))
@@ -739,16 +849,11 @@ internal fun Timeline(
     val reportFocus by rememberUpdatedState(onFocusHandled)
     var positionedFocus by remember { mutableStateOf<TimelineFocus?>(null) }
     val focusPending = autoScroll && focus != null && focus.date in days && positionedFocus !== focus
-    if (focusPending) {
-        val request = requireNotNull(focus)
+    // New date pages use a fresh ScrollState. Placement puts the focus target in place before the first frame
+    // instead of drawing midnight and animating through unrelated events on the way to it.
+    val focusMinute = if (!focusPending) null else requireNotNull(focus).let { request ->
         val target = focusTarget(eventsOn(request.date), request.date, zone)
-        val minute = if (target != null && !target.isTimelineBanner())
-            (startMinuteOn(target, request.date, zone) - 30).coerceAtLeast(0) else 0
-        SideEffect {
-            // New date pages use a fresh ScrollState. Prime it before measurement instead of
-            // drawing midnight and animating through unrelated events on the way to the target.
-            scroll.dispatchRawDelta(axis.minuteToY(minute) - scroll.value)
-        }
+        if (target != null && !target.isTimelineBanner()) (startMinuteOn(target, request.date, zone) - 30).coerceAtLeast(0) else 0
     }
     val sideways = rememberScrollState()
     var highlighted by remember { mutableStateOf<String?>(null) }
@@ -786,17 +891,37 @@ internal fun Timeline(
         } else {
             val allDayHeight = maxHeight / 4
             var initialPositioned by rememberSaveable { mutableStateOf(false) }
-            LaunchedEffect(scroll, autoScroll, axis) {
-                if (initialPositioned) return@LaunchedEffect
-                try {
-                    if (autoScroll && showHeaders && scroll.value == 0 && focus == null && awaitScrollable(scroll)) {
-                        val anchor = if (today in days) (currentMinute / 60 - 1).coerceAtLeast(0) else DEFAULT_START_HOUR
-                        scroll.scrollTo(axis.minuteToY(anchor * 60).roundToInt().coerceIn(0, scroll.maxValue))
+            // Every programmatic position that must be right on the first drawn frame, in priority order. A pinch and
+            // its glide own the scroll themselves. One-time targets mark themselves done when applied.
+            val placementTarget: () -> Float? = {
+                val becameActive = positionedAsActive == false && autoScroll
+                positionedAsActive = autoScroll
+                when {
+                    zoom.live != null || zoom.pinching -> null
+                    focusMinute != null -> {
+                        sharedPositioned = true
+                        pendingAnchor = null
+                        axis.minuteToY(focusMinute)
                     }
-                } finally {
-                    if (coroutineContext.isActive) initialPositioned = true
+                    sharedMinute != null && (!sharedPositioned || !autoScroll || becameActive) -> {
+                        sharedPositioned = true
+                        pendingAnchor = null
+                        axis.minuteToY(sharedMinute.floatValue)
+                    }
+                    pendingAnchor != null -> pendingAnchor!!.scrollOn(axis, topPx).also { pendingAnchor = null }
+                    !initialPositioned -> {
+                        initialPositioned = true
+                        if (autoScroll && showHeaders && focus == null && scroll.value == 0 && !scroll.isScrollInProgress) {
+                            // Same spot a Today tap reaches, so tapping Today right after opening never nudges the grid.
+                            if (today in days) timelineTodayScroll(axis, timelineTodayMinute(currentMinute), topPx)
+                            else axis.minuteToY(DEFAULT_START_HOUR * 60)
+                        } else null
+                    }
+                    else -> null
                 }
             }
+            val latestPlacement = rememberUpdatedState(placementTarget)
+            val positioned = remember(scroll) { Modifier.timelinePosition(scroll) { latestPlacement.value() } }
             val handled = handledTodayRequest ?: remember { mutableIntStateOf(todayRequest) }
             val pinching = zoom.pinching
             val settling = liveZoom != null
@@ -814,7 +939,7 @@ internal fun Timeline(
                     if (!awaitScrollable(scroll)) return@LaunchedEffect
                     withFrameNanos { }
                     scroll.stopScroll()
-                    val target = axis.minuteToY((currentMinute / 60 - 1).coerceAtLeast(0) * 60).roundToInt()
+                    val target = timelineTodayScroll(axis, timelineTodayMinute(currentMinute), topPx).roundToInt()
                         .coerceIn(0, scroll.maxValue)
                     if (target != scroll.value) {
                         if (!motion) scroll.scrollTo(target)
@@ -851,14 +976,14 @@ internal fun Timeline(
                         val y = axis.minuteToY(minute).roundToInt().coerceIn(0, scroll.maxValue)
                         scroll.scrollTo(y)
                         // Completed focus owns this position, including a concurrent axis change.
-                        pendingAxisMinute = null
+                        pendingAnchor = null
                         previousAxis = axis
                     }
                     positionedFocus = request
                     highlighted = target?.key()
                 } finally { if (coroutineContext.isActive) reportFocus(request) }
             }
-            // Only the hour grid waits for its scroll position; the dates above it stay visible and current while paging.
+            // The dates stay outside the scrolling hour grid, which positions itself before drawing.
             Column(Modifier.fillMaxSize()) {
                 if (showHeaders) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
@@ -908,23 +1033,23 @@ internal fun Timeline(
                 val tintIndex = if (tintToday) todayIndex else -1
                 Row(
                     Modifier.weight(1f).fillMaxWidth().testTag("calendar_timeline")
-                        .graphicsLayer {
-                            alpha = if (focusPending || !sharedPositioned || !initialPositioned || pendingAxisMinute != null) 0f else 1f
-                        }
                         .then(if (onZoomChange == null || days.size <= 1) Modifier else Modifier.timelinePinch(
                             zoom, scroll, pinchScope, motion,
                             saved = { savedZoom },
-                            minuteAt = { percent, y -> zoomAxis(percent).yToMinute(y) },
+                            // The grid starts [edge] below the top of the scrolling content.
+                            anchorAt = { percent, scrollY, focalY -> timelineAnchor(zoomAxis(percent), topPx, scrollY, focalY) },
                             scrollFor = { percent, minute, focalY ->
                                 val target = zoomAxis(percent)
-                                focalScroll(target, minute, focalY, zoomHeight(target), scroll.viewportSize.toFloat())
+                                focalScroll(target, minute, focalY - topPx, zoomHeight(target) + topPx + bottomPadPx, scroll.viewportSize.toFloat())
                             },
                             onCommit = { commitZoom?.invoke(it) },
                         ))
-                        .verticalScroll(scroll),
+                        .then(positioned)
+                        .verticalScroll(scroll)
+                        .padding(top = edge, bottom = with(density) { bottomPadPx.toDp() }),
                 ) {
                     Box(Modifier.width(gutter).height(timelineHeight)) {
-                        HourRail(hourLabels, railStyle, hourPx, Modifier.fillMaxSize(), axis)
+                        HourRail(hourLabels, railStyle, hourPx, Modifier.fillMaxSize(), axis, overhang = edgePx)
                     }
                     Box(Modifier.weight(1f).height(timelineHeight).then(dayArea)) {
                         Row(
@@ -1031,6 +1156,8 @@ internal suspend fun awaitScrollable(scroll: ScrollState): Boolean =
 internal fun HourRail(
     labels: List<String>, style: TextStyle, hourPx: Float, modifier: Modifier,
     axis: TimelineAxis = TimelineAxis(hourPx, emptyList()),
+    /** Pixels a label may extend past the top and bottom of the rail, into the edge room around the grid. */
+    overhang: Int = 0,
 ) {
     val p = LocalPalette.current
     val endPad = with(LocalDensity.current) { 6.dp.roundToPx() }
@@ -1050,7 +1177,7 @@ internal fun HourRail(
         layout(constraints.maxWidth, constraints.maxHeight) {
             placeables.forEachIndexed { i, placeable ->
                 val y = (positions[i] - placeable.height / 2f).roundToInt()
-                    .coerceIn(0, (constraints.maxHeight - placeable.height).coerceAtLeast(0))
+                    .coerceIn(-overhang, (constraints.maxHeight - placeable.height + overhang).coerceAtLeast(-overhang))
                 placeable.placeRelative((constraints.maxWidth - placeable.width - endPad).coerceAtLeast(0), y)
             }
         }
@@ -1178,7 +1305,7 @@ internal fun DayColumn(
                 EventBlock(
                     first.event, day, zone, f, compact, style, cluster.blocks.any { highlighted == it.event.key() }, motion, end - start,
                     Modifier.offset(y = with(density) { y(start).toDp() }).width(maxWidth).height(height(start, end)),
-                    more = cluster.blocks.drop(1).map { it.event }, keepCount = readableLabels,
+                    more = cluster.blocks.drop(1).map { it.event }, keepCount = readableLabels, wholeTimes = !readableLabels,
                 ) { onOverflow(day, cluster.blocks.map { it.event }) }
                 return@forEach
             }
@@ -1199,7 +1326,7 @@ internal fun DayColumn(
                             .width(cardWidth).height(height(start, b.end)),
                         more = group.orEmpty().filter { it !== head }.map { it.event },
                         centered = timelineCentersLabel(cardWidth, maxWidth),
-                        originMillis = b.event.startMillis, keepCount = group != null,
+                        originMillis = b.event.startMillis, keepCount = group != null, wholeTimes = !readableLabels,
                     ) { if (group == null) onOpen(b.event) else onOverflow(day, group.map { it.event }) }
                 }
             }
@@ -1222,14 +1349,25 @@ internal fun DayColumn(
     }
 }
 
-/** The time shown inside a block: a compact range for one-day events, the usual start or end label otherwise. */
-private fun blockTime(context: android.content.Context, event: CalendarEvent, day: LocalDate, zone: ZoneId, f: Formats, compact: CompactTimes): String {
+/**
+ * The times a block may show, best first: a compact range for one-day events (the usual start or end label
+ * otherwise), then the start alone. Week cards show the first one that fits on one line (see [timelineCardTime]).
+ */
+private fun blockTimes(context: android.content.Context, event: CalendarEvent, day: LocalDate, zone: ZoneId, f: Formats, compact: CompactTimes): List<String> {
     val span = event.span(zone)
-    if (span.multiDay) return context.timeLabel(event, day, zone, f)
+    if (span.multiDay) return listOf(context.timeLabel(event, day, zone, f))
     val start = Instant.ofEpochMilli(event.startMillis).atZone(zone).toLocalTime()
-    if (event.endMillis <= event.startMillis) return compact.time(start)
-    return compact.range(start, Instant.ofEpochMilli(event.endMillis).atZone(zone).toLocalTime())
+    if (event.endMillis <= event.startMillis) return listOf(compact.time(start))
+    return listOf(compact.range(start, Instant.ofEpochMilli(event.endMillis).atZone(zone).toLocalTime()), compact.time(start)).distinct()
 }
+
+/**
+ * The time a narrow card shows: the first of [choices] that fits whole on one line of [width], or null. A range never
+ * wraps into pieces such as "8 -", "10:45", "a.m.", which read like an equation. The exact range stays in the
+ * spoken description and the event list.
+ */
+internal fun timelineCardTime(choices: List<String>, width: Int, lineWidth: (String) -> Int): String? =
+    choices.firstOrNull { lineWidth(it) <= width }
 
 /**
  * One rounded card at the event's exact start, inset so neighbouring cards never touch. The label is centered
@@ -1239,14 +1377,16 @@ private fun blockTime(context: android.content.Context, event: CalendarEvent, da
  * no room for readable lanes in Week, or a Day compact group): it shows one title, a "+N" count and a rail with one
  * color mark per event at its real time, and opens the group's list. A [keepCount] card (a Day group) puts the count
  * on the title's first line when that leaves a readable title, and also when there is no height for a line of its
- * own, so it never drops its count. The card starts at [originMillis]. The spoken description always has every field, and names every event of a group.
+ * own, so it never drops its count. Otherwise the count is a small badge under the title. A [wholeTimes] card (Week)
+ * shows its time on one unbroken line, or its start alone, or no time. The card starts at [originMillis]. The spoken
+ * description always has every field, and names every event of a group.
  */
 @Composable
 private fun EventBlock(
     event: CalendarEvent, day: LocalDate, zone: ZoneId, f: Formats, compact: CompactTimes, style: TextStyle,
     highlight: Boolean, motion: Boolean, shownMinutes: Int, modifier: Modifier,
     more: List<CalendarEvent> = emptyList(), centered: Boolean = false, originMillis: Long = event.startMillis,
-    keepCount: Boolean = false, onClick: () -> Unit,
+    keepCount: Boolean = false, wholeTimes: Boolean = false, onClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val typography = MaterialTheme.typography
@@ -1254,7 +1394,7 @@ private fun EventBlock(
     val plainTitle = event.displayTitle().ifBlank { untitled }
     val title = if (event.todo) "☐ $plainTitle" else plainTitle
     val todoText = stringResource(R.string.todo_tag)
-    val time = remember(event, day, zone, compact) { blockTime(context, event, day, zone, f, compact) }
+    val times = remember(event, day, zone, compact) { blockTimes(context, event, day, zone, f, compact) }
     val status = absenceStatus(event, f, compact)
     val spokenStatus = absenceStatus(event, f)
     val rooms = remember(event.location) { compactRooms(event.location) }
@@ -1368,7 +1508,15 @@ private fun EventBlock(
             val moreLayout = remember(more.size, statusStyle, innerWidth, countInline) {
                 if (more.isEmpty() || countInline) null else wholeField(moreText, statusStyle)
             }
-            val timeLayout = remember(time, detailStyle, innerWidth) { wholeField(time, detailStyle) }
+            // Week cards ([wholeTimes]) show one unbroken line: the range, else the start, else no time at all.
+            val time = remember(times, detailStyle, innerWidth, wholeTimes) {
+                if (!wholeTimes) times.first()
+                else timelineCardTime(times, innerWidth) { measurer.measure(it, detailStyle, maxLines = 1, softWrap = false).size.width }
+            }
+            val timeLayout = remember(time, detailStyle, innerWidth) { time?.let { wholeField(it, detailStyle) } }
+            // The count of a Week group reads as a badge beside the title's hierarchy, never as a line of the time.
+            val badgePad = with(density) { 5.dp.roundToPx() }
+            val countBadge = moreLayout != null && moreLayout.size.width + badgePad * 2 <= innerWidth
             val statusLayout = remember(status, statusStyle, innerWidth) { status?.let { wholeField(it, statusStyle) } }
             val roomLayout = remember(rooms, detailStyle, innerWidth) {
                 rooms.takeIf { it.isNotEmpty() }?.let {
@@ -1411,12 +1559,15 @@ private fun EventBlock(
                     }
                 } else if (titleLines > 0) Text(shownTitle, Modifier.fillMaxWidth(), color = colors.content, style = titleStyle,
                     textAlign = align, maxLines = titleLines, overflow = TextOverflow.Ellipsis)
-                if (showMore) Text(moreText, Modifier.fillMaxWidth(), color = colors.content, style = statusStyle,
-                    textAlign = align, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                if (showMore) Box(Modifier.fillMaxWidth(), contentAlignment = if (centered) Alignment.Center else Alignment.CenterStart) {
+                    Text(moreText, if (!countBadge) Modifier else Modifier
+                        .background(colors.content.copy(alpha = 0.16f), CircleShape).padding(horizontal = 5.dp),
+                        color = colors.content, style = statusStyle, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                }
                 if (showStatus && status != null) Text(status, Modifier.fillMaxWidth(), color = colors.content, style = statusStyle,
                     textAlign = align, maxLines = statusLayout!!.lineCount, overflow = TextOverflow.Clip)
-                if (showTime) Text(time, Modifier.fillMaxWidth(), color = colors.content, style = detailStyle,
-                    textAlign = align, maxLines = timeLayout!!.lineCount, overflow = TextOverflow.Clip)
+                if (showTime && time != null) Text(time, Modifier.fillMaxWidth(), color = colors.content, style = detailStyle,
+                    textAlign = align, maxLines = timeLayout!!.lineCount, softWrap = !wholeTimes, overflow = TextOverflow.Clip)
                 if (showRooms) Text(rooms, Modifier.fillMaxWidth(), color = colors.content, style = detailStyle,
                     textAlign = align, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
             }
@@ -1492,40 +1643,80 @@ internal fun TimelineShortEventButton(count: Int, fullLabel: Boolean = false, on
     }
 }
 
+/**
+ * The list behind a group card, a stack or "+N": one outlined row per event with its color, every field a card can
+ * hide (teacher absence, exact times, room) and a chevron, so each row reads as something to open. The dialog is as
+ * tall as its rows, up to the screen, with Close right below them. A row calls [onOpen] first and only then
+ * [onClose], so a caller can keep the window until the frame that draws the event and no frame shows the calendar
+ * in between.
+ */
 @Composable
 internal fun TimelineEventList(events: List<CalendarEvent>, f: Formats, onOpen: (CalendarEvent) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
-    AlertDialog(onDismissRequest = onClose,
-        title = { Text(context.resources.getQuantityString(R.plurals.event_count, events.size, events.size)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                events.forEach { event ->
-                    val title = event.displayTitle().ifBlank { context.getString(R.string.untitled) }
-                    val todo = context.getString(R.string.todo_tag).takeIf { event.todo }
-                    val zone = ZoneId.systemDefault()
-                    val startDay = Instant.ofEpochMilli(event.startMillis).atZone(zone).toLocalDate()
-                    val endDay = Instant.ofEpochMilli(event.endMillis).atZone(zone).toLocalDate()
-                    val time = if (startDay == endDay) f.range(f.time(event.startMillis), f.time(event.endMillis))
-                        else f.range("${f.dayLong(startDay)} ${f.time(event.startMillis)}", "${f.dayLong(endDay)} ${f.time(event.endMillis)}")
-                    // Each entry keeps every field a timeline card can hide: teacher absence, exact times and room.
-                    val status = absenceStatus(event, f)
-                    val room = event.location.takeIf { it.isNotBlank() }
-                    val description = listOfNotNull(title, todo, status, time, room).joinToString(", ")
-                    TextButton(onClick = { onClose(); onOpen(event) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        .clearAndSetSemantics {
-                            contentDescription = description
-                            role = Role.Button
-                            onClick { onClose(); onOpen(event); true }
-                        },
-                        shape = RoundedCornerShape(12.dp)) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(if (event.todo) "\u2610 $title" else title)
-                            if (status != null) Text(status, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                            Text(time, style = MaterialTheme.typography.bodySmall)
-                            if (room != null) Text(room, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
+    val p = LocalPalette.current
+    val titleText = context.resources.getQuantityString(R.plurals.event_count, events.size, events.size)
+    val openLabel = stringResource(R.string.timeline_event_open)
+    Dialog(onDismissRequest = onClose) {
+        Surface(
+            Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("timeline_event_list"),
+            shape = AlertDialogDefaults.shape, color = AlertDialogDefaults.containerColor,
+            tonalElevation = AlertDialogDefaults.TonalElevation,
+        ) {
+            Column(Modifier.padding(top = 20.dp, bottom = 4.dp)) {
+                Text(titleText, Modifier.padding(horizontal = 20.dp).semantics { heading() }, color = p.ink,
+                    style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(12.dp))
+                Column(
+                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    events.forEach { event -> TimelineEventChoice(event, f, openLabel) { onOpen(event); onClose() } }
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onClose) { Text(stringResource(R.string.action_close)) }
                 }
             }
-        }, confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.action_close)) } })
+        }
+    }
+}
+
+@Composable
+private fun TimelineEventChoice(event: CalendarEvent, f: Formats, openLabel: String, onClick: () -> Unit) {
+    val context = LocalContext.current
+    val p = LocalPalette.current
+    val title = event.displayTitle().ifBlank { context.getString(R.string.untitled) }
+    val todo = context.getString(R.string.todo_tag).takeIf { event.todo }
+    val zone = ZoneId.systemDefault()
+    val startDay = Instant.ofEpochMilli(event.startMillis).atZone(zone).toLocalDate()
+    val endDay = Instant.ofEpochMilli(event.endMillis).atZone(zone).toLocalDate()
+    val time = if (startDay == endDay) f.range(f.time(event.startMillis), f.time(event.endMillis))
+        else f.range("${f.dayLong(startDay)} ${f.time(event.startMillis)}", "${f.dayLong(endDay)} ${f.time(event.endMillis)}")
+    val status = absenceStatus(event, f)
+    val room = event.location.takeIf { it.isNotBlank() }
+    val description = listOfNotNull(title, todo, status, time, room).joinToString(", ")
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).height(IntrinsicSize.Min).clip(shape)
+            .background(p.ink.copy(alpha = if (p.dark) 0.05f else 0.03f)).border(1.dp, p.line, shape)
+            .testTag("timeline_event_choice_${event.id}")
+            .clickable(role = Role.Button, onClickLabel = openLabel, onClick = onClick)
+            .clearAndSetSemantics {
+                contentDescription = description
+                role = Role.Button
+                onClick(openLabel) { onClick(); true }
+            }
+            .padding(start = 10.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(4.dp).fillMaxHeight().clip(CircleShape).background(eventAccent(event)))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(if (event.todo) "\u2610 $title" else title, color = p.ink, style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (status != null) Text(status, color = p.ink, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+            Text(time, color = p.muted, style = MaterialTheme.typography.bodyMedium)
+            if (room != null) Text(room, color = p.muted, style = MaterialTheme.typography.bodyMedium)
+        }
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.padding(start = 4.dp).size(20.dp), tint = p.muted)
+    }
 }

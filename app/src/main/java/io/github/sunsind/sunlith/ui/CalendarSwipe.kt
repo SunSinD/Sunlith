@@ -158,7 +158,8 @@ internal class PeriodSwipeState(private val scope: CoroutineScope) {
         job?.cancel()
         job = scope.launch {
             if (motion && offset != target) {
-                animate(offset, target, animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy)) { value, _ -> offset = value }
+                animate(offset, target, animationSpec = spring(stiffness = Spring.StiffnessMedium,
+                    dampingRatio = Spring.DampingRatioNoBouncy, visibilityThreshold = 1f)) { value, _ -> offset = value }
             }
             if (dir != 0) onCommit(dir)
             offset = 0f

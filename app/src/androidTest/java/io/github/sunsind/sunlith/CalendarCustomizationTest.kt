@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -220,7 +221,7 @@ class CalendarCustomizationTest {
             assertTrue(button.visibleBounds.height() >= 48 * context.resources.displayMetrics.density)
             captureMinor("agenda-$arrow")
             val request = vm.todayRequest
-            button.click()
+            clickCurrent(By.pkg(context.packageName).res("calendar_today_$arrow"))
             awaitUi { vm.selectedDate == today && vm.todayRequest == request + 1 &&
                 !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
         }
@@ -243,7 +244,7 @@ class CalendarCustomizationTest {
                 scrollAgendaUntilArrow(scroll, arrow)
                 assertEquals(today, vm.selectedDate)
                 captureMinor("$display-$arrow")
-                node(By.pkg(context.packageName).res("calendar_today_$arrow")).click()
+                clickCurrent(By.pkg(context.packageName).res("calendar_today_$arrow"))
                 awaitUi { !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
             }
         }
@@ -275,7 +276,7 @@ class CalendarCustomizationTest {
             val scroll = if (days.last().isBefore(today)) Direction.UP else Direction.DOWN
             val arrow = if (scroll == Direction.UP) "down" else "up"
             scrollAgendaUntilArrow(scroll, arrow)
-            node(By.pkg(context.packageName).res("calendar_today_$arrow")).click()
+            clickCurrent(By.pkg(context.packageName).res("calendar_today_$arrow"))
             awaitUi { !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
             assertEquals(today, vm.selectedDate)
             assertTrue("The events-only fixture must contain no event on today", vm.eventsByDay[today].isNullOrEmpty())
@@ -294,7 +295,7 @@ class CalendarCustomizationTest {
         onMain { vm.changeViewMode(ViewMode.Month); vm.changeMonthLayout("full"); vm.select(adjacent.atDay(15)) }
         node(By.pkg(context.packageName).res("calendar_full_month"))
         val arrow = if (adjacent < current) "next" else "previous"
-        node(By.pkg(context.packageName).res("calendar_today_$arrow")).click()
+        clickCurrent(By.pkg(context.packageName).res("calendar_today_$arrow"))
         awaitUi { vm.month == current && vm.selectedDate == today &&
             !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
         captureMinor("grid-spillover-return")
@@ -871,7 +872,7 @@ class CalendarCustomizationTest {
             listOf(-1L to "next", 1L to "previous").forEach { (offset, arrow) ->
                 onMain { vm.select(today.plusDays(offset)) }
                 val request = vm.todayRequest
-                node(By.pkg(context.packageName).res("calendar_today_$arrow")).click()
+                clickCurrent(By.pkg(context.packageName).res("calendar_today_$arrow"))
                 awaitUi { vm.selectedDate == today && vm.todayRequest == request + 1 &&
                     !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
             }
@@ -906,8 +907,8 @@ class CalendarCustomizationTest {
         assertFalse("Today must have left the rendered schedule viewport.", visibleMarker(today))
         assertTrue("The schedule must have reached a later synthetic event.", markers.keys.filter { it > today }.any(::visibleMarker))
         val request = vm.todayRequest
-        node(By.pkg(context.packageName).res("calendar_today_up")).click()
-        awaitUi { vm.todayRequest == request + 1 && visibleMarker(today) && !device.hasObject(todayAction) }
+        clickCurrent(By.pkg(context.packageName).res("calendar_today_up"))
+        awaitUi { vm.selectedDate == today && vm.todayRequest == request + 1 && visibleMarker(today) && !device.hasObject(todayAction) }
 
         val selected = today.plusDays(10)
         listOf("cards", "timeline").forEach { layout ->
@@ -923,9 +924,14 @@ class CalendarCustomizationTest {
             }
             awaitUi { visibleMarker(today) && !device.hasObject(todayAction) }
             assertEquals("Seeing Today by scrolling must not rewrite the far selected date.", selected, vm.selectedDate)
-            onMain { vm.changeDayLayout(layout) }
+            onMain {
+                assertFalse("The cached schedule must finish loading before changing its layout.", vm.loadingEvents)
+                vm.changeDayLayout(layout)
+                assertFalse("A loaded Day must not postpone focus for an unnecessary provider query.", vm.loadingEvents)
+            }
             node(By.pkg(context.packageName).res(if (layout == "cards") "calendar_day_cards" else "calendar_timeline"))
             node(By.pkg(context.packageName).res("calendar_today_previous"))
+            assertEquals(selected, vm.selectedDate)
 
             showSchedule(today)
             scrollAgendaUntilArrow(Direction.DOWN, "up")
@@ -951,7 +957,7 @@ class CalendarCustomizationTest {
             assertTrue(device.swipe(if (towardLeft) right else left, bounds.centerY(), if (towardLeft) left else right, bounds.centerY(), 24))
             val expected = today.plusDays(if (forward) 1 else -1)
             awaitUi { vm.selectedDate == expected }
-            node(By.pkg(context.packageName).res("calendar_today_${if (forward) "previous" else "next"}")).click()
+            clickCurrent(By.pkg(context.packageName).res("calendar_today_${if (forward) "previous" else "next"}"))
             awaitUi { vm.selectedDate == today && !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
         }
         onMain {
@@ -965,7 +971,7 @@ class CalendarCustomizationTest {
         val right = agenda.right - agenda.width() / 6
         assertTrue(device.swipe(if (timelineIsRtl()) left else right, agenda.centerY(), if (timelineIsRtl()) right else left, agenda.centerY(), 24))
         awaitUi { vm.month == java.time.YearMonth.from(today).plusMonths(1) }
-        node(By.pkg(context.packageName).res("calendar_today_previous")).click()
+        clickCurrent(By.pkg(context.packageName).res("calendar_today_previous"))
         val until = SystemClock.elapsedRealtime() + 700
         while (SystemClock.elapsedRealtime() < until) {
             refreshAccessibility()
@@ -1159,7 +1165,7 @@ class CalendarCustomizationTest {
     fun gridDateOpensItsLateTimelineEventWithoutScrollingAndBackRestoresTheMonth() {
         val target = date.plusDays(2)
         val late = addTimed(target, "Late evening drill-down marker", 20, 21)
-        onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout("timeline"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeDrilldownLayout("timeline"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
         awaitUi { vm.events.any { it.id == late } }
         val parentMonth = vm.month
         node(day(target)).click()
@@ -1171,10 +1177,11 @@ class CalendarCustomizationTest {
             timeline != null && bounds != null && bounds.height() > 20 && bounds.top >= timeline.top && bounds.bottom <= timeline.bottom
         }
         assertTrue("Opening a date must bring its 20:00 event into the hourly viewport without a swipe.", node(eventSelector).visibleBounds.height() > 20)
-        if (target == vm.today) {
-            assertFalse(device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))))
-        } else {
-            node(By.pkg(context.packageName).res("calendar_today_${if (target < vm.today) "next" else "previous"}"))
+        assertFalse("A date opened from Month must show only that day, without the seven-date strip.",
+            device.hasObject(By.pkg(context.packageName).res("calendar_day_picker")))
+        listOf("calendar_today_previous", "calendar_today_next").forEach { tag ->
+            assertFalse("Month drilldown must not reserve a bottom return-to-Today button: $tag",
+                device.hasObject(By.pkg(context.packageName).res(tag)))
         }
         device.pressBack()
         awaitUi { vm.viewMode == ViewMode.Month && vm.month == parentMonth && vm.selectedDate == date }
@@ -1185,6 +1192,71 @@ class CalendarCustomizationTest {
         assertTrue("Opening the same date again must renew the event focus request.", node(eventSelector).visibleBounds.height() > 20)
         device.pressBack()
         awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
+    }
+
+    @Test
+    fun monthGridDayShowsOnlyItsEventsAndItsToolbarSwitchesBetweenListAndHours() {
+        val target = date.plusDays(2)
+        val ownTitle = "Grid day selected event"
+        val otherTitle = "Grid day neighbouring event"
+        val ownId = addTimed(target, ownTitle, 11, 12)
+        val otherId = addTimed(target.plusDays(1), otherTitle, 11, 12)
+        onMain {
+            vm.applyLayoutPreset("planner")
+            vm.changeDayLayout("schedule")
+            vm.changeDrilldownLayout("cards")
+            vm.changeViewMode(ViewMode.Month)
+            vm.select(date)
+            vm.reload()
+        }
+        awaitUi { vm.events.any { it.id == ownId } && vm.events.any { it.id == otherId } }
+        node(day(target)).click()
+        awaitUi { vm.hasDayParent && vm.selectedDate == target && vm.viewMode == ViewMode.Day }
+        fun assertOnlySelectedDay() {
+            node(By.pkg(context.packageName).res("calendar_day_drilldown"))
+            assertFalse("A Month date opens its own events without a seven-day selector.",
+                device.hasObject(By.pkg(context.packageName).res("calendar_day_picker")))
+            assertFalse("The neighbouring day's events do not belong in this date's panel.",
+                device.hasObject(By.pkg(context.packageName).textContains(otherTitle)))
+            listOf("calendar_today_previous", "calendar_today_next", "calendar_today_up", "calendar_today_down").forEach { tag ->
+                assertFalse("The focused Month date does not need a floating Today arrow: $tag",
+                    device.hasObject(By.pkg(context.packageName).res(tag)))
+            }
+            assertEquals(target, vm.selectedDate)
+            assertEquals("The focused date must preserve the standalone Day layout.", "schedule", vm.dayLayout)
+        }
+        node(By.pkg(context.packageName).res("day_event_$ownId"))
+        assertOnlySelectedDay()
+        val toggle = By.pkg(context.packageName).res("calendar_day_layout_toggle")
+        val switch = node(toggle)
+        assertTrue("The list/hour switch must advertise a direct action.", switch.isClickable && switch.isEnabled)
+        assertTrue("The icon must have a spoken action name.", !switch.contentDescription.isNullOrBlank())
+        val left = switch.visibleBounds
+        val right = node(By.pkg(context.packageName).res("calendar_header_actions")).visibleBounds
+        assertTrue("The list/hour switch sits directly before More, without overlapping it: $left / $right",
+            left.right <= right.left && right.left - left.right <= 12 * context.resources.displayMetrics.density)
+        assertEquals(english.getString(R.string.settings_day_all_hours), switch.contentDescription)
+        switch.click()
+        node(By.pkg(context.packageName).res("calendar_timeline"))
+        revealTimelineEvent(ownId)
+        assertOnlySelectedDay()
+        assertEquals("The action label must describe switching back to the list.",
+            english.getString(R.string.settings_week_list), node(toggle).contentDescription)
+        node(toggle).click()
+        node(By.pkg(context.packageName).res("calendar_day_cards"))
+        node(By.pkg(context.packageName).res("day_event_$ownId"))
+        assertOnlySelectedDay()
+        captureFinal("month-grid-focused-day-list")
+        device.pressBack()
+        awaitUi { vm.viewMode == ViewMode.Month && !vm.hasDayParent && vm.selectedDate == date }
+        assertEquals("schedule", vm.dayLayout)
+        assertFalse("The focused-day switch must leave with the focused-day panel.", device.hasObject(toggle))
+        node(By.pkg(context.packageName).res("calendar_full_month"))
+        onMain { vm.changeViewMode(ViewMode.Day); vm.select(target) }
+        node(By.pkg(context.packageName).res("calendar_day_picker"))
+        node(By.pkg(context.packageName).res("calendar_schedule"))
+        assertEquals("schedule", vm.dayLayout)
+        assertFalse("Opening a Month date must not remove the standalone Day view's date selector.", vm.hasDayParent)
     }
 
     @Test
@@ -1200,23 +1272,27 @@ class CalendarCustomizationTest {
         assertEquals("cards", vm.dayLayout)
         assertEquals("list", vm.weekLayout)
         assertEquals("full", vm.monthLayout)
+        assertEquals("A fresh Month drilldown uses All hours independently of the migrated Day preference.", "timeline", vm.drilldownLayout)
         awaitUi { vm.events.any { it.id == late } }
         node(day(target)).click()
         awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
-        node(By.pkg(context.packageName).res("calendar_day_cards"))
-        node(By.pkg(context.packageName).res("day_event_$late"))
+        node(By.pkg(context.packageName).res("calendar_timeline"))
+        revealTimelineEvent(late)
+        assertEquals("cards", vm.dayLayout)
         device.pressBack()
         awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
-        onMain { vm.changeDayLayout("cards"); vm.changeMonthLayout("split"); vm.changeMonthLayout("full") }
+        onMain { vm.changeDayLayout("schedule"); vm.changeDrilldownLayout("cards"); vm.changeMonthLayout("split"); vm.changeMonthLayout("full") }
         recreateActivity()
-        assertEquals("cards", vm.dayLayout)
+        assertEquals("schedule", vm.dayLayout)
+        assertEquals("cards", vm.drilldownLayout)
         assertEquals("list", vm.weekLayout)
         node(day(target)).click()
         awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
         node(By.pkg(context.packageName).res("calendar_day_cards"))
         node(By.pkg(context.packageName).res("day_event_$late"))
         recreateActivity()
-        assertEquals("cards", vm.dayLayout)
+        assertEquals("schedule", vm.dayLayout)
+        assertEquals("cards", vm.drilldownLayout)
         node(By.pkg(context.packageName).res("calendar_day_cards"))
         device.pressBack()
         awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
@@ -1229,7 +1305,7 @@ class CalendarCustomizationTest {
         val crowded = date.plusDays(4)
         addTimed(single, "Single direct-day event", 16, 18)
         val crowdedIds = (0 until 12).map { addTimed(crowded, "Crowded direct-day event $it", 9, 10) }
-        onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout("timeline"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeDrilldownLayout("timeline"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
         awaitUi { crowdedIds.all { id -> vm.events.any { it.id == id } } }
         listOf(empty, single, crowded).forEach { target ->
             val cell = node(day(target))
@@ -1329,7 +1405,7 @@ class CalendarCustomizationTest {
                 startMillis = CalendarDates.allDayMillis(allDayDate), endMillis = CalendarDates.allDayMillis(allDayDate.plusDays(1)),
                 allDay = true, timeZone = "UTC", reminderMinutes = emptyList()))
         }
-        onMain { vm.changeMonthLayout("full"); vm.reload() }
+        onMain { vm.changeMonthLayout("full"); vm.changeDrilldownLayout("cards"); vm.reload() }
         awaitUi { vm.events.count { it.title.startsWith("Top-only all-day entry") } == 12 }
         listOf(false, true).forEach { motion ->
             listOf(allDayDate, allDayDate.plusDays(1)).forEach { target ->
@@ -1368,10 +1444,10 @@ class CalendarCustomizationTest {
         val late = addTimed(target, "Motion first timed event", 20, 21)
         val simultaneous = addTimed(target, "Motion simultaneous timed event", 20, 22)
         val capture = InstrumentationRegistry.getArguments().getString("captureMotion") == "true"
-        listOf("cards", "timeline", "schedule").forEach { layout ->
+        listOf("cards", "timeline").forEach { layout ->
             onMain {
                 vm.applyLayoutPreset("planner")
-                vm.changeDayLayout(layout)
+                vm.changeDrilldownLayout(layout)
                 vm.changeNavigationAnimation(true)
                 vm.changeViewMode(ViewMode.Month)
                 vm.select(target)
@@ -1394,7 +1470,6 @@ class CalendarCustomizationTest {
             }
             val event = By.pkg(context.packageName).res(when (layout) {
                 "timeline" -> "timeline_event_$late"
-                "schedule" -> "schedule_event_$late"
                 else -> "day_event_$late"
             })
             awaitUi { device.findObject(event)?.visibleBounds?.let { it.height() > 30 && it.top >= 0 && it.bottom <= device.displayHeight } == true }
@@ -1410,6 +1485,16 @@ class CalendarCustomizationTest {
             device.pressBack()
             awaitUi { vm.viewMode == ViewMode.Month }
         }
+        onMain {
+            vm.changeDayLayout("schedule")
+            vm.changeViewMode(ViewMode.Day)
+            vm.selectAndFocus(target)
+        }
+        node(By.pkg(context.packageName).res("calendar_day_picker"))
+        val scheduleEvent = By.pkg(context.packageName).res("schedule_event_$late")
+        awaitUi { device.findObject(scheduleEvent)?.visibleBounds?.let { it.height() > 30 && it.top >= 0 && it.bottom <= device.displayHeight } == true }
+        assertFalse("Standalone Schedule must remain separate from the Month date panel.", vm.hasDayParent)
+        assertEquals("schedule", vm.activeDayLayout)
     }
 
     @Test
@@ -1467,10 +1552,22 @@ class CalendarCustomizationTest {
         }
         val monthStartEvent = addTimed(monthStart, "Month-start timed focus", 20, 21)
         listOf("cards", "schedule").forEach { layout ->
-            onMain { vm.applyLayoutPreset("planner"); vm.changeDayLayout(layout); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+            onMain {
+                vm.applyLayoutPreset("planner")
+                vm.changeDayLayout(layout)
+                vm.changeDrilldownLayout("cards")
+                vm.changeViewMode(if (layout == "cards") ViewMode.Month else ViewMode.Day)
+                vm.selectAndFocus(if (layout == "cards") date else target)
+                vm.reload()
+            }
             awaitUi { vm.events.any { it.id == late } }
-            val dateCell = node(day(target)).visibleBounds
-            device.click(dateCell.centerX(), dateCell.top + (14 * context.resources.displayMetrics.density).toInt())
+            if (layout == "cards") {
+                val dateCell = node(day(target)).visibleBounds
+                device.click(dateCell.centerX(), dateCell.top + (14 * context.resources.displayMetrics.density).toInt())
+            } else {
+                node(By.pkg(context.packageName).res("calendar_day_picker"))
+                assertFalse("Schedule is a standalone Day layout, not a Month drilldown layout.", vm.hasDayParent)
+            }
             awaitUi { vm.viewMode == ViewMode.Day }
             val selector = By.pkg(context.packageName).res(if (layout == "cards") "day_event_$late" else "schedule_event_$late")
             awaitUi { device.findObject(selector)?.visibleBounds?.height()?.let { it > 30 } == true }
@@ -1485,7 +1582,7 @@ class CalendarCustomizationTest {
                 assertTrue("Date navigation must keep the timed event visible after the focus request is consumed.",
                     node(By.pkg(context.packageName).res("schedule_event_$monthStartEvent")).visibleBounds.height() > 30)
             }
-            device.pressBack()
+            if (layout == "cards") device.pressBack() else onMain { vm.changeViewMode(ViewMode.Month) }
             awaitUi { vm.viewMode == ViewMode.Month }
         }
     }
@@ -1755,7 +1852,7 @@ class CalendarCustomizationTest {
             "Complete title ending marker",
         ).joinToString("\n")
         val eventId = addTimed(target, title, 20, 21)
-        onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeDrilldownLayout("cards"); vm.changeViewMode(ViewMode.Month); vm.select(date); vm.reload() }
         awaitUi { vm.events.any { it.id == eventId } }
         node(day(target)).longClick()
         assertFalse("Long press must not show the removed preview.", device.hasObject(By.pkg(context.packageName).text("Open day")))
@@ -1876,7 +1973,7 @@ class CalendarCustomizationTest {
         assertTrue("Reversing must reach the previous week, rather than reset the strip.",
             requireNotNull(vm.timelineViewportEnd) <= today.minusDays(8))
         val request = vm.todayRequest
-        node(By.pkg(context.packageName).res("calendar_today_next")).click()
+        clickCurrent(By.pkg(context.packageName).res("calendar_today_next"))
         awaitUi { vm.selectedDate == today && vm.todayRequest == request + 1 &&
             vm.timelineViewportStart == today && visibleTimelineHeader(today) != null &&
             !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
@@ -2165,7 +2262,7 @@ class CalendarCustomizationTest {
         }
         awaitUi { node(By.pkg(context.packageName).res("calendar_agenda")).visibleBounds.top <= expandedFutureTop - requiredCollapse }
         captureFinal("fresh-model-collapsed-month")
-        node(By.pkg(context.packageName).res("calendar_today_previous")).click()
+        clickCurrent(By.pkg(context.packageName).res("calendar_today_previous"))
         awaitUi { vm.selectedDate == today && vm.todayRequest == 1 &&
             node(By.pkg(context.packageName).res("calendar_agenda")).visibleBounds.top >=
                 expandedTodayTop - 3 * context.resources.displayMetrics.density }
@@ -2249,8 +2346,11 @@ class CalendarCustomizationTest {
         val scroll = ScrollState(0)
         var hourPx = 0f
         var gapPx = 0f
+        var edgePx = 0f
         var start = 0
         var originalTarget = 0
+        fun targetOn(axis: TimelineAxis, minute: Int): Float =
+            axis.minuteToY(minute) + if (!focusEvent && minute > 0) edgePx else 0f
         val targetMinute = if (focusEvent) 19 * 60 + 30 else (LocalTime.now().hour - 1).coerceAtLeast(0) * 60
         val formats = Formats(english, Locale.ENGLISH)
         onMain {
@@ -2260,6 +2360,10 @@ class CalendarCustomizationTest {
                         CompositionLocalProvider(LocalDensity provides Density(1f)) {
                             val density = LocalDensity.current
                             val line = with(density) { MaterialTheme.typography.labelMedium.lineHeight.toDp() }
+                            val measurer = rememberTextMeasurer()
+                            edgePx = with(density) {
+                                (measurer.measure("Ag", MaterialTheme.typography.labelSmall, maxLines = 1).size.height / 2f + 3.dp.toPx()).roundToInt().toFloat()
+                            }
                             hourPx = with(density) { 64.dp.toPx() }
                             gapPx = with(density) { maxOf(48.dp, line * 3f).toPx() }
                             LaunchedEffect(armed.value) {
@@ -2287,7 +2391,7 @@ class CalendarCustomizationTest {
         awaitUi { scroll.viewportSize > 0 && scroll.maxValue > 100 && hourPx > 0f }
         val originalAxis = TimelineAxis(hourPx, listOf(8 * 60 to 9 * 60, 20 * 60 to 21 * 60), true, gapPx)
         onMain {
-            originalTarget = originalAxis.minuteToY(targetMinute).roundToInt().coerceIn(0, scroll.maxValue)
+            originalTarget = targetOn(originalAxis, targetMinute).roundToInt().coerceIn(0, scroll.maxValue)
             start = if (originalTarget > scroll.maxValue / 2) 0 else scroll.maxValue
             scroll.dispatchRawDelta((start - scroll.value).toFloat())
             armed.value = true
@@ -2306,7 +2410,7 @@ class CalendarCustomizationTest {
             kotlin.math.abs(originalAxis.minuteToY(targetMinute) - rebuiltAxis.minuteToY(targetMinute)) > 20)
         awaitUi(detail = { "scroll=${scroll.value}, max=${scroll.maxValue}, handled=${handled.intValue}, focus=${focusHandled.value}" }) {
             val currentTarget = if (focusEvent) targetMinute else (LocalTime.now().hour - 1).coerceAtLeast(0) * 60
-            val expected = rebuiltAxis.minuteToY(currentTarget).roundToInt().coerceIn(0, scroll.maxValue)
+            val expected = targetOn(rebuiltAxis, currentTarget).roundToInt().coerceIn(0, scroll.maxValue)
             kotlin.math.abs(scroll.value - expected) <= 2 &&
                 if (focusEvent) focusHandled.value else handled.intValue == 1
         }
@@ -4558,6 +4662,20 @@ class CalendarCustomizationTest {
         device.dumpWindowHierarchy(File(context.filesDir, "customization-state.xml"))
         device.takeScreenshot(File(context.filesDir, "customization-state.png"))
         assertTrue("The expected customized calendar must be rendered. ${detail()}", ready())
+    }
+
+    private fun clickCurrent(selector: BySelector) {
+        val deadline = SystemClock.elapsedRealtime() + 10_000
+        var bounds: Rect? = null
+        while (bounds == null && SystemClock.elapsedRealtime() < deadline) {
+            refreshAccessibility()
+            bounds = try {
+                device.findObject(selector)?.takeIf { it.isClickable && it.isEnabled }?.visibleBounds?.takeUnless { it.isEmpty }
+            } catch (_: StaleObjectException) { null }
+            if (bounds == null) SystemClock.sleep(16)
+        }
+        val target = requireNotNull(bounds) { "Missing current calendar control: $selector" }
+        assertTrue("The current calendar control must receive one tap.", device.click(target.centerX(), target.centerY()))
     }
 
     private fun node(selector: BySelector): UiObject2 {

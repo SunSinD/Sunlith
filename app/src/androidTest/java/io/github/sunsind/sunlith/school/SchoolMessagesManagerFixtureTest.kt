@@ -10,12 +10,16 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import io.github.sunsind.sunlith.R
+import io.github.sunsind.sunlith.data.CalendarRepository
+import io.github.sunsind.sunlith.data.projectSchoolEvents
 import io.github.sunsind.sunlith.requireEmulator
 import io.github.sunsind.sunlith.system.AppRefresh
 import java.io.ByteArrayInputStream
@@ -29,6 +33,7 @@ import java.security.cert.Certificate
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Collections
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -130,6 +135,49 @@ class SchoolMessagesManagerFixtureTest {
         assertTrue(portal.calls.all { !it.instanceFollowRedirects })
         assertTrue(portal.calls.all { it.hostnameVerifier === HttpsURLConnection.getDefaultHostnameVerifier() })
         assertTrue(portal.calls.all { it.sslSocketFactory === HttpsURLConnection.getDefaultSSLSocketFactory() })
+    }
+
+    @Test fun classicPhoneLoginLayoutSignsInWithTheVerifiedSubmitFields() = runBlocking {
+        // Col.NET gives Android user agents a login form without the image button (anonymized live shape, 2026-11-14).
+        val portal = ClassicFixture().apply { phoneLayout = true }
+        val result = portal.reader().readAdministration("student", "password", emptyMap(), today)
+        assertEquals(SchoolAdminOutcome.OK, result.outcome)
+        assertEquals(1, result.rows.size)
+        val post = portal.calls.single { it.requestMethod == "POST" }
+        val fields = post.output.toString("UTF-8").split('&').associate {
+            val parts = it.split('=', limit = 2)
+            URLDecoder.decode(parts[0], "UTF-8") to URLDecoder.decode(parts.getOrElse(1) { "" }, "UTF-8")
+        }
+        assertEquals("12", fields["${SchoolClassicPortal.SUBMIT}.x"])
+        assertEquals("8", fields["${SchoolClassicPortal.SUBMIT}.y"])
+        assertTrue(fields.containsKey(SchoolClassicPortal.POST_BACK))
+        assertFalse(fields.containsKey("txtLibWebBidon"))
+    }
+
+    @Test fun portalLinksKeepARealEmptyListApartFromFailures() = runBlocking {
+        fun client(info: String) = SchoolPortalClient(BASE.toString(), "fr") { uri -> Connection(uri, info) }
+        val none = emptyList<Pair<String, String>>()
+        assertEquals(none, client("""{"Liens":[]}""").portalLinks("synthetic-token-only"))
+        assertEquals(none, client("""{}""").portalLinks("synthetic-token-only"))
+        assertEquals(none, client("""{"Liens":null}""").portalLinks("synthetic-token-only"))
+        assertEquals(listOf("SYN" to "Synthetic link"), client("""{"Liens":[{"Code":"SYN","Description":"Synthetic link"},{"Code":"","Description":"Blank code"},7]}""")
+            .portalLinks("synthetic-token-only"))
+        val broken = try { client("""{"Liens":"broken"}""").portalLinks("synthetic-token-only"); null } catch (e: SchoolFailure) { e.reason }
+        assertEquals(SchoolError.INVALID_DATA, broken)
+
+        fun linksManager(info: String) = SchoolMessagesManager(context,
+            clientFactory = { address, language -> SchoolPortalClient(address, language) { uri -> Connection(uri, info) } },
+            classicFactory = { ClassicFixture().reader() }, onNoticesChanged = {}, onNewMessages = { _, _ -> }, elapsedRealtime = { elapsed },
+        ).also { managers += it }
+        assertEquals(SchoolPortalLinks.Failed(SchoolAdminStatus.NOT_LOADED), linksManager("""{"Liens":[]}""").loadPortalLinks())
+        SchoolStore(context).save(record())
+        val empty = linksManager("""{"Liens":[]}""")
+        assertEquals(SchoolPortalLinks.Loaded(emptyList()), empty.loadPortalLinks())
+        assertEquals(false, empty.state.value.portalLinksAvailable)
+        assertEquals(SchoolPortalLinks.Failed(SchoolAdminStatus.UNRECOGNIZED), linksManager("""{"Liens":"broken"}""").loadPortalLinks())
+        val listed = linksManager("""{"Liens":[{"Code":"SYN","Description":"Synthetic link"}]}""")
+        assertEquals(SchoolPortalLinks.Loaded(listOf(SchoolPortalLink("SYN", "Synthetic link"))), listed.loadPortalLinks())
+        assertEquals(true, listed.state.value.portalLinksAvailable)
     }
 
     @Test fun classicRefusesCrossOriginRedirectsAndDetailLinks() = runBlocking {
@@ -275,7 +323,7 @@ class SchoolMessagesManagerFixtureTest {
         assertTrue(manager.state.value.admin.isEmpty())
     }
 
-    @Test fun noticeWarningConfirmationAndRemovalReachCalendarWithoutAgendaRequests() = runBlocking {
+    @Test fun noticeWarningConfirmationMissingSourceAndCorrectionReachCalendarWithoutAgendaRequests() = runBlocking {
         createCalendar()
         val term = SchoolTerm("SYNTHETIC", "Synthetic term", today.minusDays(7), today.plusDays(30))
         val writer = SchoolCalendarWriter(context)
@@ -334,15 +382,303 @@ class SchoolMessagesManagerFixtureTest {
         classic.empty = true
         reader.refresh()
         calendarManager.syncCachedNotices()
-        val removed = checkNotNull(SchoolStore(context).load())
-        assertEquals(listOf(course), removed.baseline)
-        assertEquals(owned.single().rowId, removed.ledger.single().rowId)
-        assertEquals(owned.single().uid, removed.ledger.single().uid)
-        assertEquals(1234L, removed.lastSuccess)
+        val missing = checkNotNull(SchoolStore(context).load())
+        assertEquals("A missing portal row is not a correction.", confirmed.baseline, missing.baseline)
+        assertEquals(confirmed.ledger.map { it.item.id to it.rowId }, missing.ledger.map { it.item.id to it.rowId })
+        assertClassUntouched()
+
+        classic.empty = false
+        classic.subject = "Annulation de la levée des cours le ${frenchDate()}"
+        classic.body = "La levée des cours du ${frenchDate()} est annulée. Les cours sont maintenus."
+        reader.refresh()
+        calendarManager.syncCachedNotices()
+        val corrected = checkNotNull(SchoolStore(context).load())
+        assertEquals(listOf(course), corrected.baseline.filter { it.kind != SchoolNoticeInterpreter.NOTICE_KIND })
+        val correctedNotice = corrected.ledger.single { it.item.kind == SchoolNoticeInterpreter.NOTICE_KIND }
+        assertEquals(firstNotice.rowId, correctedNotice.rowId)
+        assertEquals(firstNotice.uid, correctedNotice.uid)
+        assertTrue(correctedNotice.item.title.contains("mis à jour"))
+        val preservedClass = corrected.ledger.single { it.item.id == course.id }
+        assertEquals(owned.single().rowId, preservedClass.rowId)
+        assertEquals(owned.single().uid, preservedClass.uid)
+        assertEquals(1234L, corrected.lastSuccess)
         assertEquals(0, requests.get())
         assertNull(calendarManager.state.value.error)
         assertNull(calendarManager.state.value.pendingChanges)
         assertClassUntouched()
+    }
+
+    @Test fun confirmedLiftingMarksUneditedClassesInPlaceAndWithdrawalRestoresThem() = runBlocking {
+        createCalendar()
+        val term = SchoolTerm("LIFT", "Synthetic lifting term", today.minusDays(7), today.plusDays(30))
+        val writer = SchoolCalendarWriter(context)
+        val start = today.atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+        val evening = today.atTime(19, 0).atZone(zone).toInstant().toEpochMilli()
+        val course = SchoolItem("lift-course", "lift-class", "Synthetic class", "243SYN", "0001", "1", "01", today,
+            start, start + 3_600_000, false, zone.id, emptyList(), emptyList(), emptyList(), false)
+        val late = course.copy(id = "lift-evening", classKey = "lift-evening-class", title = "Synthetic evening class", startMillis = evening, endMillis = evening + 3_600_000)
+        val seed = record(calendar).copy(initialized = true, term = term.name, termKey = term.key, termSource = term,
+            calendarIdentity = writer.calendarIdentity(calendar), lastSuccess = 4321L)
+        val owned = writer.commitSteps(seed, writer.plan(seed, SchoolFeed(seed.account, term, listOf(course, late)), today)) { SchoolStore(context).save(it) }
+        SchoolStore(context).save(seed.copy(ledger = owned, baseline = listOf(course, late)))
+        val rows = owned.associate { it.item.id to (it.rowId to it.uid) }
+        fun row(id: String): Pair<String, Long> = context.contentResolver.query(ContentUris.withAppendedId(Events.CONTENT_URI, rows.getValue(id).first),
+            arrayOf(Events.TITLE, Events.DTSTART), null, null, null)!!.use { cursor -> assertTrue(cursor.moveToFirst()); cursor.getString(0) to cursor.getLong(1) }
+        val classic = ClassicFixture()
+        val reader = newManager(MobileFixture(), classic)
+        val calendarManager = SchoolScheduleManager(context, notices = reader, clientFactory = { _, _ ->
+            error("A notice refresh must not fetch the agenda")
+        }).also { schedule = it }
+        reader.refresh()
+        assertTrue(reader.state.value.collegeNotices.single().classesMarked)
+        calendarManager.syncCachedNotices()
+        val lifted = checkNotNull(SchoolStore(context).load())
+        assertEquals(context.getString(R.string.school_sync_lifted_title, course.title) to start, row(course.id))
+        assertEquals("a class starting after the end time stays as it was", late.title to evening, row(late.id))
+        assertEquals("$today@18:00", lifted.ledger.single { it.item.id == course.id }.item.collegeLift)
+        assertEquals(rows, lifted.ledger.filter { it.item.kind != SchoolNoticeInterpreter.NOTICE_KIND }.associate { it.item.id to (it.rowId to it.uid) })
+        val stored = lifted.baseline.single { it.id == course.id }
+        assertEquals(stored, SchoolItem.read(stored.json()))
+        assertFalse(course.json().has("collegeLift"))
+        val repository = CalendarRepository(context)
+        fun shownClass() = repository.events(start, start + 3_600_000, setOf(calendar), school = true).single { it.id == rows.getValue(course.id).first }
+        assertEquals(SchoolClassLift(today, java.time.LocalTime.of(18, 0), today), shownClass().school?.lift)
+
+        classic.subject = "Annulation de la levée des cours le ${frenchDate()}"
+        classic.body = "La levée des cours du ${frenchDate()} est annulée. Les cours sont maintenus."
+        reader.refresh()
+        assertEquals(SchoolNoticeStatus.UPDATED, reader.state.value.collegeNotices.single().status)
+        calendarManager.syncCachedNotices()
+        val restored = checkNotNull(SchoolStore(context).load())
+        assertEquals(course.title to start, row(course.id))
+        assertNull(shownClass().school?.lift)
+        assertEquals(listOf(course, late), restored.baseline.filter { it.kind != SchoolNoticeInterpreter.NOTICE_KIND }.sortedBy { it.startMillis })
+        assertEquals(rows, restored.ledger.filter { it.item.kind != SchoolNoticeInterpreter.NOTICE_KIND }.associate { it.item.id to (it.rowId to it.uid) })
+        assertEquals(4321L, restored.lastSuccess)
+        assertNull(calendarManager.state.value.error)
+    }
+
+    @Test fun liftingAcrossALanguageChangePreservesPreviouslyObservedLocalEdits() = runBlocking {
+        createCalendar()
+        fun inLanguage(language: String): Context {
+            val localized = base.createConfigurationContext(Configuration(base.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) })
+            return object : ContextWrapper(context) { override fun getResources() = localized.resources }
+        }
+        val french = SchoolCalendarWriter(inLanguage("fr"))
+        val englishContext = inLanguage("en")
+        val english = SchoolCalendarWriter(englishContext)
+        val term = SchoolTerm("LOCAL-LIFT", "Synthetic local edit term", today.minusDays(7), today.plusDays(30))
+        val start = today.atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+        val untouched = SchoolItem("plain-class", "plain", "Synthetic plain class", "243SYN", "0001", "1", "01", today,
+            start, start + 3_600_000, false, zone.id, emptyList(), emptyList(), emptyList(), false)
+        val edited = untouched.copy(id = "edited-class", classKey = "edited", title = "Synthetic original title")
+        val changedZone = untouched.copy(id = "zone-class", classKey = "zone", title = "Synthetic changed time zone")
+        val classes = listOf(untouched, edited, changedZone)
+        val seed = record(calendar).copy(initialized = true, term = term.name, termKey = term.key, termSource = term,
+            calendarIdentity = french.calendarIdentity(calendar), lastSuccess = 7890L)
+        val initial = french.commitSteps(seed, french.plan(seed, SchoolFeed(seed.account, term, classes), today)) { SchoolStore(context).save(it) }
+        var current = seed.copy(ledger = initial, baseline = classes)
+        SchoolStore(context).save(current)
+        val ids = initial.associate { it.item.id to it.rowId }
+        val localTitle = "My preserved class title"
+        context.contentResolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, ids.getValue(edited.id)), ContentValues().apply { put(Events.TITLE, localTitle) }, null, null)
+        context.contentResolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, ids.getValue(changedZone.id)), ContentValues().apply { put(Events.EVENT_TIMEZONE, "UTC") }, null, null)
+        val warning = SchoolAdminNotice("w", today, "Avis de boycott le ${frenchDate()}", "Direction générale",
+            body = "Le Collège pourrait décréter une levée des cours le ${frenchDate()} si une ligne de piquetage est constatée.")
+        val warnedFeed = SchoolFeed(seed.account, term, classes + SchoolNoticeInterpreter.items(SchoolNoticeInterpreter.interpret(listOf(warning)), false))
+        val adopted = french.commitSteps(current, french.plan(current, warnedFeed, today, noticeOnly = true)) { SchoolStore(context).save(it) }
+        current = current.copy(ledger = adopted, baseline = warnedFeed.items)
+        SchoolStore(context).save(current)
+        assertEquals(localTitle, current.ledger.single { it.item.id == edited.id }.revision[Events.TITLE])
+        assertEquals(edited.title, current.ledger.single { it.item.id == edited.id }.writtenRevision!![Events.TITLE])
+        initial.forEach { owned ->
+            assertEquals(owned, SchoolOwned.read(owned.json()))
+            val legacy = owned.json().apply { remove("writtenRevision") }
+            assertNull("Old ledgers must not infer last-written content from an observed revision.", SchoolOwned.read(legacy).writtenRevision)
+        }
+        val confirmed = warning.copy(id = "c", subject = "Levée des cours le ${frenchDate()}", body = "Les cours sont levés le ${frenchDate()} jusqu'à 18 h.")
+        val marked = SchoolNoticeInterpreter.applyLifts(classes, listOf(SchoolClassLift(today, java.time.LocalTime.of(18, 0), today)), classes, today.minusDays(14))
+        val feed = SchoolFeed(seed.account, term, marked + SchoolNoticeInterpreter.items(SchoolNoticeInterpreter.interpret(listOf(confirmed)), false))
+        val legacy = current.copy(ledger = current.ledger.map { it.copy(writtenRevision = null) })
+        val legacyPlan = french.plan(legacy, feed, today, noticeOnly = true)
+        assertEquals(localTitle, legacyPlan.after.single { it.item.id == edited.id }.revision[Events.TITLE])
+        assertEquals("", legacyPlan.after.single { it.item.id == edited.id }.item.collegeLift)
+        assertEquals("UTC", legacyPlan.after.single { it.item.id == changedZone.id }.revision[Events.EVENT_TIMEZONE])
+        val after = english.commitSteps(current, english.plan(current, feed, today, noticeOnly = true)) { SchoolStore(context).save(it) }
+        current = current.copy(ledger = after, baseline = feed.items)
+        SchoolStore(context).save(current)
+        val shown = CalendarRepository(context).events(start, start + 3_600_000, setOf(calendar), school = true).associateBy { it.id }
+        assertEquals(englishContext.getString(R.string.school_sync_lifted_title, untouched.title), shown.getValue(ids.getValue(untouched.id)).title)
+        assertNotNull(shown.getValue(ids.getValue(untouched.id)).school?.lift)
+        assertEquals(localTitle, shown.getValue(ids.getValue(edited.id)).title)
+        assertNull("An adopted local title edit must not regain school metadata.", shown.getValue(ids.getValue(edited.id)).school)
+        assertNull("A local time zone edit must not be overwritten or annotated.", shown.getValue(ids.getValue(changedZone.id)).school)
+        assertEquals("UTC", shown.getValue(ids.getValue(changedZone.id)).timeZone)
+        assertEquals(classes.associate { it.id to ids.getValue(it.id) }, after.filter { it.item.kind == "01" }.associate { it.item.id to it.rowId })
+    }
+
+    @Test fun legacyLocalTitlesStayVisibleAfterNoticeRefreshAndConfirmedLifting() = runBlocking {
+        createCalendar()
+        val writer = SchoolCalendarWriter(context)
+        val term = SchoolTerm("LEGACY-TITLE", "Synthetic legacy term", today.minusDays(7), today.plusDays(30))
+        val start = today.atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+        val first = SchoolItem("legacy-first", "legacy-class", "Synthetic legacy class", "243SYN", "0001", "1", "01", today,
+            start, start + 3_600_000, false, zone.id, emptyList(), emptyList(), emptyList(), false)
+        val second = first.copy(id = "legacy-second", startMillis = start + 3_600_000, endMillis = start + 7_200_000)
+        val classes = listOf(first, second)
+        val seed = record(calendar).copy(initialized = true, term = term.name, termKey = term.key, termSource = term,
+            calendarIdentity = writer.calendarIdentity(calendar), lastSuccess = 7654L)
+        val imported = writer.commitSteps(seed, writer.plan(seed, SchoolFeed(seed.account, term, classes), today)) { SchoolStore(context).save(it) }
+        var current = seed.copy(ledger = imported.map { it.copy(writtenRevision = null) }, baseline = classes)
+        SchoolStore(context).save(current)
+        val ids = imported.associate { it.item.id to it.rowId }
+        fun shown() = CalendarRepository(context).events(start, start + 7_200_000, setOf(calendar), school = true)
+            .filter { it.id in ids.values }.sortedBy { it.startMillis }
+        assertTrue("Untouched legacy periods still carry verified metadata.", shown().all { it.school != null })
+        assertEquals(1, projectSchoolEvents(shown(), zone).size)
+
+        val localTitle = "My preserved legacy title"
+        context.contentResolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, ids.getValue(first.id)),
+            ContentValues().apply { put(Events.TITLE, localTitle) }, null, null)
+        val warning = SchoolAdminNotice("legacy-warning", today, "Avis de boycott le ${frenchDate()}", "Direction",
+            body = "Le Collège pourrait décréter une levée des cours le ${frenchDate()} si une ligne de piquetage est constatée.")
+        val warnedFeed = SchoolFeed(seed.account, term, classes + SchoolNoticeInterpreter.items(SchoolNoticeInterpreter.interpret(listOf(warning)), false))
+        val adopted = writer.commitSteps(current, writer.plan(current, warnedFeed, today, noticeOnly = true)) { SchoolStore(context).save(it) }
+        current = current.copy(ledger = adopted, baseline = warnedFeed.items)
+        SchoolStore(context).save(current)
+        assertNull(current.ledger.single { it.item.id == first.id }.writtenRevision)
+        assertEquals(localTitle, current.ledger.single { it.item.id == first.id }.revision[Events.TITLE])
+        fun assertLocalTitle() {
+            val rows = shown()
+            assertEquals(localTitle, rows.first().title)
+            assertNull("Observed legacy edits must not become imported metadata.", rows.first().school)
+            assertNotNull(rows.last().school)
+            val displayed = projectSchoolEvents(rows, zone)
+            assertEquals(2, displayed.size)
+            assertEquals(localTitle, displayed.first().title)
+            assertEquals(ids.getValue(first.id), displayed.first().id)
+            assertEquals(start, displayed.first().startMillis)
+            assertEquals(start + 3_600_000, displayed.first().endMillis)
+        }
+        assertLocalTitle()
+
+        val marked = SchoolNoticeInterpreter.applyLifts(classes,
+            listOf(SchoolClassLift(today, java.time.LocalTime.of(18, 0), today)), classes, today.minusDays(14))
+        val confirmedFeed = SchoolFeed(seed.account, term, marked)
+        val after = writer.commitSteps(current, writer.plan(current, confirmedFeed, today, noticeOnly = true)) { SchoolStore(context).save(it) }
+        current = current.copy(ledger = after, baseline = confirmedFeed.items)
+        SchoolStore(context).save(current)
+        assertLocalTitle()
+        assertNotNull("The untouched legacy period still receives the confirmed lifting.", shown().last().school?.lift)
+        assertEquals(imported.map { it.rowId to it.uid }, after.filter { it.item.kind == SchoolNoticeInterpreter.CLASS_KIND }.map { it.rowId to it.uid })
+    }
+
+    @Test fun unreadReplacementKeepsTheAppliedNoticeAndClassMarksUntilAReadCorrection() = runBlocking {
+        createCalendar()
+        val term = SchoolTerm("UNREAD-LIFT", "Synthetic unread notice term", today.minusDays(7), today.plusDays(30))
+        val writer = SchoolCalendarWriter(context)
+        val start = today.atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+        val course = SchoolItem("unread-course", "unread-class", "Synthetic cancelled class", "243SYN", "0001", "1", "01", today,
+            start, start + 3_600_000, false, zone.id, emptyList(), emptyList(), emptyList(), false, collegeLift = "$today@18:00")
+        val unmarked = course.copy(id = "new-course", classKey = "new-class", title = "Synthetic unmarked class", collegeLift = "")
+        val classic = ClassicFixture()
+        val full = SchoolAdminNotice("confirmed", today, classic.subject, "Direction générale", body = classic.body, detailAvailable = true)
+        val notice = SchoolNoticeInterpreter.items(SchoolNoticeInterpreter.interpret(listOf(full)), false).single()
+        val baseline = listOf(notice, course, unmarked)
+        val seed = record(calendar).copy(initialized = true, term = term.name, termKey = term.key, termSource = term,
+            calendarIdentity = writer.calendarIdentity(calendar), lastSuccess = 6789L)
+        val owned = writer.commitSteps(seed, writer.plan(seed, SchoolFeed(seed.account, term, baseline), today)) { SchoolStore(context).save(it) }
+        SchoolStore(context).save(seed.copy(ledger = owned, baseline = baseline))
+        val ids = owned.associate { it.item.id to it.rowId }
+        classic.failDetail = true
+        val reader = newManager(MobileFixture(), classic)
+        val calendarManager = SchoolScheduleManager(context, notices = reader, clientFactory = { _, _ ->
+            error("A title-only replacement must not fetch the agenda")
+        }).also { schedule = it }
+        reader.refresh()
+        assertFalse(reader.state.value.collegeNotices.single().detailRead)
+        val before = checkNotNull(SchoolStore(context).load())
+        assertTrue(reader.classLifts(before, term)!!.single().preserveOnly)
+        assertEquals(listOf(notice), reader.items(before, term, false))
+        calendarManager.syncCachedNotices()
+        val kept = checkNotNull(SchoolStore(context).load())
+        assertEquals(notice, kept.baseline.single { it.kind == SchoolNoticeInterpreter.NOTICE_KIND })
+        assertEquals(course.collegeLift, kept.baseline.single { it.id == course.id }.collegeLift)
+        assertEquals("", kept.baseline.single { it.id == unmarked.id }.collegeLift)
+        assertEquals(ids, kept.ledger.associate { it.item.id to it.rowId })
+
+        classic.failDetail = false
+        classic.subject = "Annulation de la levée des cours le ${frenchDate()}"
+        classic.body = "La levée des cours du ${frenchDate()} est annulée. Les cours sont maintenus."
+        reader.refresh()
+        calendarManager.syncCachedNotices()
+        val restored = checkNotNull(SchoolStore(context).load())
+        assertTrue(restored.baseline.filter { it.kind == "01" }.all { it.collegeLift.isEmpty() })
+        assertEquals(ids, restored.ledger.associate { it.item.id to it.rowId })
+        assertEquals(6789L, restored.lastSuccess)
+        assertNull(calendarManager.state.value.error)
+    }
+
+    @Test fun aDisappearingNoticeKeepsExistingMarksAndItsCalendarItemUntilAReadCorrection() = runBlocking {
+        createCalendar()
+        val term = SchoolTerm("MISSING-LIFT", "Synthetic missing notice term", today.minusDays(7), today.plusDays(30))
+        val writer = SchoolCalendarWriter(context)
+        val start = today.atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+        val course = SchoolItem("missing-course", "missing-class", "Synthetic cancelled class", "243SYN", "0001", "1", "01", today,
+            start, start + 3_600_000, false, zone.id, emptyList(), emptyList(), emptyList(), false, collegeLift = "$today@18:00")
+        val unmarked = course.copy(id = "new-course", classKey = "new-class", title = "Synthetic unmarked class", collegeLift = "")
+        val classic = ClassicFixture()
+        val full = SchoolAdminNotice("confirmed", today, classic.subject, "Direction générale", body = classic.body, detailAvailable = true)
+        val notice = SchoolNoticeInterpreter.items(SchoolNoticeInterpreter.interpret(listOf(full)), false).single()
+        val baseline = listOf(notice, course, unmarked)
+        val seed = record(calendar).copy(initialized = true, term = term.name, termKey = term.key, termSource = term,
+            calendarIdentity = writer.calendarIdentity(calendar), lastSuccess = 7890L)
+        val owned = writer.commitSteps(seed, writer.plan(seed, SchoolFeed(seed.account, term, baseline), today)) { SchoolStore(context).save(it) }
+        SchoolStore(context).save(seed.copy(ledger = owned, baseline = baseline))
+        val ids = owned.associate { it.item.id to it.rowId }
+        val reader = newManager(MobileFixture(), classic)
+        reader.refresh()
+        classic.empty = true
+        reader.refresh()
+        assertEquals(SchoolAdminStatus.OK, reader.state.value.adminStatus)
+        assertTrue(reader.state.value.admin.isEmpty())
+        val before = checkNotNull(SchoolStore(context).load())
+        assertTrue(reader.classLifts(before, term)!!.single().preserveOnly)
+        assertEquals(listOf(notice), reader.items(before, term, false))
+        val withoutNotice = before.copy(baseline = listOf(course, unmarked))
+        assertTrue("A class mark alone also survives a missing source", reader.classLifts(withoutNotice, term)!!.single().preserveOnly)
+        val restarted = newManager(MobileFixture(), classic)
+        restarted.refresh()
+        assertTrue(restarted.classLifts(before, term)!!.single().preserveOnly)
+        assertEquals(listOf(notice), restarted.items(before, term, false))
+        val calendarManager = SchoolScheduleManager(context, notices = restarted, clientFactory = { _, _ ->
+            error("A missing administration source must not fetch the agenda")
+        }).also { schedule = it }
+        calendarManager.syncCachedNotices()
+        val kept = checkNotNull(SchoolStore(context).load())
+        assertEquals(notice, kept.baseline.single { it.kind == SchoolNoticeInterpreter.NOTICE_KIND })
+        assertEquals(course.collegeLift, kept.baseline.single { it.id == course.id }.collegeLift)
+        assertEquals("", kept.baseline.single { it.id == unmarked.id }.collegeLift)
+        assertEquals(ids, kept.ledger.associate { it.item.id to it.rowId })
+
+        classic.empty = false
+        classic.subject = "Cours finalement maintenus le ${frenchDate()}"
+        classic.body = "Les cours sont finalement maintenus, sauf les cours du soir."
+        restarted.refresh()
+        val correction = restarted.state.value.collegeNotices.single()
+        assertEquals(SchoolNoticeStatus.UPDATED, correction.status)
+        assertFalse(correction.classesMarked)
+        assertTrue(restarted.classLifts(kept, term)!!.isEmpty())
+        calendarManager.syncCachedNotices()
+        val restored = checkNotNull(SchoolStore(context).load())
+        assertTrue(restored.baseline.filter { it.kind == "01" }.all { it.collegeLift.isEmpty() })
+        val updatedNotice = restored.baseline.single { it.kind == SchoolNoticeInterpreter.NOTICE_KIND }
+        assertEquals(notice.id, updatedNotice.id)
+        assertNotEquals(notice.title, updatedNotice.title)
+        assertTrue(updatedNotice.notes.any { it == classic.body })
+        assertEquals(ids, restored.ledger.associate { it.item.id to it.rowId })
+        assertEquals(7890L, restored.lastSuccess)
+        assertNull(calendarManager.state.value.error)
     }
 
     @Test fun correctionPostedTodayUpdatesYesterdaysNoticeWithoutRewritingPastClasses() = runBlocking {
@@ -594,8 +930,11 @@ class SchoolMessagesManagerFixtureTest {
         var failDetail = false
         var malformedDetail = false
         var detailGate: Gate? = null
+        var phoneLayout = false
         val calls = Collections.synchronizedList(mutableListOf<Connection>())
-        private val login = """<form method="post" action="login.asp"><input type="hidden" name="csrf" value="nonce&amp;guard"><input name="txtCodeUsager"><input type="password" name="txtMotDePasse"><input type="image" name="btnConnecter"></form>"""
+        private val desktopLogin = """<form method="post" action="login.asp"><input type="hidden" name="csrf" value="nonce&amp;guard"><input name="txtCodeUsager"><input type="password" name="txtMotDePasse"><input type="image" name="btnConnecter"></form>"""
+        private val phoneLogin = """<form method=post  name="frmLogin" action=/colnet/login.asp><input type=text name='txtLibWebBidon' style='display:none;'><input id=txtCodeUsager type=text name=txtCodeUsager size=17 maxlength=15 value="" ><input id=txtMotDePasse type=password name=txtMotDePasse size=32 maxlength=50 value="" ><a href="javascript:DoPostBack('TOKEN','?TOKEN')">Connexion</a><input type=hidden name=_PostBackInfo value=""><input type=hidden name=_PostBackPar value=""><input type=hidden name=_NoSeqWeb value=""></form>"""
+        private val login get() = if (phoneLayout) phoneLogin else desktopLogin
         fun reader(direct: ((URI) -> HttpsURLConnection)? = null) = SchoolClassicPortal(BASE,
             if (direct == null) listOf(::open) else listOf(direct, ::open))
         private fun open(uri: URI): HttpsURLConnection {

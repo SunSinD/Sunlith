@@ -75,6 +75,8 @@ import androidx.compose.material.icons.outlined.CalendarViewDay
 import androidx.compose.material.icons.outlined.CalendarViewWeek
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings as SettingsIcon
 import androidx.compose.material3.CircularProgressIndicator
@@ -105,6 +107,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.listSaver
@@ -119,7 +122,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -278,8 +280,21 @@ internal class AgendaViewport(private var awaitingToday: Boolean = false) {
         private set
     private var owner: Any? = null
     private var suppressed: Pair<Any, TodayDirection>? = null
+    private var scope by mutableStateOf<Any?>(null)
 
-    fun report(source: Any, value: TodayDirection?) {
+    fun enterScope(value: Any) {
+        if (scope === value) return
+        scope = value
+        owner = null
+        direction = null
+        reporting = false
+        suppressed = null
+    }
+
+    fun reportingIn(value: Any): Boolean = scope === value && reporting
+
+    fun report(source: Any, value: TodayDirection?, scope: Any? = null) {
+        if (this.scope !== scope) return
         if (awaitingToday && value != null) {
             suppressed = source to value
             return
@@ -293,7 +308,7 @@ internal class AgendaViewport(private var awaitingToday: Boolean = false) {
 
     fun userInteraction() {
         awaitingToday = false
-        suppressed?.let { (source, value) -> report(source, value) }
+        suppressed?.let { (source, value) -> report(source, value, scope) }
     }
 
     fun release(source: Any) {
@@ -353,6 +368,7 @@ private class CalendarContext(
     val swipe: PeriodSwipeState,
     val collapse: HeaderCollapse,
     val viewport: AgendaViewport,
+    val viewportScope: Any,
     val highlightToday: Boolean,
     /** 3 or 5 for a rolling timeline window, 0 otherwise. */
     val rollingDays: Int,
@@ -435,9 +451,9 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
     val p = LocalPalette.current
     val f = rememberFormats()
     val motion = rememberMotion(vm.navigationAnimation)
-    val collapse = remember(vm.viewMode, vm.collapseCalendarOnScroll, vm.dayFocusRequest.takeIf { vm.viewMode == ViewMode.Day }) {
-        HeaderCollapse(vm.collapseCalendarOnScroll)
-    }
+    val collapse = remember(vm.viewMode, vm.collapseCalendarOnScroll) { HeaderCollapse(vm.collapseCalendarOnScroll) }
+    // A Day date request shows the date strip again. The header object and the visible body stay composed.
+    LaunchedEffect(collapse, vm.dayFocusRequest.takeIf { vm.viewMode == ViewMode.Day }) { collapse.offset = 0f }
     var showPicker by rememberSaveable { mutableStateOf(false) }
     var layoutChooser by rememberSaveable { mutableStateOf<ViewMode?>(null) }
     var highlightToday by remember { mutableStateOf(false) }
@@ -460,6 +476,24 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
     val windowDays = rollingDays(vm)
     val window = rememberSaveable(saver = WindowStart.Saver) { WindowStart() }
     val windowStart = if (windowDays > 0) window.startFor(vm.selectedDate, windowDays) else today
+    val workweek = vm.workweekTimeline()
+    val viewportLayout = when (mode) {
+        ViewMode.Month -> vm.monthLayout
+        ViewMode.Week -> vm.weekLayout
+        ViewMode.Day -> vm.activeDayLayout
+    }
+    // Selecting a Week header only changes its highlight. Explicit Continuous navigation changes its request.
+    val viewportSelection: Any = when {
+        mode == ViewMode.Week && viewportLayout == "timeline" -> weekTimelineDates(
+            if (windowDays > 0) windowStart else vm.selectedDate, vm.visibleWeekDays, vm.weekStartsMonday, workweek)
+        mode == ViewMode.Week && viewportLayout == "continuous" -> vm.timelineNavigationRequest
+        else -> vm.selectedDate
+    }
+    val viewportScope = remember(mode, viewportLayout, viewportSelection, vm.agendaRange, vm.agendaDisplay,
+        vm.weekStartsMonday, workweek, vm.visibleWeekDays, today,
+        vm.dayFocusRequest.takeIf { mode == ViewMode.Day }, vm.todayRequest) { Any() }
+    // Hide old measurements during composition; accept only producers of this context after it is applied.
+    SideEffect { viewport.enterScope(viewportScope) }
     val navigate: (Int) -> Unit = { dir ->
         viewport.userInteraction()
         val n = rollingDays(vm)
@@ -470,13 +504,13 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
         } else vm.step(dir)
     }
     val swipe = rememberPeriodSwipe(vm.swipeNavigation, motion, navigate)
-    LaunchedEffect(mode, vm.monthLayout, vm.weekLayout, vm.dayLayout, vm.swipeNavigation, vm.rollingFiveDays, vm.visibleWeekDays) { swipe.cancel() }
+    LaunchedEffect(mode, vm.monthLayout, vm.weekLayout, vm.activeDayLayout, vm.swipeNavigation, vm.rollingFiveDays, vm.visibleWeekDays) { swipe.cancel() }
     val timelineScroll = rememberSaveable(mode, saver = ScrollState.Saver) { ScrollState(0) }
     val timelineMinute = rememberSaveable(mode) { mutableFloatStateOf(0f) }
     val timelineTodayHandled = vm.pagedTimelineTodayHandled
-    LaunchedEffect(mode, vm.weekLayout, vm.dayLayout, vm.todayRequest) {
+    LaunchedEffect(mode, vm.weekLayout, vm.activeDayLayout, vm.todayRequest) {
         val pagedTimeline = (mode == ViewMode.Week && vm.weekLayout == "timeline") ||
-            (mode == ViewMode.Day && vm.dayLayout == "timeline")
+            (mode == ViewMode.Day && vm.activeDayLayout == "timeline")
         if (!pagedTimeline) timelineTodayHandled.intValue = vm.todayRequest
     }
     var timelineFocus by remember(mode, vm.dayFocusRequest, vm.todayRequest) {
@@ -493,9 +527,8 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
         { if (timelineFocus === it) { vm.consumeDayFocus(it.request); timelineFocus = null } }
     }
     val dayMeasurer = rememberTextMeasurer(cacheSize = 128)
-    val workweek = vm.workweekTimeline()
-    val c = remember(vm, f, dayMeasurer, today, motion, swipe, collapse, viewport, highlightToday, windowDays, windowStart, workweek, timelineScroll, timelineMinute, timelineFocus, onFocusHandled) {
-        CalendarContext(vm, f, dayMeasurer, today, motion, swipe, collapse, viewport, highlightToday, windowDays, windowStart, workweek, timelineScroll, timelineMinute, timelineTodayHandled, timelineFocus, onFocusHandled)
+    val c = remember(vm, f, dayMeasurer, today, motion, swipe, collapse, viewport, viewportScope, highlightToday, windowDays, windowStart, workweek, timelineScroll, timelineMinute, timelineFocus, onFocusHandled) {
+        CalendarContext(vm, f, dayMeasurer, today, motion, swipe, collapse, viewport, viewportScope, highlightToday, windowDays, windowStart, workweek, timelineScroll, timelineMinute, timelineTodayHandled, timelineFocus, onFocusHandled)
     }
     val courseColors = rememberCourseColors(vm.eventsByDay, vm.courseColorSlots)
 
@@ -508,8 +541,11 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
         }
         ViewMode.Day -> horizontalTodayDirection(today, vm.selectedDate, vm.selectedDate)
     } } }
-    val direction = if (mode == ViewMode.Day && vm.dayLayout == "schedule" && viewport.reporting) viewport.direction
-    else periodDirection ?: if (mode != ViewMode.Day && !(workweek && today.dayOfWeek.value > 5) && viewport.reporting) viewport.direction else null
+    // A date opened from the Month grid shows only that date, with Back as the way out and no Today shortcut.
+    val measuredDirection = viewport.direction.takeIf { viewport.reportingIn(viewportScope) }
+    val direction = if (vm.dayDrilldown) null
+    else if (mode == ViewMode.Day && vm.activeDayLayout == "schedule") measuredDirection
+    else periodDirection ?: if (mode != ViewMode.Day && !(workweek && today.dayOfWeek.value > 5)) measuredDirection else null
 
     CompositionLocalProvider(LocalCourseColors provides courseColors) {
     Scaffold(
@@ -546,11 +582,13 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
                     ViewMode.Day -> DayBody(c, Modifier.weight(1f))
                 }
             }
-            TodayPill(direction, motion, {
-                swipe.cancel()
-                viewport = AgendaViewport(awaitingToday = true)
-                vm.goToday()
-            }, Modifier.align(Alignment.BottomCenter))
+            key(viewportScope) {
+                TodayPill(direction, motion, {
+                    swipe.cancel()
+                    viewport = AgendaViewport(awaitingToday = true)
+                    vm.goToday()
+                }, Modifier.align(Alignment.BottomCenter))
+            }
         }
     }
     }
@@ -613,7 +651,9 @@ private fun Header(vm: SunlithViewModel, f: Formats, onTitle: () -> Unit, onStep
         val searchInMenu = !vm.hasDayParent && arrows && (maxWidth < 480.dp || density.fontScale > 1.3f)
         val compactMenu = maxWidth < 380.dp || searchInMenu || density.fontScale > 1.3f
         val tabs = !vm.hasDayParent && density.fontScale <= 1.15f && maxWidth >= (if (arrows) 564.dp else 390.dp)
-        val compactParentActions = vm.hasDayParent && maxWidth < 480.dp
+        // A date opened from the Month grid keeps its actions in the menu, with the layout toggle just before it.
+        val drilldown = vm.dayDrilldown
+        val compactParentActions = vm.hasDayParent && (drilldown || maxWidth < 480.dp)
         val showTodoIcon = !compactParentActions && (tabs || maxWidth >= 480.dp || vm.hasDayParent)
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (vm.hasDayParent) IconButton(onClick = vm::back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.action_back), tint = p.ink) }
@@ -649,6 +689,7 @@ private fun Header(vm: SunlithViewModel, f: Formats, onTitle: () -> Unit, onStep
             if (showTodoIcon) IconButton(onClick = vm::openTodos, modifier = Modifier.testTag("calendar_todo_action")) {
                 Icon(androidx.compose.material.icons.Icons.Outlined.Checklist, stringResource(R.string.todo_title), tint = p.ink)
             }
+            if (drilldown) DrilldownLayoutToggle(vm)
             if (compactParentActions) HeaderActionsMenu(vm)
             else if (!searchInMenu) IconButton(onClick = vm::openSearch) { Icon(Icons.Outlined.Search, stringResource(R.string.action_search), tint = p.ink) }
             if (!compactParentActions) IconButton(onClick = { vm.open(Screen.Settings) }) { Icon(Icons.Outlined.SettingsIcon, stringResource(R.string.title_settings), tint = p.ink) }
@@ -705,6 +746,57 @@ private fun LayoutChooser(vm: SunlithViewModel, mode: ViewMode, onDismiss: () ->
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = p.ink) } },
     )
+}
+
+/** One button between List and All hours for a date opened from the Month grid. Its label says what a tap shows. */
+@Composable
+private fun DrilldownLayoutToggle(vm: SunlithViewModel) {
+    val next = if (vm.drilldownLayout == "timeline") "cards" else "timeline"
+    val label = stringResource(if (next == "cards") R.string.settings_week_list else R.string.settings_day_all_hours)
+    IconButton(onClick = { vm.changeDrilldownLayout(next) },
+        modifier = Modifier.testTag("calendar_day_layout_toggle").semantics { contentDescription = label }) {
+        Icon(if (next == "cards") Icons.Outlined.ViewAgenda else Icons.Outlined.Schedule, null, tint = LocalPalette.current.ink)
+    }
+}
+
+/**
+ * The event chooser closes itself before it opens an event. Removing its window first left the calendar on screen
+ * for a frame or two before Details was drawn. Here Details opens with no fade, and the chooser leaves only after
+ * the frame that draws Details, so the screen goes straight from the chooser to the event.
+ */
+private class ChooserHandoff(val open: (CalendarEvent) -> Unit, val close: () -> Unit)
+
+@Composable
+private fun rememberChooserHandoff(vm: SunlithViewModel, dismiss: () -> Unit): ChooserHandoff {
+    val scope = rememberCoroutineScope()
+    val currentDismiss by rememberUpdatedState(dismiss)
+    return remember(vm, scope) {
+        var opening = false
+        var closing = false
+        ChooserHandoff(
+            open = { event ->
+                if (!opening) {
+                    opening = true
+                    vm.openInstantly(Screen.Details(event))
+                }
+            },
+            close = {
+                if (!closing) {
+                    closing = true
+                    // Runs after the tap handler, so an open that follows this close is already known.
+                    scope.launch {
+                        try {
+                            if (opening) { withFrameNanos { }; withFrameNanos { } }
+                        } finally {
+                            opening = false
+                            closing = false
+                            currentDismiss()
+                        }
+                    }
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -864,10 +956,10 @@ private fun MonthBody(c: CalendarContext, modifier: Modifier) {
                 PagedPeriod(c.swipe, c.period, Modifier.fillMaxSize()) { absolute ->
                     val d = rememberPeriodDate(c, absolute)
                     val active = absolute == c.period
-                    val source = remember { Any() }
-                    if (active) DisposableEffect(c.viewport) { onDispose { c.viewport.release(source) } }
-                    val onDirectionChanged: (TodayDirection?) -> Unit = remember(c.viewport, source, active) {
-                        { if (active) c.viewport.report(source, it) }
+                    val source = remember(c.viewport, c.viewportScope) { Any() }
+                    if (active) DisposableEffect(c.viewport, source) { onDispose { c.viewport.release(source) } }
+                    val onDirectionChanged: (TodayDirection?) -> Unit = remember(c.viewport, c.viewportScope, source, active) {
+                        { if (active) c.viewport.report(source, it, c.viewportScope) }
                     }
                     val month = remember(d.year, d.monthValue) { YearMonth.from(d) }
                     val start = gridStart(month, vm.weekStartsMonday)
@@ -925,11 +1017,14 @@ private fun WeekBody(c: CalendarContext, modifier: Modifier) {
     val vm = c.vm
     val p = LocalPalette.current
     if (vm.weekLayout == "continuous") {
-        val owner = remember { Any() }
-        DisposableEffect(c.viewport) { onDispose { c.viewport.release(owner) } }
+        val owner = remember(c.viewport, c.viewportScope) { Any() }
+        DisposableEffect(c.viewport, owner) { onDispose { c.viewport.release(owner) } }
+        val onDirectionChanged: (TodayDirection?) -> Unit = remember(c.viewport, c.viewportScope, owner) {
+            { c.viewport.report(owner, it, c.viewportScope) }
+        }
         ContinuousTimeline(vm, c.f, c.today, c.motion, c.timelineScroll, modifier,
             onOpen = { vm.open(Screen.Details(it)) },
-            onDirectionChanged = { c.viewport.report(owner, it) })
+            onDirectionChanged = onDirectionChanged)
         return
     }
     if (vm.weekLayout == "timeline") {
@@ -965,8 +1060,9 @@ private fun WeekBody(c: CalendarContext, modifier: Modifier) {
 /** Day view: a date strip for picking a day in the selected week, then cards, a timeline or the continuous schedule. */
 @Composable
 private fun DayBody(c: CalendarContext, modifier: Modifier) {
-    if (c.vm.dayLayout == "schedule") DayPeriod(c, modifier, c.vm.selectedDate, true)
-    else if (c.vm.dayLayout == "cards") SlidingPeriod(c.swipe, c.period, modifier) { absolute -> DayPeriod(c, Modifier.fillMaxSize(), rememberPeriodDate(c, absolute), absolute == c.period) }
+    val layout = c.vm.activeDayLayout
+    if (layout == "schedule") DayPeriod(c, modifier, c.vm.selectedDate, true)
+    else if (layout == "cards") SlidingPeriod(c.swipe, c.period, modifier) { absolute -> DayPeriod(c, Modifier.fillMaxSize(), rememberPeriodDate(c, absolute), absolute == c.period) }
     else PagedPeriod(c.swipe, c.period, modifier) { absolute -> DayPeriod(c, Modifier.fillMaxSize(), rememberPeriodDate(c, absolute), absolute == c.period) }
 }
 
@@ -974,23 +1070,26 @@ private fun DayBody(c: CalendarContext, modifier: Modifier) {
 private fun DayPeriod(c: CalendarContext, modifier: Modifier, date: LocalDate, active: Boolean) {
     val vm = c.vm
     val p = LocalPalette.current
+    val layout = vm.activeDayLayout
+    val body: @Composable () -> Unit = {
+        when (layout) {
+            "timeline" -> TimelinePeriod(c, remember(date) { listOf(date) }, if (active) 0 else 1, showHeaders = false)
+            // A new focus request scrolls this list in place. Remounting it showed an empty frame first.
+            "schedule" -> Agenda(c, vm.loadedFrom, vm.loadedTo, vm.agendaDisplay, vm.selectedDate, continuous = true, active = true, compact = true)
+            else -> DayCards(c, date, active = active)
+        }
+    }
     Column(modifier) {
-        if (vm.dayLayout != "cards") StatusCards(vm, Modifier.padding(horizontal = 12.dp))
-        CollapsingHeader(c.collapse, Modifier.weight(1f), header = {
+        if (layout != "cards") StatusCards(vm, Modifier.padding(horizontal = 12.dp))
+        // From the Month grid only the chosen date is shown, so there is no week strip to pick another one.
+        if (vm.dayDrilldown) Box(Modifier.weight(1f).fillMaxWidth().testTag("calendar_day_drilldown")) { body() }
+        else CollapsingHeader(c.collapse, Modifier.weight(1f), header = {
             Column(Modifier.testTag("calendar_day_picker")) {
                 WeekdayLabels(vm.weekStartsMonday, c.f)
                 WeekStrip(c, date, active = active)
                 HorizontalDivider(color = p.line)
             }
-        }) {
-            when (vm.dayLayout) {
-                "timeline" -> TimelinePeriod(c, remember(date) { listOf(date) }, if (active) 0 else 1, showHeaders = false)
-                "schedule" -> key(vm.dayFocusRequest) {
-                    Agenda(c, vm.loadedFrom, vm.loadedTo, vm.agendaDisplay, vm.selectedDate, continuous = true, active = true, compact = true)
-                }
-                else -> DayCards(c, date, active = active)
-            }
-        }
+        }, body = body)
     }
 }
 
@@ -1003,7 +1102,7 @@ private fun DayCards(c: CalendarContext, day: LocalDate, active: Boolean) {
         return
     }
     val eventsOn = rememberDayEvents(vm, day, day)
-    key(day, vm.dayFocusRequest) { DayView(vm, day, eventsOn(day), c.f, showStatus = active,
+    key(day) { DayView(vm, day, eventsOn(day), c.f,
         focus = if (active) c.readyFocus else null,
         onFocusHandled = c.onFocusHandled, motion = c.motion) }
 }
@@ -1018,8 +1117,8 @@ private fun TimelinePeriod(c: CalendarContext, days: List<LocalDate>, k: Int, sh
         return
     }
     val eventsOn = rememberDayEvents(vm, first, last)
-    val reset = if (vm.viewMode == ViewMode.Day) vm.dayFocusRequest else 0
-    key(reset) {
+    // A Day focus request is handled by the timeline's focus input. The page and its scroll state stay composed.
+    run {
         val scroll = rememberSaveable(saver = ScrollState.Saver) {
             ScrollState(if (k == 0 && c.timelineFocus != null) 0 else c.timelineScroll.value)
         }
@@ -1027,8 +1126,12 @@ private fun TimelinePeriod(c: CalendarContext, days: List<LocalDate>, k: Int, sh
             snapshotFlow { scroll.value }.collect { c.timelineScroll.scrollTo(it) }
         }
         var overflowEvents by remember { mutableStateOf(emptyList<CalendarEvent>()) }
-        val owner = remember { Any() }
-        DisposableEffect(c.viewport, k) { onDispose { c.viewport.release(owner) } }
+        val chooser = rememberChooserHandoff(vm) { overflowEvents = emptyList() }
+        val owner = remember(c.viewport, c.viewportScope) { Any() }
+        DisposableEffect(c.viewport, owner, k) { onDispose { c.viewport.release(owner) } }
+        val onDirectionChanged: (TodayDirection?) -> Unit = remember(c.viewport, c.viewportScope, owner, k, showHeaders) {
+            { if (k == 0 && showHeaders) c.viewport.report(owner, it, c.viewportScope) }
+        }
         Timeline(
             days, eventsOn, focused, c.today, c.f, showHeaders, scroll,
             autoScroll = k == 0, todayRequest = vm.todayRequest, motion = c.motion,
@@ -1046,14 +1149,13 @@ private fun TimelinePeriod(c: CalendarContext, days: List<LocalDate>, k: Int, sh
             tintToday = showHeaders,
             sharedMinute = c.timelineMinute,
             handledTodayRequest = c.timelineTodayHandled,
-            onDirectionChanged = { if (k == 0 && showHeaders) c.viewport.report(owner, it) },
+            onDirectionChanged = onDirectionChanged,
             onZoomChange = if (showHeaders) vm::changeWeekTimelineZoom else null,
         ) {
             val selected = vm.selectedDate.coerceIn(first, last)
             Agenda(c, first, last, "all", selected, continuous = false, active = k == 0, compact = vm.viewMode == ViewMode.Day)
         }
-        if (overflowEvents.isNotEmpty()) TimelineEventList(overflowEvents, c.f,
-            onOpen = { vm.open(Screen.Details(it)) }, onClose = { overflowEvents = emptyList() })
+        if (overflowEvents.isNotEmpty()) TimelineEventList(overflowEvents, c.f, onOpen = chooser.open, onClose = chooser.close)
     }
 }
 
@@ -1331,8 +1433,13 @@ private fun AgendaList(
     }
     var focusTop by remember(scheduleFocus) { mutableFloatStateOf(Float.NaN) }
     var viewportTop by remember { mutableFloatStateOf(0f) }
-    var focusPositioned by remember(scheduleFocus) { mutableStateOf(scheduleFocus == null) }
     var focusedEvent by remember { mutableStateOf<String?>(null) }
+    val positionedScheduleFocus = remember { arrayOf<TimelineFocus?>(null) }
+    if (focusReady && scheduleFocus !== positionedScheduleFocus[0]) SideEffect {
+        positionedScheduleFocus[0] = scheduleFocus
+        val row = targetIndex(rows, requireNotNull(scheduleFocus).date)
+        if (row >= 0) listState.requestScrollToItem(row)
+    }
     // A restored Today page must handle a newer request; other pages keep their saved scroll.
     var savedRequest by rememberSaveable { mutableIntStateOf(vm.todayRequest) }
     var handled by remember {
@@ -1364,17 +1471,13 @@ private fun AgendaList(
         request.start()
         try {
             // Provider results can insert rows before the old initial index. Compose the requested day before finding its event.
-            focusTop = Float.NaN
-            val row = targetIndex(rows, request.date)
-            if (row >= 0) listState.requestScrollToItem(row)
             if (focusEvent != null) {
                 val top = withTimeoutOrNull(1_500) { snapshotFlow { focusTop }.first { it.isFinite() } }
                 if (top == null) return@LaunchedEffect
                 listState.scrollBy((top - viewportTop - focusLead).coerceAtLeast(0f))
             }
-            focusPositioned = true
             focusedEvent = focusEvent?.key()
-        } finally { focusPositioned = true; c.onFocusHandled(request) }
+        } finally { c.onFocusHandled(request) }
     }
     if (active) {
         SideEffect { c.collapse.canExpand = { listState.firstVisibleItemIndex <= targetIndex(rows, selected).coerceAtLeast(0) } }
@@ -1401,11 +1504,12 @@ private fun AgendaList(
     }
 
     if (active) {
-        LaunchedEffect(listState, rows, from, to, today, c.viewport) {
+        val owner = remember(c.viewport, c.viewportScope) { Any() }
+        LaunchedEffect(listState, rows, from, to, today, c.viewport, c.viewportScope, owner) {
             snapshotFlow {
                 val info = listState.layoutInfo
                 val visible = info.visibleItemsInfo.filter {
-                    it.index in rows.indices && rows[it.index] !is AgendaRow.Month &&
+                    it.index in rows.indices && rows[it.index].key == it.key && rows[it.index] !is AgendaRow.Month &&
                         it.offset + it.size > info.viewportStartOffset && it.offset < info.viewportEndOffset
                 }
                 if (visible.isEmpty()) null
@@ -1423,11 +1527,11 @@ private fun AgendaList(
                     start to end
                 }
             }.collect { dates ->
-                if (dates == null) c.viewport.release(listState)
-                else c.viewport.report(listState, todayDirection(today, dates.first, dates.second))
+                if (dates == null) c.viewport.release(owner)
+                else c.viewport.report(owner, todayDirection(today, dates.first, dates.second), c.viewportScope)
             }
         }
-        DisposableEffect(c.viewport) { onDispose { c.viewport.release(listState) } }
+        DisposableEffect(c.viewport, owner) { onDispose { c.viewport.release(owner) } }
     }
 
     var lastDirection by remember { mutableStateOf<Boolean?>(null) }
@@ -1460,11 +1564,12 @@ private fun AgendaList(
         }
     }
 
+    val atMeasuredStart by remember(listState) { derivedStateOf {
+        listState.layoutInfo.visibleItemsInfo.firstOrNull()?.index == 0 && !listState.canScrollBackward
+    } }
     val listContent: @Composable (Dp) -> Unit = { gutter ->
-        Box(Modifier.fillMaxSize().graphicsLayer {
-            alpha = if (focusPositioned || vm.loadError != null || !vm.hasPermission) 1f else 0f
-        }
-            .then(if (compact) Modifier.testTag("calendar_schedule") else Modifier)) {
+        // The list is always drawn. Hiding it until a focus was positioned showed an empty body for whole reloads.
+        Box(Modifier.fillMaxSize().then(if (compact) Modifier.testTag("calendar_schedule") else Modifier)) {
             LazyColumn(
                 Modifier.fillMaxSize().testTag("calendar_agenda").onGloballyPositioned { viewportTop = it.positionInRoot().y }, state = listState,
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 104.dp),
@@ -1493,7 +1598,7 @@ private fun AgendaList(
                     }
                 }
             }
-            if (continuous && !listState.canScrollBackward) {
+            if (continuous && scheduleFocus == null && pending == null && atMeasuredStart) {
                 AgendaEdge(
                     vm.extendingAgenda && lastDirection == false, R.string.calendar_show_earlier,
                     Modifier.align(Alignment.TopCenter).padding(top = 4.dp), pill = true,
@@ -1684,7 +1789,7 @@ private fun EmptyRange(row: AgendaRow.Empty, f: Formats, onClick: () -> Unit) {
 
 /** Day cards: all-day events first, then timed events with their start time in a shared column on the left. */
 @Composable
-private fun DayView(vm: SunlithViewModel, day: LocalDate, events: List<CalendarEvent>, f: Formats, showStatus: Boolean,
+private fun DayView(vm: SunlithViewModel, day: LocalDate, events: List<CalendarEvent>, f: Formats,
     focus: TimelineFocus?, onFocusHandled: (TimelineFocus) -> Unit, motion: Boolean) {
     val p = LocalPalette.current
     val today = vm.today
@@ -1694,8 +1799,13 @@ private fun DayView(vm: SunlithViewModel, day: LocalDate, events: List<CalendarE
     val focusEvent = remember(focus, events, day, zone) { focus?.let { focusTarget(events, day, zone) } }
     val firstRow = (allDay + timed).indexOfFirst { it.key() == focusEvent?.key() }
         .takeIf { it >= 0 && focusEvent?.isTimelineBanner() == false }
-        ?.let { it + if (showStatus) 2 else 1 } ?: 0
+        ?.let { it + 2 } ?: 0
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = firstRow)
+    val positionedCardFocus = remember { arrayOf<TimelineFocus?>(null) }
+    if (focus != null && focus.date == day && focus !== positionedCardFocus[0]) SideEffect {
+        positionedCardFocus[0] = focus
+        listState.requestScrollToItem(firstRow)
+    }
     var focusedEvent by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(focusedEvent) { if (focusedEvent != null) { delay(1800); focusedEvent = null } }
     LaunchedEffect(focus) {
@@ -1706,8 +1816,6 @@ private fun DayView(vm: SunlithViewModel, day: LocalDate, events: List<CalendarE
             val target = focusTarget(events, day, zone)
             val index = (allDay + timed).indexOfFirst { it.key() == target?.key() }
             if (index >= 0 && target?.isTimelineBanner() == false) {
-                val row = index + if (showStatus) 2 else 1
-                listState.scrollToItem(row)
                 focusedEvent = target?.key()
             }
         } finally { onFocusHandled(request) }
@@ -1717,7 +1825,7 @@ private fun DayView(vm: SunlithViewModel, day: LocalDate, events: List<CalendarE
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val timeWidth = rememberTimeGutter(timed.map { f.time(it.startMillis) }, timeStyle, 64.dp, (maxWidth - 32.dp) * 0.4f)
         LazyColumn(Modifier.fillMaxSize().testTag("calendar_day_cards"), state = listState, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (showStatus) item(key = "status") { StatusCards(vm) }
+            item(key = "status") { StatusCards(vm) }
             item(key = "head") {
                 Column(Modifier.padding(vertical = 8.dp).semantics(mergeDescendants = true) { heading() }) {
                     Text(f.dayLong(day), color = p.ink, style = MaterialTheme.typography.titleLarge)

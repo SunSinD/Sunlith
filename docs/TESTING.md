@@ -2,6 +2,153 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.6.10 calendar and college notice verification, 2026-11-14
+
+The tested distribution APK is version 0.6.10/code 21, nondebuggable and
+R8 minified, signed with the existing certificate. Candidate R14 freezes 223
+production, test and configuration files. All live files and source ZIP entries
+matched that fingerprint. Only this verification document changes afterward.
+Release packaging uses the exact tested APK.
+
+| Artifact | SHA256 |
+| --- | --- |
+| Distribution APK | `d5d22647b4e79ea879a1e9daaf234b3b85cb8e410d5f6d31463bbd6df5686052` |
+| Test APK | `a5bae4be0ea61ed823634f075373c0bdfc06ab28fc969509462d29cc69d04778` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+| Frozen source fingerprint | `adf54d5377d60cecf1c6f2f440a09d3550c8a1a7f306dc8252363fc1cf8a3840` |
+| Frozen source ZIP | `74db10d078a4eb0efddbe6d1b13dea6ee858af3b446c8696dd8b93054375e231` |
+
+| Check | API 30 / Android 11 | API 36 / Android 16 |
+| --- | --- | --- |
+| Complete instrumentation inventory, 31 classes each | 387 passed, 7 skipped, 0 named failures | 389 passed, 8 skipped, 0 named failures |
+| Separate ordered preflight | 2 passed | 2 passed |
+| Separate recorded pinch checks | 3 passed | 3 passed |
+| Display profiles | 12 passed, 36 PNG/XML pairs | 12 passed, 36 PNG/XML pairs |
+| Upgrade from published 0.6.9 | All four cases passed | All four cases passed |
+
+The inventory counts are disjoint unions of complete classes across focused,
+full and continuation campaigns. They are not uninterrupted suite runs.
+The independent audit accounts for every declared method exactly once per
+supported API, with no missing, duplicate or unexpected named outcome.
+API 36 has 397 named outcomes. API 30 has 394 because three methods require
+API 33. Nameless diagnostic terminal bundles, 75 on API 30 and 96 on API 36,
+are excluded. Optional fixtures and platform requirements explain the skips.
+Separately enabled preflight and recording checks are not added to these
+inventory totals. Every counted class finished naturally.
+
+All 191 JVM tests passed with zero failures, errors or skips. Lint reported
+zero errors, 151 warnings and 9 hints. Both APK signatures passed. The companion
+passed 44 tests with one optional external fixture skipped, its syntax checks
+passed, and its production dependency audit found zero vulnerabilities.
+The local build used `-XX:TieredStopAtLevel=1` and
+`-XX:ReservedCodeCacheSize=512m` after compiler JVM failures. This environment
+workaround did not change application source or R8 settings. Build integrity
+reports predate runtime verification. The completed runtime evidence supplies
+the device results above.
+
+Coverage includes school status before slow provider reads, ownership changes
+while reads are held, live event details, Month date drilldown and its separate
+List/All hours preference, matching date and page content, focus without
+remounting the visible page, initial timeline positioning, Today after axis
+rebuilds, midnight inset, pinch focal anchors, interrupted springs and a second
+pinch taking over. Cancellation fixtures check warnings, confirmations,
+corrections, limited scopes, negation, missing messages, local edits and stable
+class IDs and times. Earlier candidate failures were corrected before R14.
+
+All eight upgrade cases passed: missing legacy preference, legacy off, legacy
+on and new key precedence on both APIs. Provider data, the visible date,
+stock/custom layouts and exact saved pairing bytes survived. Pairing data was
+synthetic persisted state. This does not establish a live TLS reconnection.
+
+The 24 profile instances contain 72 distinct valid PNG/XML pairs. Each also
+has a bound direction report. All 216 file hashes passed independent checks,
+all XML parsed, and both reviewers covered the images. Profiles include 390dp
+and 344dp widths, 280dp, 115% and 200% text, light and dark themes, Material You,
+French, forced French RTL and English landscape. API 30's Material You profile
+checks its fallback theme. API 36 also verifies actual dynamic colours.
+The repaired harness checks painted geometry and language instead of accepting
+a requested setting as proof of the displayed direction.
+
+Fresh R14 motion evidence contains 18 clips and 3,645 encoded frames, with
+3,457 images after removing exact duplicates within each clip.
+GPT 6.1 Sol High and Opus 5.5 High reviewed the schedule paths
+on both APIs, Day and Month paths, selected Week header paths and all six pinch
+clips. No blank timeline or unexplained disappearing event was observed during
+the recorded gestures. Today and the initial event position were correct on
+the recorded routes. Two Week header clips contain only three frames each.
+Screen recordings can skip physical display frames, so these observations do
+not prove every displayed frame or continuous smoothness. Older transition,
+cancellation and rebound evidence carries forward only where its code path
+is unchanged. The cancellation recording is a synthetic component fixture,
+not a live portal sync through the production route.
+
+Two inherited overview limits remain. A compact Week short events chip can
+paint an ellipsis without its number, while its spoken count and chooser
+remain available. A partly visible Week column can lose its header or clip
+text at 200%. RTL chooser radios also sit close to labels, small blocks can
+omit a secondary time line, and floating buttons can cover part of an event
+title. These profiles do not establish formal contrast compliance or physical
+TalkBack behaviour. When cached data has a load error, changing Day layout
+keeps the explicit Retry action instead of automatically retrying the load.
+
+Harness failures remain separate from named test results. The first API 30
+French setup reverted to English. A later parser rejected a settings fragment
+before changing locale. Both failures and the corrected host checks remain.
+WidgetSmoke passed, but its cleanup assumed that baseline preferences existed.
+Its generated fixture state was restored separately without replaying the test.
+Upgrade preflight then found operation journals that the original baseline had
+not inventoried. Their originals were preserved and their exact known paths
+were removed after provenance and format checks. An incorrect 64 character
+hash guard stopped the first cleanup before deletion. The real format uses
+32 character hashes. No plaintext namespace is recoverable from those hashes.
+
+The original RTL setup applied direction one profile late. Six wrong direction
+API 30 pairs remain preserved and are excluded from valid coverage. Corrected
+French RTL and English landscape captures replaced those coverage gaps on both
+APIs. No completed valid profile was replayed to repair the matrix.
+
+API 30's emulator exited during the corrected campaign's cleanup. The failure
+and STOP record remain intact. Explicit recovery relaunched the same private
+AVD once with its original arguments, without a wipe, reinstall or snapshot
+rollback. English locale and the original RTL setting were already durable.
+Only the display size required a settings change to `688x1760`. Recovery also
+restored the original root ADB transport. The scoped baseline and installed
+APK hashes then matched over three samples spanning 10.74 seconds. The emulator
+exit cause remains unknown.
+
+Final checks on both private guests matched provider data, preferences,
+display, app locales, full framework configuration, actual direction and RTL
+settings, plus the frozen installed APK pair. The later private file inventory
+covers regular files and symlinks under the app's `no_backup` directory only,
+which was empty on both guests afterward. No original full private storage
+inventory was captured, so no whole private storage restoration is claimed.
+API 36's final upgrade restoration held for three samples over 15.52 seconds.
+Generic success summary files can have identical hashes across campaigns.
+Per campaign initial/final state, stability samples and installed APK proofs
+bind the restoration evidence to its actual run.
+
+Ownership was revalidated before gracefully stopping both private guests and
+the campaign watcher. No owned emulator, QEMU, campaign or watcher process
+remained. The shared ADB server was preserved. A final full audit of the
+original `.toolchain/avd` directory verified all 485 files, totaling
+94,168,573,854 bytes, against the recorded baseline. Paths, SHA256 hashes,
+sizes and modification times matched with zero differences. Private runtime
+artifacts and historical evidence were retained.
+
+Raw failures, interrupted campaigns, invalid captures, corrections and final
+accepted manifests remain under the ignored `.toolchain/v0610-runtime` folder.
+The named inventory audit is `candidate-r14-root-named-outcome-audit.json`.
+The final profile manifests end in `valid-completed12.json`, and the upgrade
+handback is `candidate-r14-upgrades-emulator-5584-01/final-handback.json`.
+Reciprocal review clarifications preserve earlier wording and identify the
+correction explicitly. Both final reviewers found no new release blocker
+within their reviewed scopes.
+
+A prior candidate's read only Montmorency smoke read 24 administration rows
+and 11 details. The final login/parser paths are unchanged from that smoke.
+No final live full sync, real account cancellation write, physical Fold5,
+campus network or real desktop reconnection is claimed by this verification.
+
 ## 0.6.9 administration messages and timeline verification, 2026-11-13
 
 The tested distribution APK is version 0.6.9/code 20, nondebuggable and

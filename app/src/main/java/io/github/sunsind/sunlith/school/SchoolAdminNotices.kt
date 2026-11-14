@@ -1,8 +1,10 @@
 package io.github.sunsind.sunlith.school
 
 import java.net.URI
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
@@ -22,7 +24,29 @@ data class SchoolCollegeNotice(
     val until: LocalTime?, val decisionAt: LocalTime?, val resume: LocalDate?,
     val sourceId: String, val sourceDate: LocalDate, val sender: String, val subject: String,
     val exceptions: List<String>, val text: String, val superseded: List<String>, val detailRead: Boolean,
+    /** True when this notice also marks your classes that day (see [SchoolNoticeInterpreter.lifts]). */
+    val classesMarked: Boolean = false,
 )
+
+/**
+ * A confirmed, college wide lifting of classes on [date], read from a notice whose full text was read.
+ * Classes that start before [until] (or all classes that day when [until] is null) are marked, never deleted.
+ */
+data class SchoolClassLift(
+    val date: LocalDate, val until: LocalTime?, val sourceDate: LocalDate,
+    /** An unread or missing source retains each class's existing mark without authorizing any new cancellation. Never stored. */
+    val preserveOnly: Boolean = false,
+) {
+    /** Stored on the class item. Stable across languages, so changing the phone language does not rewrite events. */
+    val marker: String get() = if (until == null) "$sourceDate" else "$sourceDate@$until"
+    companion object {
+        /** The notice date and end time stored by [marker], or null for an empty or unknown marker. */
+        fun parse(marker: String): Pair<LocalDate, LocalTime?>? = runCatching {
+            val parts = marker.split('@')
+            if (parts.size !in 1..2) null else LocalDate.parse(parts[0]) to parts.getOrNull(1)?.let { LocalTime.parse(it) }
+        }.getOrNull()
+    }
+}
 
 data class SchoolNoticeSuggestion(val id: String, val date: LocalDate, val title: String, val detail: String)
 
@@ -131,15 +155,35 @@ internal object SchoolNoticeInterpreter {
     private val TRIGGER = Regex("lev[eé]e?s? des cours|cours[^.]{0,400}\\b(?:sont|seront|est|sera) (?:leves|annules|suspendus)|boycott|greve|fermeture du college|college (?:sera |est )?ferme")
     private val CANCEL = Regex("levee des cours|\\b(?:sont|seront) (?:leves|annules|suspendus)\\b|\\b(?:est|sera) ferme\\b|fermeture du college")
     private val CONDITIONAL = Regex("\\b(pourrait|pourraient|pourrions|si une|si les|s'il|eventuel\\w*|possible\\w*|risque|advenant|probable\\w*|rumeur|non confirme\\w*)\\b")
-    private val UNTIL = Regex("jusqu'?\\s?a\\s+(\\d{1,2})\\s?h\\s?(\\d{2})?")
+    private val UNTIL = Regex("jusqu'?\\s?a\\s*(\\d{1,2})\\s?h\\s?(\\d{2})?\\b")
+    private val UNTIL_WORD = Regex("jusqu'?\\s?a(?=\\s|\\d|$)")
     private val TIME = Regex("\\b(\\d{1,2})\\s?h\\s?(\\d{2})?\\b")
-    private val RESUME = Regex("reprendr\\w*")
+    private val RESUME = Regex("reprendr\\w*|reprenn\\w*|reprise")
     private val EXCEPTION = Regex("formation continue|apres \\d{1,2}\\s?h|comme prevu|telles? que planifiee?s|pourront avoir lieu|auront lieu")
     private val DEADLINE = Regex("date limite|au plus tard|d'ici le|avant le|jusqu'au|deadline|no later than")
     private val RETRACTION = Regex("(?:pas|aucune|sans) (?:de |une )?(?:levee des cours|annulation des cours|fermeture du college)|(?:annulation|annulee?|retiree?) (?:de la |d'une |la )?levee des cours|cours[^.!?]{0,40}ne (?:sont|seront) pas (?:annules|leves|suspendus)|levee des cours[^.!?]{0,60}(?:annulee|retiree|pas decretee)")
-    private val MAINTAINED = Regex("cours (?:sont |seront )?maintenus")
-    private val AFTER_HOUR = Regex("apres \\d{1,2}\\s*h")
+    private val MAINTAINED = Regex("cours\\b[^.!?]{0,60}\\bmaintenus")
+    private val NEGATED_MAINTENANCE = Regex("(?:\\bne\\b|\\bn')[^.!?,;:]{0,40}\\b(?:pas|plus|jamais)\\b[^.!?,;:]{0,20}\\bmaintenus|\\bnon\\s+maintenus")
+    private val CORRECTION_EXCEPTION = Regex("\\bsauf\\b|a l'exception")
+    private val PARTIAL_DAY = Regex("\\bmatin(?:ee)?\\b|apres[- ]midi|\\bsoiree\\b|\\bsoir\\b|\\bmidi\\b")
     private val CLASS_SCOPE = Regex("\\b(cours|college|montmorency|campus|pavillon)\\b")
+    // A lifting limited to some programs, groups or evening classes stays a notice only: the app cannot tell if it covers you.
+    private val NARROW = Regex("formation continue|\\bprogrammes?\\b|\\bdepartements?\\b|\\bgroupes?\\b|\\bcertain(?:e|s|es)?\\b|\\bseulement\\b|\\buniquement\\b|en soiree|cours du soir|a l'exception|\\bsauf\\b")
+    private val SITE_SCOPE = Regex("\\b(?:pavillons?|batiments?|campus|locaux|local|sites?|centres?)\\b")
+    private val DELIVERY_SCOPE = Regex("a distance|en ligne|en presence|en presentiel|\\b(?:presentiels?|hybrides?)\\b")
+    private val REGULAR_SITES = Regex("\\bpavillon principal,?\\s+a espace montmorency et au campus de l'est de laval\\b")
+    private val JOINED_SCOPE = Regex("\\b(?:et|ainsi que|de meme que)\\b")
+
+    private fun continuingEducationOnly(text: String): Boolean = text.contains("formation continue") &&
+        !JOINED_SCOPE.containsMatchIn(text) && NARROW.findAll(text).all { it.value == "formation continue" }
+
+    private fun limitedAttendance(text: String): Boolean {
+        // The verified Montmorency notice lists all three regular teaching sites together. A single site, or a
+        // delivery mode, cannot identify which imported classes are affected and must stay a notice only.
+        val allRegularSites = REGULAR_SITES.containsMatchIn(text) &&
+            !MAINTAINED.containsMatchIn(text) && !RETRACTION.containsMatchIn(text)
+        return DELIVERY_SCOPE.containsMatchIn(text) || SITE_SCOPE.containsMatchIn(text) && !allRegularSites
+    }
 
     internal fun sentences(text: String): List<String> = text.split(Regex("(?<=[.!?])\\s+|\\n+")).map { it.trim() }.filter { it.isNotEmpty() }
 
@@ -163,7 +207,7 @@ internal object SchoolNoticeInterpreter {
     }
 
     private data class Reading(val notice: SchoolAdminNotice, val target: LocalDate, val status: SchoolNoticeStatus, val until: LocalTime?,
-        val decisionAt: LocalTime?, val resume: LocalDate?, val exceptions: List<String>, val text: String)
+        val decisionAt: LocalTime?, val resume: LocalDate?, val exceptions: List<String>, val text: String, val general: Boolean)
 
     private fun read(notice: SchoolAdminNotice): Reading? {
         val subject = SchoolHtml.normalize(notice.subject)
@@ -183,25 +227,63 @@ internal object SchoolNoticeInterpreter {
                 .flatMap { dates(SchoolHtml.normalize(it), notice.date) }.distinct().singleOrNull() ?: return null
         }
         if (target.isBefore(notice.date.minusDays(14)) || target.isAfter(notice.date.plusDays(60))) return null
-        // A correction in the body takes precedence over an unchanged cancellation subject.
+        // A correction in the body takes precedence over an unchanged cancellation subject. A dated correction must name
+        // the affected day. An exception following a general correction does not keep the blanket cancellation active.
         val updated = all.any { sentence ->
             val normalized = SchoolHtml.normalize(sentence)
-            (RETRACTION.containsMatchIn(normalized) || MAINTAINED.containsMatchIn(normalized)) &&
-                !AFTER_HOUR.containsMatchIn(normalized) && dates(normalized, notice.date).all { it == target }
+            val correction = CORRECTION_EXCEPTION.split(normalized, limit = 2).first()
+            val days = dates(normalized, notice.date)
+            (RETRACTION.containsMatchIn(correction) ||
+                MAINTAINED.containsMatchIn(correction) && !NEGATED_MAINTENANCE.containsMatchIn(correction)) &&
+                !CONDITIONAL.containsMatchIn(correction) &&
+                !TIME.containsMatchIn(correction) && !PARTIAL_DAY.containsMatchIn(correction) &&
+                !NARROW.containsMatchIn(correction) && !limitedAttendance(correction) && days.all { it == target }
         }
         val cancelSentences = all.filter { CANCEL.containsMatchIn(SchoolHtml.normalize(it)) }
         val confirmed = !updated && cancelSentences.any { !CONDITIONAL.containsMatchIn(SchoolHtml.normalize(it)) }
         val conditional = cancelSentences.filter { CONDITIONAL.containsMatchIn(SchoolHtml.normalize(it)) }
-        val until = if (!confirmed) null else cancelSentences.filter { !CONDITIONAL.containsMatchIn(SchoolHtml.normalize(it)) }
-            .firstNotNullOfOrNull { time(UNTIL.find(SchoolHtml.normalize(it))) }
+        val scopeSentences = cancelSentences.map(SchoolHtml::normalize).filter {
+            !CONDITIONAL.containsMatchIn(it) && !NARROW.containsMatchIn(it) && dates(it, notice.date).all { day -> day == target }
+        }
+        val untilMatches = scopeSentences.flatMap { UNTIL.findAll(it).toList() }
+        val untilTimes = untilMatches.map(::time)
+        val consistentUntil = untilTimes.all { it != null } && untilTimes.distinct().size <= 1 &&
+            scopeSentences.sumOf { UNTIL_WORD.findAll(it).count() } == untilMatches.size
+        val until = if (confirmed && consistentUntil) untilTimes.firstOrNull() else null
+        // Only a single, unambiguous "until" boundary is supported. Other hours and partial-day scopes must never
+        // turn into a whole-day cancellation. A same-day resumption must agree with that boundary too.
+        val supportedTiming = consistentUntil && scopeSentences.none {
+            TIME.containsMatchIn(UNTIL.replace(it, "")) || PARTIAL_DAY.containsMatchIn(it)
+        } && bodySentences.map(SchoolHtml::normalize).filter {
+            (MAINTAINED.containsMatchIn(it) || RESUME.containsMatchIn(it)) &&
+                !CONDITIONAL.containsMatchIn(it) && !NARROW.containsMatchIn(it) && dates(it, notice.date).all { day -> day == target }
+        }.all {
+            val times = TIME.findAll(it).map(::time).toList()
+            !PARTIAL_DAY.containsMatchIn(it) && (times.isEmpty() || until != null && times.all { t -> t == until })
+        }
         val decisionAt = if (confirmed) null else conditional.firstNotNullOfOrNull { time(TIME.find(SchoolHtml.normalize(it))) }
         val resume = bodySentences.firstOrNull { RESUME.containsMatchIn(SchoolHtml.normalize(it)) }
             ?.let { dates(SchoolHtml.normalize(it), notice.date).firstOrNull { d -> d.isAfter(target) } }
         val exceptions = if (!confirmed) emptyList() else bodySentences.filter { s ->
             val n = SchoolHtml.normalize(s); EXCEPTION.containsMatchIn(n) && !CANCEL.containsMatchIn(n)
         }.map { it.take(400) }.take(6)
+        // A broad title is not enough to change classes. The full body must itself confirm the lifting at the target
+        // scope. In particular, an unchanged title cannot turn a conditional or program-only body into a general lifting.
+        val restrictedScope = all.any { sentence ->
+            val normalized = SchoolHtml.normalize(sentence)
+            DELIVERY_SCOPE.containsMatchIn(normalized) ||
+                (normalized == subject || CANCEL.containsMatchIn(normalized) || MAINTAINED.containsMatchIn(normalized) ||
+                    RETRACTION.containsMatchIn(normalized) ||
+                    EXCEPTION.containsMatchIn(normalized) && !continuingEducationOnly(normalized)) &&
+                    (limitedAttendance(normalized) || NARROW.containsMatchIn(normalized) && !continuingEducationOnly(normalized))
+        }
+        val general = confirmed && supportedTiming && !restrictedScope && bodySentences.any { sentence ->
+            val normalized = SchoolHtml.normalize(sentence)
+            CANCEL.containsMatchIn(normalized) && !CONDITIONAL.containsMatchIn(normalized) &&
+                !NARROW.containsMatchIn(normalized) && dates(normalized, notice.date).all { it == target }
+        }
         return Reading(notice, target, when { updated -> SchoolNoticeStatus.UPDATED; confirmed -> SchoolNoticeStatus.CONFIRMED; else -> SchoolNoticeStatus.WARNING }, until, decisionAt, resume, exceptions,
-            (if (body.isBlank()) notice.subject else body).take(3_000))
+            (if (body.isBlank()) notice.subject else body).take(3_000), general)
     }
 
     /** Groups readings by affected day. Newer notices replace older ones, including corrections. */
@@ -211,8 +293,33 @@ internal object SchoolNoticeInterpreter {
                 .thenByDescending { it.status == SchoolNoticeStatus.UPDATED }.thenByDescending { it.notice.body != null }).first()
             SchoolCollegeNotice("college-day:$target", target, best.status, best.until, best.decisionAt, best.resume,
                 best.notice.id, best.notice.date, best.notice.sender.ifBlank { best.notice.category }, best.notice.subject, best.exceptions, best.text,
-                readings.filter { it !== best }.map { it.notice.id }, best.notice.body != null)
+                readings.filter { it !== best }.map { it.notice.id }, best.notice.body != null,
+                best.status == SchoolNoticeStatus.CONFIRMED && best.general && best.notice.body != null)
         }.sortedBy { it.targetDate }
+
+    /** Class liftings to mark, one per day. Only confirmed, college wide notices whose full text was read qualify. */
+    fun lifts(notices: List<SchoolCollegeNotice>): List<SchoolClassLift> =
+        notices.filter { it.classesMarked }.map { SchoolClassLift(it.targetDate, it.until, it.sourceDate) }
+
+    /**
+     * Marks regular classes covered by [lifts]. IDs, times and every other field stay as they are, so the calendar rows
+     * are updated in place and the class comes back unmarked when a correction withdraws the lifting.
+     * Days before [keepBefore] keep the mark they had in [baseline], so old history is never rewritten.
+     * When [lifts] is null (no successful notice read yet), every class keeps the mark it had in [baseline].
+     */
+    fun applyLifts(items: List<SchoolItem>, lifts: List<SchoolClassLift>?, baseline: List<SchoolItem>, keepBefore: LocalDate): List<SchoolItem> {
+        val previous = baseline.filter { it.collegeLift.isNotEmpty() }.associateBy { it.id }
+        val byDay = lifts?.associateBy { it.date }
+        return items.map { item ->
+            if (item.kind != CLASS_KIND || item.allDay) return@map if (item.collegeLift.isEmpty()) item else item.copy(collegeLift = "")
+            val kept = previous[item.id]?.takeIf { it.date == item.date }?.collegeLift.orEmpty()
+            if (byDay == null || item.date.isBefore(keepBefore)) return@map item.copy(collegeLift = kept)
+            val lift = byDay[item.date]
+            if (lift?.preserveOnly == true) return@map item.copy(collegeLift = kept)
+            val start = runCatching { Instant.ofEpochMilli(item.startMillis).atZone(ZoneId.of(item.zone)).toLocalTime() }.getOrNull()
+            item.copy(collegeLift = if (lift != null && start != null && (lift.until == null || start.isBefore(lift.until))) lift.marker else "")
+        }
+    }
 
     fun suggestions(notices: List<SchoolAdminNotice>, today: LocalDate, excluded: Set<LocalDate>): List<SchoolNoticeSuggestion> =
         notices.filter { it.body != null }.flatMap { notice ->
@@ -223,7 +330,7 @@ internal object SchoolNoticeInterpreter {
             }
         }.distinctBy { it.id }.sortedBy { it.date }.take(30)
 
-    /** Calendar items for confirmed or warned college days. Classes themselves are never edited; scope is not inferred. */
+    /** Calendar notice items. Class marking separately requires confirmed full-body scope evidence. */
     fun items(notices: List<SchoolCollegeNotice>, english: Boolean): List<SchoolItem> = notices.map { n ->
         val dateFmt = DateTimeFormatter.ISO_LOCAL_DATE.withResolverStyle(ResolverStyle.STRICT)
         fun t(time: LocalTime) = if (english) time.toString() else if (time.minute == 0) "${time.hour} h" else "${time.hour} h ${"%02d".format(time.minute)}"
@@ -245,7 +352,11 @@ internal object SchoolNoticeInterpreter {
             add((if (english) "Subject: " else "Objet : ") + n.subject)
             n.exceptions.forEach { add((if (english) "Exception: " else "Exception : ") + it) }
             n.resume?.let { add(if (english) "Classes resume ${it.format(dateFmt)}." else "Reprise des cours le ${it.format(dateFmt)}.") }
-            add(if (english) "Your classes were not changed. Check which sites and programs the notice covers." else "Vos cours n'ont pas été modifiés. Vérifiez quels lieux et programmes l'avis touche.")
+            add(when {
+                !n.classesMarked -> if (english) "Your classes were not changed. Check which sites and programs the notice covers." else "Vos cours n'ont pas été modifiés. Vérifiez quels lieux et programmes l'avis touche."
+                n.until != null -> if (english) "This notice covers classes starting before ${t(n.until)}. Local edits stay unchanged. Check the exceptions in the notice." else "Cet avis concerne les cours qui commencent avant ${t(n.until)}. Vos modifications sont conservées. Vérifiez les exceptions dans l'avis."
+                else -> if (english) "This notice covers classes on this day. Local edits stay unchanged. Check the exceptions in the notice." else "Cet avis concerne les cours de cette journée. Vos modifications sont conservées. Vérifiez les exceptions dans l'avis."
+            })
             if (!n.detailRead) add(if (english) "Only the notice title could be read. Open Col.NET for the full text." else "Seul le titre de l'avis a pu être lu. Ouvrez Col.NET pour le texte complet.")
             add("")
             add(n.text)
@@ -256,4 +367,5 @@ internal object SchoolNoticeInterpreter {
     }
 
     const val NOTICE_KIND = "notice"
+    const val CLASS_KIND = "01"
 }

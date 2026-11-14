@@ -1,5 +1,17 @@
 # Changes
 
+## 0.6.10
+
+Event details keep school status visible while data refreshes. Screen transitions keep their backgrounds covered, and Search and To do no longer briefly show a loading line under the toolbar. Appearance descriptions are shorter.
+
+Week cards keep time labels on one line and separate the event count into a badge. The event chooser has outlined rows with arrows and less empty space.
+
+Timeline focus and page changes position events before drawing. Pinch zoom returns gently to its limits. Day leaves a little more space above midnight and less space below an empty evening, while late events can still scroll above the floating buttons.
+
+Opening a date from the Month grid shows only that date, with no week strip or floating Today arrow. A toolbar button switches between List and All hours and remembers that choice separately from Day. Timelines still show all hours by default, and grouping empty hours in Week stays optional.
+
+College messages supports the login form Col.NET sends to Android. Empty portal links open Col.NET directly, and connection failures show their reason. Verified cancellation notices can mark affected regular classes without changing their times or event IDs. Corrections restore them, and uncertain or limited notices stay separate.
+
 ## 0.6.9
 
 Five day timelines now show Monday to Friday by default. Rolling days remain available, and earlier choices are preserved. Week headers highlight the focused date as you page. Selecting those headers is optional and off by default. Seven day timelines fit the week at normal text sizes.

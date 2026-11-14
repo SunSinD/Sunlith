@@ -196,9 +196,9 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                             }
                         }
                         if (vm.weekLayout == "timeline" && vm.visibleWeekDays == 5) {
-                            ToggleRow(stringResource(R.string.settings_rolling_five_days), stringResource(R.string.settings_rolling_five_days_summary), vm.rollingFiveDays, vm::changeRollingFiveDays)
+                            ToggleRow(stringResource(R.string.settings_rolling_five_days), stringResource(R.string.settings_rolling_five_days_short), vm.rollingFiveDays, vm::changeRollingFiveDays)
                         }
-                        ToggleRow(stringResource(R.string.settings_week_header_selection), stringResource(R.string.settings_week_header_selection_summary), vm.weekHeaderSelection, vm::changeWeekHeaderSelection)
+                        ToggleRow(stringResource(R.string.settings_week_header_selection), stringResource(R.string.settings_week_header_selection_short), vm.weekHeaderSelection, vm::changeWeekHeaderSelection)
                         if (vm.weekLayout != "list") TimelineZoomRow(stringResource(R.string.settings_week_zoom), vm.weekTimelineZoom, vm::changeWeekTimelineZoom)
                         DropdownRow(
                             stringResource(R.string.view_day), vm.dayLayout,
@@ -207,7 +207,8 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                                 "schedule" to stringResource(R.string.custom_schedule)),
                             vm::changeDayLayout,
                         )
-                        ToggleRow(stringResource(R.string.settings_group_empty_hours), stringResource(R.string.settings_group_empty_hours_summary), vm.groupEmptyHours, vm::changeGroupEmptyHours)
+                        // The title already says Week, so the toggle needs no second line.
+                        ToggleRow(stringResource(R.string.settings_group_empty_hours), null, vm.groupEmptyHours, vm::changeGroupEmptyHours)
                         ToggleRow(stringResource(R.string.beta_collapse_calendar), null, vm.collapseCalendarOnScroll, vm::changeCollapseCalendarOnScroll)
                         SectionTitle(stringResource(R.string.custom_colors))
                         DropdownRow(
@@ -222,7 +223,7 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                         )
                         ToggleRow(
                             stringResource(R.string.settings_wallpaper_colors),
-                            if (Build.VERSION.SDK_INT < 31) stringResource(R.string.custom_material_you_fallback) else null,
+                            if (Build.VERSION.SDK_INT < 31) stringResource(R.string.custom_material_you_fallback_short) else null,
                             vm.materialYou,
                             vm::changeMaterialYou,
                         )

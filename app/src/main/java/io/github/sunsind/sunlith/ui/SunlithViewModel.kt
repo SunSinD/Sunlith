@@ -52,6 +52,9 @@ enum class ViewMode { Month, Week, Day }
 
 internal val DAY_LAYOUT_CHOICES = listOf("cards", "timeline")
 
+/** A Day opened from the Month grid shows only that date as a list or all hours. All hours is the default. */
+internal fun drilldownLayoutOrDefault(saved: String?): String = saved?.takeIf { it in DAY_LAYOUT_CHOICES } ?: "timeline"
+
 /** Layouts offered by long-pressing a view tab, in display order. Day keeps the retired compact schedule out. */
 internal fun layoutChoices(mode: ViewMode): List<String> = when (mode) {
     ViewMode.Month -> listOf("split", "full")
@@ -214,6 +217,29 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var selectedDate by mutableStateOf(today); private set
     private var dayParent by mutableStateOf<Pair<ViewMode, LocalDate>?>(null)
     val hasDayParent: Boolean get() = dayParent != null
+    private var openedFromMonthGrid by mutableStateOf(false)
+
+    /** Day opened by tapping a Month grid date: one date, no week strip, no Today shortcut, and its own layout. */
+    val dayDrilldown: Boolean get() = openedFromMonthGrid && dayParent != null && viewMode == ViewMode.Day
+    var drilldownLayout by mutableStateOf(drilldownLayoutOrDefault(uiPrefs.getString(KEY_DRILLDOWN_LAYOUT, null))); private set
+
+    /** The Day layout on screen. The standalone Day view keeps its own saved layout. */
+    val activeDayLayout: String get() = if (dayDrilldown) drilldownLayout else dayLayout
+
+    fun changeDrilldownLayout(value: String) {
+        require(value in DAY_LAYOUT_CHOICES)
+        if (value == drilldownLayout) return
+        uiPrefs.edit().putString(KEY_DRILLDOWN_LAYOUT, value).apply()
+        Snapshot.withMutableSnapshot {
+            if (dayDrilldown) pagedTimelineTodayHandled.intValue = todayRequest
+            drilldownLayout = value
+            if (dayDrilldown) dayFocusRequest++
+        }
+        if (dayDrilldown) ensureLoaded()
+    }
+
+    /** Screen opened without the fade, so a closing dialog never reveals the calendar under it. */
+    var instantScreen by mutableStateOf<Screen?>(null); private set
     var dayFocusRequest by mutableStateOf(0); private set
     private var handledDayFocus = 0
     val pendingDayFocus: Boolean get() = viewMode == ViewMode.Day && handledDayFocus != dayFocusRequest
@@ -379,7 +405,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         gridStart(gridMonth.minusMonths(1), weekStartsMonday) to gridStart(gridMonth.plusMonths(1), weekStartsMonday).plusDays(41)
 
     private fun continuousAgenda() = continuousTimeline() || (viewMode == ViewMode.Month && monthLayout != "full" && agendaRange == "continuous") ||
-        (viewMode == ViewMode.Day && dayLayout == "schedule")
+        (viewMode == ViewMode.Day && activeDayLayout == "schedule")
 
     private fun initialWindow(): Pair<LocalDate, LocalDate> = if (continuousAgenda()) {
         val anchor = if (continuousTimeline()) timelineViewportStart ?: selectedDate else selectedDate
@@ -645,6 +671,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         if (mode == viewMode) return
         refreshCurrentDate()
         dayParent = null
+        openedFromMonthGrid = false
         Snapshot.withMutableSnapshot {
             if (!keepSelectedDate) selectedDate = today
             pagedTimelineTodayHandled.intValue = todayRequest
@@ -668,7 +695,10 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     // region navigation
 
     fun openDay(date: LocalDate) {
-        if (viewMode != ViewMode.Day) dayParent = viewMode to selectedDate
+        if (viewMode != ViewMode.Day) {
+            openedFromMonthGrid = viewMode == ViewMode.Month && monthLayout == "full"
+            dayParent = viewMode to selectedDate
+        }
         Snapshot.withMutableSnapshot {
             viewMode = ViewMode.Day
             pagedTimelineTodayHandled.intValue = todayRequest
@@ -691,13 +721,21 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun open(screen: Screen) {
+        instantScreen = null
         if (stack.lastOrNull() != screen) stack.add(screen)
+    }
+
+    /** Like [open], but the screen is drawn opaque in its first frame. Used when a dialog closes into it. */
+    fun openInstantly(screen: Screen) {
+        open(screen)
+        instantScreen = screen
     }
 
     fun back() {
         if (stack.isEmpty()) {
             val parent = dayParent ?: return
             dayParent = null
+            openedFromMonthGrid = false
             Snapshot.withMutableSnapshot {
                 pagedTimelineTodayHandled.intValue = todayRequest
                 viewMode = parent.first
@@ -1069,7 +1107,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         if (viewMode == ViewMode.Day) dayFocusRequest++
         markCustomLayout()
         targetWindow = initialWindow()
-        reload()
+        ensureLoaded()
     }
 
     fun changeDayTimelineZoom(value: Int) {
@@ -1291,6 +1329,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val START_LAST = "last"
         private const val KEY_VIEW = "view_mode"
+        private const val KEY_DRILLDOWN_LAYOUT = "month_drilldown_layout"
         private const val KEY_LAST_CALENDAR = "last_calendar"
         private const val KEY_NOTIFY_ASKED = "notify_asked"
     }

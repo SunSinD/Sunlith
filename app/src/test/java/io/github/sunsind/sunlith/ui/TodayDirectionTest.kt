@@ -9,6 +9,78 @@ import org.junit.Test
 
 class TodayDirectionTest {
     @Test
+    fun aNewViewportContextCannotReadOrReceiveThePreviousContextsDirection() {
+        val viewport = AgendaViewport()
+        val oldScope = Any()
+        val nextScope = Any()
+        val oldOwner = Any()
+        val nextOwner = Any()
+        viewport.enterScope(oldScope)
+        viewport.report(oldOwner, TodayDirection.Up, oldScope)
+        assertTrue(viewport.reportingIn(oldScope))
+        // The new composition must hide the old measurement before its SideEffect enters the scope.
+        assertFalse(viewport.reportingIn(nextScope))
+        viewport.enterScope(nextScope)
+        assertFalse(viewport.reportingIn(nextScope))
+        assertNull(viewport.direction)
+        viewport.report(nextOwner, null, nextScope)
+        viewport.report(oldOwner, TodayDirection.Up, oldScope)
+        viewport.release(oldOwner)
+        assertTrue(viewport.reportingIn(nextScope))
+        assertNull(viewport.direction)
+        viewport.report(nextOwner, TodayDirection.Down, nextScope)
+        viewport.enterScope(nextScope)
+        assertEquals(TodayDirection.Down, viewport.direction)
+        viewport.release(nextOwner)
+        assertFalse(viewport.reportingIn(nextScope))
+    }
+
+    @Test
+    fun returningTodayKeepsSuppressingIntermediateMeasurementsAcrossContextChanges() {
+        val viewport = AgendaViewport(awaitingToday = true)
+        val oldScope = Any()
+        val nextScope = Any()
+        val oldOwner = Any()
+        val nextOwner = Any()
+        viewport.enterScope(oldScope)
+        viewport.report(oldOwner, TodayDirection.Up, oldScope)
+        viewport.enterScope(nextScope)
+        // A late visible report from the outgoing page must not finish the current Today request.
+        viewport.report(oldOwner, null, oldScope)
+        viewport.report(nextOwner, TodayDirection.Down, nextScope)
+        assertFalse(viewport.reportingIn(nextScope))
+        assertNull(viewport.direction)
+        viewport.report(nextOwner, null, nextScope)
+        assertTrue(viewport.reportingIn(nextScope))
+        viewport.report(nextOwner, TodayDirection.Up, nextScope)
+        assertEquals(TodayDirection.Up, viewport.direction)
+    }
+
+    @Test
+    fun interruptingTodayRestoresOnlyTheCurrentContextsSuppressedMeasurement() {
+        val viewport = AgendaViewport(awaitingToday = true)
+        val oldScope = Any()
+        val nextScope = Any()
+        val oldOwner = Any()
+        val nextOwner = Any()
+        viewport.enterScope(oldScope)
+        viewport.report(oldOwner, TodayDirection.Up, oldScope)
+        viewport.enterScope(nextScope)
+        viewport.userInteraction()
+        assertFalse(viewport.reportingIn(nextScope))
+
+        val pending = AgendaViewport(awaitingToday = true)
+        pending.enterScope(nextScope)
+        pending.report(nextOwner, TodayDirection.Down, nextScope)
+        pending.report(oldOwner, TodayDirection.Up, oldScope)
+        pending.userInteraction()
+        assertTrue(pending.reportingIn(nextScope))
+        assertEquals(TodayDirection.Down, pending.direction)
+        pending.release(oldOwner)
+        assertEquals(TodayDirection.Down, pending.direction)
+    }
+
+    @Test
     fun touchingAnInterruptedTodayReturnRestoresTheLatestSuppressedDirection() {
         val viewport = AgendaViewport(awaitingToday = true)
         val owner = Any()

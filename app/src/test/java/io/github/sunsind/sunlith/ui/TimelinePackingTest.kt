@@ -377,6 +377,39 @@ class TimelinePackingTest {
         assertNull(timelineTodayDirection(axis, 600, 0, 0))
     }
 
+    /** The grid starts [top] px into the scrolling content, so the now line is drawn that much lower. */
+    @Test
+    fun nowDirectionCountsTheRoomAboveMidnight() {
+        val axis = TimelineAxis(60f, emptyList())
+        val top = 20f
+        assertNull("Drawn at 620, inside 610..710", timelineTodayDirection(axis, 600, 610, 100, top))
+        assertEquals("Without the room it would wrongly point up", TodayDirection.Up, timelineTodayDirection(axis, 600, 610, 100))
+        assertEquals("Drawn at 620, below 500..600", TodayDirection.Down, timelineTodayDirection(axis, 600, 500, 100, top))
+        assertNull(timelineTodayDirection(axis, 600, 500, 100))
+        assertNull("Exactly on the bottom edge is still visible", timelineTodayDirection(axis, 600, 520, 100, top))
+        assertEquals(TodayDirection.Down, timelineTodayDirection(axis, 600, 519, 100, top))
+        assertNull("Exactly on the top edge is still visible", timelineTodayDirection(axis, 600, 620, 100, top))
+        assertEquals(TodayDirection.Up, timelineTodayDirection(axis, 600, 621, 100, top))
+        assertNull("Midnight at the very top, with the edge room showing", timelineTodayDirection(axis, 0, 0, 100, top))
+        assertNull("Midnight just scrolled into the edge room", timelineTodayDirection(axis, 0, 15, 100, top))
+        assertNull("The end of the day at the bottom of the content", timelineTodayDirection(axis, 1440, 24 * 60 + 40 - 100, 100, top))
+    }
+
+    /** Today lands where the target hour's events are drawn, top + axis y, not on the bare axis y. */
+    @Test
+    fun todayScrollPutsTheTargetHourAtTheTopOfTheViewport() {
+        val top = 20f
+        assertEquals(9 * 60, timelineTodayMinute(10 * 60 + 59))
+        assertEquals(0, timelineTodayMinute(59))
+        assertEquals(0, timelineTodayMinute(60 + 30))
+        listOf(TimelineAxis(60f, emptyList()), TimelineAxis(60f, listOf(14 * 60 to 15 * 60), groupEmpty = true, gapPx = 40f)).forEach { axis ->
+            val scroll = timelineTodayScroll(axis, 14 * 60, top)
+            assertEquals("Drawn at the very top of the viewport", 0f, top + axis.minuteToY(14 * 60) - scroll, 0.01f)
+            assertNull("The now line just after it stays on screen", timelineTodayDirection(axis, 14 * 60 + 70, scroll.toInt(), 200, top))
+        }
+        assertEquals("Midnight keeps the room above it", 0f, timelineTodayScroll(TimelineAxis(60f, emptyList()), 0, top), 0f)
+    }
+
     @Test
     fun narrowWeekColumnsStackAnOverlapInsteadOfShowingSlivers() {
         val lane = timelineMinLaneWidth(12.dp)
@@ -553,6 +586,30 @@ class TimelinePackingTest {
                     listOf(7L, 8L, 9L), shortRun?.map { it.event.id })
                 assertEquals("One title line, not three rows", 1080 + minimum, shortRun!!.first().end)
             }
+        }
+    }
+
+    /** A fake one-line measure: every character is 10 px wide. */
+    private fun width(text: String) = text.length * 10
+
+    @Test
+    fun aNarrowWeekCardShowsItsWholeRangeWhenItFitsOnOneLine() {
+        assertEquals("8 - 10:45 a.m.", timelineCardTime(listOf("8 - 10:45 a.m.", "8 a.m."), 140, ::width))
+    }
+
+    /** The user's screenshot: "+1", "8 -", "10:45", "a.m." stacked like an equation in a narrow Week lane. */
+    @Test
+    fun aRangeTooWideForTheLaneFallsBackToItsWholeStartInsteadOfBreakingApart() {
+        val shown = timelineCardTime(listOf("8 - 10:45 a.m.", "8 a.m."), 70, ::width)
+        assertEquals("8 a.m.", shown)
+    }
+
+    @Test
+    fun aLaneTooNarrowForAnyWholeTimeShowsNoTimeRatherThanFragments() {
+        assertNull(timelineCardTime(listOf("11:40 a.m. - 1:25 p.m.", "11:40 a.m."), 60, ::width))
+        for (lane in 0..300 step 5) {
+            val shown = timelineCardTime(listOf("11:40 a.m. - 1:25 p.m.", "11:40 a.m."), lane, ::width)
+            assertTrue("A shown time always fits on one line of the lane", shown == null || width(shown) <= lane)
         }
     }
 }

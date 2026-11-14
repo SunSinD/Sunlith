@@ -1,0 +1,4 @@
+<resources>
+    <string name="calendar_class_cancelled">Class cancelled</string>
+    <string name="calendar_class_cancelled_until">Classes cancelled until %1$s</string>
+</resources>

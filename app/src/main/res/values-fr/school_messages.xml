@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="school_messages_title">Messages du Collège</string>
-    <string name="school_messages_open">Messages</string>
+    <string name="school_messages_open">Messages du Collège</string>
     <string name="school_messages_open_sub">Messages de l\'administration Col.NET</string>
     <string name="school_admin_open_notice">Voir l\'avis</string>
     <string name="school_messages_refresh">Actualiser</string>
@@ -32,7 +32,13 @@
     <string name="school_admin_not_loaded">Les messages de l\'administration ne sont pas encore chargés.</string>
     <string name="school_admin_open_portal">Ouvrir Col.NET</string>
     <string name="school_admin_portal_links">Liens Col.NET</string>
-    <string name="school_admin_portal_links_empty">Aucun lien disponible.</string>
+    <string name="school_admin_portal_links_sign_in">Col.NET n\'a pas accepté la connexion, donc ses liens n\'ont pas pu être chargés.</string>
+    <string name="school_admin_portal_links_network">Impossible de joindre Col.NET pour charger ses liens. Réessayez ou ouvrez Col.NET.</string>
+    <string name="school_admin_portal_links_unrecognized">Col.NET a répondu d\'une façon que l\'application ne reconnaît pas, donc aucun lien n\'est affiché. Ouvrez plutôt Col.NET.</string>
+    <string name="school_admin_classes_marked">Cet avis concerne les cours de cette journée. Vos modifications sont conservées. Vérifiez les exceptions dans l\'avis.</string>
+    <string name="school_sync_lifted_title">Cours levé : %1$s</string>
+    <string name="school_sync_lifted_note">Levé selon l\'avis du Collège du %1$s. Vérifiez l\'avis pour les exceptions.</string>
+    <string name="school_sync_lifted_note_until">Levé jusqu\'à %2$s selon l\'avis du Collège du %1$s. Vérifiez l\'avis pour les exceptions.</string>
     <string name="school_admin_portal_link_failed">Impossible d\'ouvrir ce lien.</string>
     <string name="school_admin_source">Source : %1$s</string>
     <string name="school_admin_category">Catégorie : %1$s</string>

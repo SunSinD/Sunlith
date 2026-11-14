@@ -1,5 +1,6 @@
 package io.github.sunsind.sunlith.data
 
+import io.github.sunsind.sunlith.school.SchoolClassLift
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -60,6 +61,7 @@ data class SchoolEventInfo(
     val courseTitle: String,
     val periods: List<SchoolEventPeriod>,
     val absences: List<SchoolEventAbsence>,
+    val lift: SchoolClassLift? = null,
 ) {
     val courseKey: String get() = course
     val absenceCoverage: SchoolAbsenceCoverage get() {

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_rolling_five_days_short">Sinon du lundi au vendredi</string>
+    <string name="settings_week_header_selection_short">Vue Semaine seulement</string>
+    <string name="custom_material_you_fallback_short">Nécessite Android 12 ou plus récent</string>
+</resources>

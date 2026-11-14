@@ -63,6 +63,7 @@ import io.github.sunsind.sunlith.school.SchoolMessagesController
 import io.github.sunsind.sunlith.school.SchoolNoticeStatus
 import io.github.sunsind.sunlith.school.SchoolNoticeSuggestion
 import io.github.sunsind.sunlith.school.SchoolPortalLink
+import io.github.sunsind.sunlith.school.SchoolPortalLinks
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -88,6 +89,8 @@ fun SchoolMessagesScreen(
     var openAdmin by rememberSaveable { mutableStateOf<String?>(null) }
     var links by remember { mutableStateOf<List<SchoolPortalLink>?>(null) }
     var linkFailed by remember { mutableStateOf(false) }
+    var linksProblem by remember { mutableStateOf<SchoolAdminStatus?>(null) }
+    var linksLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { try { controller.refresh() } catch (e: CancellationException) { throw e } catch (_: Exception) { } }
 
@@ -112,10 +115,37 @@ fun SchoolMessagesScreen(
                     state.admin, state.adminStatus, state.adminUpdatedMillis, state.collegeNotices, state.suggestions,
                     onOpen = { openAdmin = it.id }, onOpenDate = onOpenDate, onAddSuggestion = onAddSuggestion,
                     onOpenPortal = ::openPortal,
-                    onLinks = { scope.launch { links = try { controller.portalLinks() } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() } } },
+                    // A college that publishes no links gets no links button. An empty answer opens Col.NET instead of an empty dialog.
+                    onLinks = if (state.portalLinksAvailable == false) null else ({
+                        if (!linksLoading) scope.launch {
+                            linksLoading = true
+                            try {
+                                when (val result = controller.loadPortalLinks()) {
+                                    is SchoolPortalLinks.Loaded -> if (result.links.isEmpty()) openPortal() else { linkFailed = false; links = result.links }
+                                    is SchoolPortalLinks.Failed -> linksProblem = result.status
+                                }
+                            } finally { linksLoading = false }
+                        }
+                    }),
+                    linksLoading = linksLoading,
                 )
             }
         }
+    }
+    linksProblem?.let { problem ->
+        AlertDialog(onDismissRequest = { linksProblem = null },
+            confirmButton = { TextButton({ linksProblem = null; openPortal() }, enabled = state.portalUrl != null) { Text(stringResource(R.string.school_admin_open_portal)) } },
+            dismissButton = { TextButton({ linksProblem = null }) { Text(stringResource(R.string.school_messages_close)) } },
+            title = { Text(stringResource(R.string.school_admin_portal_links)) },
+            text = {
+                Text(stringResource(when (problem) {
+                    SchoolAdminStatus.SIGN_IN -> R.string.school_admin_portal_links_sign_in
+                    SchoolAdminStatus.UNAVAILABLE -> R.string.school_admin_status_unavailable
+                    SchoolAdminStatus.UNRECOGNIZED -> R.string.school_admin_portal_links_unrecognized
+                    SchoolAdminStatus.NOT_LOADED -> R.string.school_messages_not_connected
+                    else -> R.string.school_admin_portal_links_network
+                }), Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = p.ink)
+            })
     }
     links?.let { list ->
         AlertDialog(onDismissRequest = { links = null }, confirmButton = { TextButton({ links = null }) { Text(stringResource(R.string.school_messages_close)) } },
@@ -123,7 +153,6 @@ fun SchoolMessagesScreen(
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     if (linkFailed) Text(stringResource(R.string.school_admin_portal_link_failed), color = p.danger)
-                    if (list.isEmpty()) Text(stringResource(R.string.school_admin_portal_links_empty), color = p.muted)
                     list.forEach { link ->
                         Text(link.description, Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) {
                             scope.launch {
@@ -141,7 +170,7 @@ fun SchoolMessagesScreen(
 private fun AdminList(
     notices: List<SchoolAdminNotice>, status: SchoolAdminStatus, updated: Long?, college: List<SchoolCollegeNotice>,
     suggestions: List<SchoolNoticeSuggestion>, onOpen: (SchoolAdminNotice) -> Unit, onOpenDate: (LocalDate) -> Unit,
-    onAddSuggestion: (SchoolNoticeSuggestion) -> Unit, onOpenPortal: () -> Unit, onLinks: () -> Unit,
+    onAddSuggestion: (SchoolNoticeSuggestion) -> Unit, onOpenPortal: () -> Unit, onLinks: (() -> Unit)?, linksLoading: Boolean,
 ) {
     val p = LocalPalette.current
     LazyColumn(Modifier.fillMaxSize().testTag("school_admin_list"), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)) {
@@ -158,7 +187,7 @@ private fun AdminList(
             Card {
                 Text(stringResource(message), Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = if (status == SchoolAdminStatus.NOT_LOADED) p.ink else p.danger, style = MaterialTheme.typography.bodyMedium)
                 Row { TextButton(onOpenPortal, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.school_admin_open_portal)) }
-                    TextButton(onLinks, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.school_admin_portal_links)) } }
+                    if (onLinks != null) TextButton(onLinks, Modifier.heightIn(min = 48.dp), enabled = !linksLoading) { Text(stringResource(R.string.school_admin_portal_links)) } }
             }
         }
         item { Updated(updated) }
@@ -208,7 +237,7 @@ private fun CollegeCard(n: SchoolCollegeNotice, onOpenDate: (LocalDate) -> Unit,
         }
         if (n.superseded.isNotEmpty()) Text(stringResource(R.string.school_admin_superseded), color = p.muted, style = MaterialTheme.typography.bodySmall)
         if (!n.detailRead) Text(stringResource(R.string.school_admin_title_only), color = p.muted, style = MaterialTheme.typography.bodySmall)
-        Text(stringResource(R.string.school_admin_scope_note), color = p.muted, style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(if (n.classesMarked) R.string.school_admin_classes_marked else R.string.school_admin_scope_note), color = p.muted, style = MaterialTheme.typography.bodySmall)
         Row {
             TextButton({ onOpenDate(n.targetDate) }, Modifier.heightIn(min = 48.dp).testTag("school_notice_day_${n.identity}")) { Text(stringResource(R.string.school_admin_show_day)) }
             TextButton(onSource, Modifier.heightIn(min = 48.dp).testTag("school_notice_source_${n.identity}")) { Text(stringResource(R.string.school_admin_open_notice)) }

@@ -31,6 +31,8 @@ internal data class SchoolItem(
     val classKind: String, val kind: String, val date: LocalDate, val startMillis: Long, val endMillis: Long,
     val allDay: Boolean, val zone: String, val teachers: List<String>, val rooms: List<String>,
     val notes: List<String>, val teacherAbsent: Boolean, val order: Int = 0, val period: String = "", val periodTitle: String = "",
+    /** Set only on a class covered by a confirmed college lifting notice: see [SchoolClassLift.marker]. Empty otherwise. */
+    val collegeLift: String = "",
 ) {
     val classMatch: List<String> get() = listOf(classKey, course, group, date.toString(), startMillis.toString(), endMillis.toString(), allDay.toString())
     fun json(): JSONObject = JSONObject().put("id", id).put("class", classKey).put("title", title).put("course", course)
@@ -38,11 +40,12 @@ internal data class SchoolItem(
         .put("start", startMillis).put("end", endMillis).put("allDay", allDay).put("zone", zone)
         .put("teachers", JSONArray(teachers)).put("rooms", JSONArray(rooms)).put("notes", JSONArray(notes))
         .put("absent", teacherAbsent).put("order", order).put("period", period).put("periodTitle", periodTitle)
+        .also { if (collegeLift.isNotEmpty()) it.put("collegeLift", collegeLift) }
     companion object {
         fun read(j: JSONObject) = SchoolItem(j.getString("id"), j.getString("class"), j.getString("title"), j.getString("course"),
             j.getString("group"), j.getString("classKind"), j.getString("kind"), LocalDate.parse(j.getString("date")),
             j.getLong("start"), j.getLong("end"), j.getBoolean("allDay"), j.getString("zone"),
-            j.getJSONArray("teachers").strings(), j.getJSONArray("rooms").strings(), j.getJSONArray("notes").strings(), j.getBoolean("absent"), j.getInt("order"), j.optString("period", ""), j.optString("periodTitle", ""))
+            j.getJSONArray("teachers").strings(), j.getJSONArray("rooms").strings(), j.getJSONArray("notes").strings(), j.getBoolean("absent"), j.getInt("order"), j.optString("period", ""), j.optString("periodTitle", ""), j.optString("collegeLift", ""))
     }
 }
 
@@ -135,7 +138,7 @@ internal object SchoolDiff {
                     if (old.rooms != item.rooms) changed += SchoolAlert.ROOMS
                     if (old.teachers != item.teachers) changed += SchoolAlert.TEACHERS
                     if (item.kind == "07") changed += SchoolAlert.ASSESSMENTS
-                    if (item.kind == "08" || item.kind == SchoolNoticeInterpreter.NOTICE_KIND) changed += SchoolAlert.SCHOOL_DAYS
+                    if (item.kind == "08" || item.kind == SchoolNoticeInterpreter.NOTICE_KIND || old.collegeLift != item.collegeLift) changed += SchoolAlert.SCHOOL_DAYS
                 }
                 if (changed.isNotEmpty()) add(SchoolDelta(item, changed))
             }

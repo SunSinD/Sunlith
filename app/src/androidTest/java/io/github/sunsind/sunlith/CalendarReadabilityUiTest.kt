@@ -3,12 +3,17 @@ package io.github.sunsind.sunlith
 import android.Manifest
 import android.app.Application
 import android.content.ComponentName
+import android.content.ContentProvider
+import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import android.database.Cursor
 import android.graphics.Rect
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
@@ -78,6 +83,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -341,6 +347,187 @@ class CalendarReadabilityUiTest {
         listOf("MON-B2410", "MON-B2422", "MON-DOUCHE").forEach { assertTrue(block.contentDescription.contains(it)) }
         block.click()
         assertDetails(event)
+    }
+
+    @Test
+    @androidx.test.filters.SdkSuppress(minSdkVersion = 29)
+    fun managedDetailsShowTheirSchoolStatusBeforeSlowProviderReadsAndKeepItDuringRefresh() = checked {
+        showDay(friday)
+        val event = gym()
+        val pendingRead = AtomicReference<CountDownLatch?>(null)
+        val releases = mutableListOf<CountDownLatch>()
+        val resolver = ContentResolver.wrap(object : ContentProvider() {
+            override fun onCreate() = true
+            override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
+                if (uri.pathSegments == listOf("events", event.id.toString())) {
+                    pendingRead.get()?.let { release ->
+                        check(release.await(8, TimeUnit.SECONDS)) { "The held Details provider read was not released." }
+                    }
+                }
+                return app.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)
+            }
+            override fun getType(uri: Uri) = app.contentResolver.getType(uri)
+            override fun insert(uri: Uri, values: ContentValues?) = app.contentResolver.insert(uri, values)
+            override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = app.contentResolver.delete(uri, selection, selectionArgs)
+            override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = app.contentResolver.update(uri, values, selection, selectionArgs)
+        }.apply {
+            attachInfo(app, android.content.pm.ProviderInfo().apply { authority = "com.android.calendar"; exported = false })
+        })
+        val heldContext = object : ContextWrapper(app) {
+            override fun getApplicationContext(): Context = this
+            override fun getContentResolver() = resolver
+        }
+        val repositoryField = SunlithViewModel::class.java.getDeclaredField("repo").apply { isAccessible = true }
+        val originalRepository = repositoryField.get(vm)
+        repositoryField.set(vm, CalendarRepository(heldContext))
+        val notice = By.text(text(R.string.school_settings_managed_event))
+        val title = By.text(gymTitle)
+        fun holdReads() = CountDownLatch(1).also { releases += it; pendingRead.set(it) }
+        fun assertNoIncompleteDetails(duration: Long, requireVisible: Boolean) {
+            val deadline = SystemClock.elapsedRealtime() + duration
+            var shown = 0
+            do {
+                val titleIsVisible = device.hasObject(title)
+                if (titleIsVisible) {
+                    shown++
+                    assertTrue("A rendered managed event must already say it is updated by the school, even while provider reads are held.",
+                        device.hasObject(notice))
+                    assertFalse("A managed event must never briefly offer Edit while its status is loading.",
+                        device.hasObject(By.desc(text(R.string.action_edit))))
+                    assertFalse("A managed event must never briefly offer Delete while its status is loading.",
+                        device.hasObject(By.desc(text(R.string.action_delete))))
+                } else if (requireVisible) {
+                    error("An already visible Details screen disappeared during a provider refresh.")
+                }
+                SystemClock.sleep(20)
+            } while (SystemClock.elapsedRealtime() < deadline)
+            if (requireVisible) assertTrue("The refresh check must observe actual Details content.", shown > 0)
+        }
+        try {
+            val initial = holdReads()
+            instrumentation.runOnMainSync { vm.changeNavigationAnimation(true); vm.open(Screen.Details(event)) }
+            // Holding IO turns the former brief incomplete state into a deterministic window.
+            // A destination may also wait until it is ready before showing any Details content.
+            assertNoIncompleteDetails(700, requireVisible = false)
+            pendingRead.set(null)
+            initial.countDown()
+            node(title)
+            node(notice)
+            val refresh = holdReads()
+            instrumentation.runOnMainSync { vm.onProviderChanged() }
+            assertNoIncompleteDetails(1_200, requireVisible = true)
+            pendingRead.set(null)
+            refresh.countDown()
+            node(notice)
+            assertEquals(event.id, (vm.stack.last() as Screen.Details).event.id)
+        } finally {
+            pendingRead.set(null)
+            releases.forEach { it.countDown() }
+            repositoryField.set(vm, originalRepository)
+        }
+    }
+
+    @Test
+    @androidx.test.filters.SdkSuppress(minSdkVersion = 29)
+    fun detailsFollowOwnershipOnlyChangesWhileProviderReadsAreHeld() = checked {
+        showDay(friday)
+        val event = vm.eventsByDay[friday].orEmpty().single { it.school?.course == "243-C0" }
+        val repository = CalendarRepository(app)
+        val unchangedRow = repository.revision(event.id)
+        val store = SchoolStore(app)
+        val originalRecord = requireNotNull(store.load())
+        val pendingRead = AtomicReference<Pair<CountDownLatch, CountDownLatch>?>(null)
+        val releases = mutableListOf<CountDownLatch>()
+        val resolver = ContentResolver.wrap(object : ContentProvider() {
+            override fun onCreate() = true
+            override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
+                if (uri.pathSegments == listOf("events", event.id.toString())) {
+                    pendingRead.get()?.let { (entered, release) ->
+                        entered.countDown()
+                        check(release.await(30, TimeUnit.SECONDS)) { "The ownership-only Details read was not released." }
+                    }
+                }
+                return app.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)
+            }
+            override fun getType(uri: Uri) = app.contentResolver.getType(uri)
+            override fun insert(uri: Uri, values: ContentValues?) = app.contentResolver.insert(uri, values)
+            override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = app.contentResolver.delete(uri, selection, selectionArgs)
+            override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = app.contentResolver.update(uri, values, selection, selectionArgs)
+        }.apply {
+            attachInfo(app, android.content.pm.ProviderInfo().apply { authority = "com.android.calendar"; exported = false })
+        })
+        val heldContext = object : ContextWrapper(app) {
+            override fun getApplicationContext(): Context = this
+            override fun getContentResolver() = resolver
+        }
+        val repositoryField = SunlithViewModel::class.java.getDeclaredField("repo").apply { isAccessible = true }
+        val originalRepository = repositoryField.get(vm)
+        val title = By.text(event.title)
+        val notice = By.text(text(R.string.school_settings_managed_event))
+        val edit = By.desc(text(R.string.action_edit))
+        val delete = By.desc(text(R.string.action_delete))
+        fun holdReads() = (CountDownLatch(1) to CountDownLatch(1)).also {
+            releases += it.second
+            pendingRead.set(it)
+        }
+        fun release(gate: Pair<CountDownLatch, CountDownLatch>) {
+            pendingRead.compareAndSet(gate, null)
+            gate.second.countDown()
+        }
+        fun assertManagedWhileHeld() {
+            val deadline = SystemClock.elapsedRealtime() + 600
+            do {
+                assertTrue("Details must stay visible while only ownership changes.", device.hasObject(title))
+                assertTrue("A known or previously loaded managed status must remain while its provider answer is held.", device.hasObject(notice))
+                assertFalse("Managed Details must not offer Edit while its provider read is held.", device.hasObject(edit))
+                assertFalse("Managed Details must not offer Delete while its provider read is held.", device.hasObject(delete))
+                SystemClock.sleep(20)
+            } while (SystemClock.elapsedRealtime() < deadline)
+        }
+        try {
+            instrumentation.runOnMainSync { vm.open(Screen.Details(event)) }
+            node(title)
+            node(notice)
+            // This lower row is drawn only after the first ownership query completed, so both directions exercise cached metadata.
+            node(By.text(text(R.string.todo_tag)))
+            repositoryField.set(vm, CalendarRepository(heldContext))
+
+            val releasedOwnership = originalRecord.copy(ledger = originalRecord.ledger.filterNot { it.rowId == event.id })
+            assertEquals(originalRecord.ledger.size - 1, releasedOwnership.ledger.size)
+            val releaseRead = holdReads()
+            store.save(releasedOwnership)
+            instrumentation.runOnMainSync { vm.reload() }
+            await("The unchanged row must lose only its school projection after ownership is released") {
+                !vm.loadingEvents && vm.events.any { it.id == event.id && it.school == null }
+            }
+            assertEquals(event.copy(school = null), vm.events.single { it.id == event.id })
+            assertEquals("Releasing the ledger must not write the provider row.", unchangedRow, repository.revision(event.id))
+            assertTrue("An ownership-only change must trigger a fresh Details provider read.", releaseRead.first.await(5, TimeUnit.SECONDS))
+            assertManagedWhileHeld()
+            release(releaseRead)
+            node(edit)
+            node(delete)
+            assertFalse("The old managed notice must clear after the fresh editable answer.", device.hasObject(notice))
+
+            val acquireRead = holdReads()
+            store.save(originalRecord)
+            instrumentation.runOnMainSync { vm.reload() }
+            await("Restoring the ledger must restore the verified projection without changing event content") {
+                !vm.loadingEvents && vm.events.any { it.id == event.id && it.school != null }
+            }
+            assertEquals(event, vm.events.single { it.id == event.id })
+            assertEquals("Restoring ownership must not write the provider row.", unchangedRow, repository.revision(event.id))
+            assertTrue("Restoring ownership must also refresh the cached editable metadata.", acquireRead.first.await(5, TimeUnit.SECONDS))
+            node(notice)
+            assertManagedWhileHeld()
+            release(acquireRead)
+            assertEquals(event.id, (vm.stack.last() as Screen.Details).event.id)
+        } finally {
+            pendingRead.set(null)
+            releases.forEach { it.countDown() }
+            repositoryField.set(vm, originalRepository)
+            store.save(originalRecord)
+        }
     }
 
     @Test

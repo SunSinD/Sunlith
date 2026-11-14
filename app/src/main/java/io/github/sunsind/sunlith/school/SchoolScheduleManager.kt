@@ -303,11 +303,18 @@ class SchoolScheduleManager internal constructor(
     private fun withNotices(feed: SchoolFeed, current: SchoolRecord): SchoolFeed {
         val provider = notices ?: return feed
         val inTerm = { item: SchoolItem -> !item.date.isBefore(feed.term.start) && !item.date.isAfter(feed.term.end) }
-        val extra = try { provider.items(current, feed.term, language() != "fr") } catch (e: Exception) {
+        var lifts: List<SchoolClassLift>? = null
+        val extra = try {
+            provider.items(current, feed.term, language() != "fr").also { lifts = provider.classLifts(current, feed.term) }
+        } catch (e: Exception) {
             Log.w("SunlithSchool", "Notice cache skipped type=${e.javaClass.simpleName}")
+            lifts = null
             current.baseline.filter { it.kind == SchoolNoticeInterpreter.NOTICE_KIND }
         }.filter { it.kind == SchoolNoticeInterpreter.NOTICE_KIND && inTerm(it) }.distinctBy { it.id }
-        val items = feed.items.filter { it.kind != SchoolNoticeInterpreter.NOTICE_KIND } + extra
+        // Classes covered by a confirmed college lifting are marked in place (same IDs), never removed.
+        val keepBefore = LocalDate.now(ZoneId.of(current.zone)).minusDays(NOTICE_DAYS)
+        val classes = SchoolNoticeInterpreter.applyLifts(feed.items.filter { it.kind != SchoolNoticeInterpreter.NOTICE_KIND }, lifts, current.baseline, keepBefore)
+        val items = classes + extra
         return feed.copy(items = items.sortedWith(compareBy<SchoolItem> { it.startMillis }.thenBy { it.id }))
     }
     private suspend fun applyFeed(feed: SchoolFeed, confirmed: Boolean, stamp: Long, preparedPlan: SchoolJournal? = null) {
@@ -447,6 +454,8 @@ class SchoolScheduleManager internal constructor(
     }
     companion object {
         private const val THROTTLE = 5 * 60_000L
+        /** College notices and class liftings older than this many days are left as they were. */
+        internal const val NOTICE_DAYS = 14L
         private val LOCAL_STAGES = setOf(Stage.RECOVER, Stage.PRUNE, Stage.PLAN, Stage.CALENDAR)
         private const val JOB_ID = 0x534348
         @Volatile private var instance: SchoolScheduleManager? = null

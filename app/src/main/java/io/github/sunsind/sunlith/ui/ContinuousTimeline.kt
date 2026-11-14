@@ -19,7 +19,6 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -44,6 +43,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 private const val TIMELINE_CENTER = 1_000_000
 private const val TIMELINE_DAYS = 2_000_001
@@ -93,8 +93,15 @@ internal fun ContinuousTimeline(
     val hour = if (liveZoom != null) timelineHourHeight(liveZoom) else timelineHourHeight(vm.weekTimelineZoom)
     val gridColors = rememberTimelineGridColors()
     val hourPx = with(density) { hour.toPx() }
-    // Packing follows the saved zoom, so short-event rows and grouped hours stay put while two fingers pinch.
-    val minMinutes = ceil(timelineMinimumBlockHeight(maxOf(lineSize, measuredTitle), density) / timelineHourHeight(vm.weekTimelineZoom) * 60f).toInt()
+    // Packing follows the saved zoom, frozen while a pinch or its glide runs, so short-event rows and grouped hours
+    // stay put until the scale has settled.
+    val minMinutes = ceil(timelineMinimumBlockHeight(maxOf(lineSize, measuredTitle), density) /
+        timelineHourHeight(zoom.frozen ?: vm.weekTimelineZoom) * 60f).toInt()
+    // Midnight sits a little below the all-day band, with its rail label centered on the line.
+    val railLabelPx = remember(railStyle, density) { labelMeasurer.measure("Ag", railStyle, maxLines = 1).size.height }
+    val edgePx = with(density) { (railLabelPx / 2f + 3.dp.toPx()).roundToInt() }
+    val edge = with(density) { edgePx.toDp() }
+    val topPx = edgePx.toFloat()
     val minBlockWidth = timelineMinLaneWidth(titleSize)
     val compact = remember(f) { CompactTimes(f.locale, f.is24Hour, f::range) }
     val labels = remember(f, compact) { (0..24).map {
@@ -131,34 +138,37 @@ internal fun ContinuousTimeline(
     }
     val pinchScope = rememberCoroutineScope()
     val latestAxis by rememberUpdatedState(axis)
+    val latestTop by rememberUpdatedState(topPx)
     val reportDirection by rememberUpdatedState(onDirectionChanged)
     // One clock for the line, the dot, the rail pill and the Today direction.
     val currentMinute by rememberCurrentMinute()
-    LaunchedEffect(axis, visibleFirst, visibleLast, currentMinute) {
+    LaunchedEffect(axis, visibleFirst, visibleLast, currentMinute, topPx, onDirectionChanged) {
         snapshotFlow {
-            if (today in visibleFirst..visibleLast) timelineTodayDirection(axis, currentMinute, scroll.value, scroll.viewportSize) else null
+            if (today in visibleFirst..visibleLast) timelineTodayDirection(axis, currentMinute, scroll.value, scroll.viewportSize, topPx) else null
         }.collect { reportDirection(it) }
     }
     var requestedMinute by remember { mutableStateOf<Int?>(null) }
     var previousAxis by remember(scroll) { mutableStateOf(axis) }
-    var pendingAxisMinute by remember(scroll) { mutableStateOf<Float?>(null) }
+    var previousTop by remember(scroll) { mutableFloatStateOf(topPx) }
+    var pendingAnchor by remember(scroll) { mutableStateOf<TimelineAnchor?>(null) }
     SideEffect {
-        if (liveZoom != null) previousAxis = axis
-        else if (pendingAxisMinute == null && (previousAxis.gaps != axis.gaps || previousAxis.hourPx != axis.hourPx)) {
-            // Capture before the new grid measures and can clamp the old pixel offset.
-            pendingAxisMinute = previousAxis.yToMinute(scroll.value.toFloat())
-        }
-    }
-    LaunchedEffect(axis, scroll) {
-        if (pendingAxisMinute != null) {
-            withFrameNanos { }
-            (requestedMinute?.toFloat() ?: pendingAxisMinute)?.let { minute ->
-                val target = axis.minuteToY(minute).coerceIn(0f, scroll.maxValue.toFloat())
-                scroll.dispatchRawDelta(target - scroll.value)
+        if (liveZoom != null) {
+            // The pinch owns the scroll; an older remap must not replay once the scale settles.
+            previousAxis = axis
+            previousTop = topPx
+            pendingAnchor = null
+            zoom.takeHandoff(scroll.value)
+        } else {
+            val settled = zoom.takeHandoff(scroll.value)
+            if (previousAxis.gaps != axis.gaps || previousAxis.hourPx != axis.hourPx || previousTop != topPx) {
+                // Capture before the new grid measures and can clamp the old pixel offset; placement of the new grid
+                // restores it in the same frame (see timelinePosition). A settled pinch keeps the minute under the
+                // fingers, since regrouped hours between the top and the fingers would move it.
+                pendingAnchor = settled ?: pendingAnchor ?: timelineAnchor(previousAxis, previousTop, scroll.value.toFloat())
+                previousAxis = axis
+                previousTop = topPx
             }
-            pendingAxisMinute = null
         }
-        previousAxis = axis
     }
     val readableHeaderPx = with(density) { 32.dp.toPx() }
     LaunchedEffect(row, vm, readableHeaderPx) {
@@ -172,11 +182,27 @@ internal fun ContinuousTimeline(
         }
     }
     var firstPosition by rememberSaveable { mutableStateOf(true) }
+    // An explicit date (picker, Today) moves the strip in the next measure, so no frame shows the dates in between
+    // or the old week. Two fingers that take over a pending Today jump keep the strip where it is.
+    val requestedRow = remember { intArrayOf(Int.MIN_VALUE) }
+    SideEffect {
+        val request = vm.timelineNavigationRequest
+        if (request != vm.handledTimelineNavigation && requestedRow[0] != request && !(zoom.pinching && vm.selectedDate == today)) {
+            requestedRow[0] = request
+            val target = index(vm.selectedDate)
+            if (target != row.firstVisibleItemIndex || row.firstVisibleItemScrollOffset != 0) row.requestScrollToItem(target)
+        }
+    }
     LaunchedEffect(vm.timelineNavigationRequest, vm.todayRequest, zoom.pinching) {
         val request = vm.timelineNavigationRequest
         var completed = false
         try {
             val pending = request != vm.handledTimelineNavigation
+            if (firstPosition && scroll.isScrollInProgress) {
+                // Initial positioning must not move a viewport already owned by the user's scroll mutation.
+                firstPosition = false
+                return@LaunchedEffect
+            }
             // Two fingers take over a pending Today jump, including before the pinch activates.
             if (zoom.pinching && vm.selectedDate == today) {
                 firstPosition = false
@@ -185,7 +211,7 @@ internal fun ContinuousTimeline(
             }
             if (pending && vm.selectedDate == today) {
                 snapshotFlow { !zoom.pinching && zoom.live == null }.first { it }
-                requestedMinute = (currentMinute / 60 - 1).coerceAtLeast(0) * 60
+                requestedMinute = timelineTodayMinute(currentMinute)
             }
             val target = index(vm.selectedDate)
             if (pending && (target != row.firstVisibleItemIndex || row.firstVisibleItemScrollOffset != 0)) {
@@ -194,11 +220,12 @@ internal fun ContinuousTimeline(
                 row.scrollToItem(target)
             }
             if ((firstPosition && scroll.value == 0) || (pending && vm.selectedDate == today)) {
-                val minute = if (vm.selectedDate == today) (currentMinute / 60 - 1).coerceAtLeast(0) * 60 else 7 * 60
                 withFrameNanos { }
-                scroll.scrollTo(latestAxis.minuteToY(minute).roundToInt())
+                val y = if (vm.selectedDate == today) timelineTodayScroll(latestAxis, timelineTodayMinute(currentMinute), latestTop)
+                    else latestAxis.minuteToY(7 * 60)
+                scroll.scrollTo(y.roundToInt())
                 // Navigation has already positioned the latest grid; an older remap must not undo it.
-                pendingAxisMinute = null
+                pendingAnchor = null
                 previousAxis = latestAxis
             }
             firstPosition = false
@@ -212,9 +239,28 @@ internal fun ContinuousTimeline(
             requestedMinute = null
         }
     }
-    BoxWithConstraints(modifier.fillMaxSize().testTag("calendar_continuous_timeline").graphicsLayer {
-        alpha = if (firstPosition || vm.timelineNavigationRequest != vm.handledTimelineNavigation || pendingAxisMinute != null) 0f else 1f
-    }) {
+    // The vertical positions the navigation effect below would reach a frame or two later, applied while the grid is
+    // placed so it is never drawn at an old or clamped offset. A pinch and its glide own the scroll themselves.
+    val placementTarget: () -> Float? = {
+        val pending = vm.timelineNavigationRequest != vm.handledTimelineNavigation
+        when {
+            zoom.live != null || zoom.pinching -> null
+            firstPosition && scroll.isScrollInProgress -> {
+                firstPosition = false
+                vm.consumeTimelineNavigation(vm.timelineNavigationRequest)
+                null
+            }
+            (firstPosition && scroll.value == 0) || (pending && vm.selectedDate == today) ->
+                if (vm.selectedDate == today) timelineTodayScroll(axis, timelineTodayMinute(currentMinute), topPx)
+                else axis.minuteToY(7 * 60)
+            pendingAnchor != null -> (requestedMinute?.let { timelineTodayScroll(axis, it, topPx) } ?: pendingAnchor!!.scrollOn(axis, topPx))
+                .also { pendingAnchor = null }
+            else -> null
+        }
+    }
+    val latestPlacement = rememberUpdatedState(placementTarget)
+    val positioned = remember(scroll) { Modifier.timelinePosition(scroll) { latestPlacement.value() } }
+    BoxWithConstraints(modifier.fillMaxSize().testTag("calendar_continuous_timeline")) {
         val gutter = rememberTimeGutter(labels + listOf(allDayLabel.substringBeforeLast(' '), allDayLabel.substringAfterLast(' ')), railStyle, 44.dp, maxWidth * 0.30f)
         val column = maxOf(88.dp, titleSize * 6.5f, (maxWidth - gutter) / vm.visibleWeekDays)
         val columnPx = with(density) { column.toPx() }
@@ -288,17 +334,18 @@ internal fun ContinuousTimeline(
                 Modifier.weight(1f).fillMaxWidth().testTag("calendar_timeline").timelinePinch(
                     zoom, scroll, pinchScope, motion,
                     saved = { vm.weekTimelineZoom },
-                    minuteAt = { percent, y -> zoomAxis(percent).yToMinute(y) },
+                    // The grid starts [edge] below the top of the scrolling content and ends [edge] above its bottom.
+                    anchorAt = { percent, scrollY, focalY -> timelineAnchor(zoomAxis(percent), topPx, scrollY, focalY) },
                     scrollFor = { percent, minute, focalY ->
                         val target = zoomAxis(percent)
-                        focalScroll(target, minute, focalY, target.totalHeight, scroll.viewportSize.toFloat())
+                        focalScroll(target, minute, focalY - topPx, target.totalHeight + topPx * 2, scroll.viewportSize.toFloat())
                     },
                     onCommit = vm::changeWeekTimelineZoom,
-                ).verticalScroll(scroll),
+                ).then(positioned).verticalScroll(scroll).padding(vertical = edge),
             ) {
                 // Gap labels share the same mapping as the columns, so no event can drift away from its hour.
                 Box(Modifier.width(gutter).height(height)) {
-                    HourRail(labels, railStyle, hourPx, Modifier.fillMaxSize(), axis)
+                    HourRail(labels, railStyle, hourPx, Modifier.fillMaxSize(), axis, overhang = edgePx)
                 }
                 LazyRow(state = row, modifier = Modifier.weight(1f).height(height)) {
                     items(TIMELINE_DAYS, key = { origin + it - TIMELINE_CENTER }, contentType = { "timeline_day" }) { i ->
@@ -327,7 +374,28 @@ internal fun ContinuousTimeline(
             }
         }
     }
-    if (overflowEvents.isNotEmpty()) TimelineEventList(overflowEvents, f, onOpen) { overflowEvents = emptyList() }
+    if (overflowEvents.isNotEmpty()) {
+        // Details opens with no fade and the chooser stays until the frame that draws it, so the week never shows
+        // between the chooser and the event. A plain dismiss closes at once.
+        val chooserScope = rememberCoroutineScope()
+        val opening = remember { booleanArrayOf(false) }
+        TimelineEventList(overflowEvents, f,
+            onOpen = { event ->
+                if (!opening[0]) {
+                    opening[0] = true
+                    vm.openInstantly(Screen.Details(event))
+                }
+            },
+            onClose = {
+                if (!opening[0]) overflowEvents = emptyList()
+                else chooserScope.launch {
+                    try { withFrameNanos { }; withFrameNanos { } } finally {
+                        opening[0] = false
+                        overflowEvents = emptyList()
+                    }
+                }
+            })
+    }
 }
 
 /** Reads pixel offsets in placement, keeping scroll updates out of composition. */

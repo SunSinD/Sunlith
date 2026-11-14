@@ -8,6 +8,7 @@ import io.github.sunsind.sunlith.data.CalendarEvent
 import io.github.sunsind.sunlith.data.SchoolEventAbsence
 import io.github.sunsind.sunlith.data.SchoolEventInfo
 import io.github.sunsind.sunlith.data.SchoolEventPeriod
+import io.github.sunsind.sunlith.school.SchoolClassLift
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
@@ -140,6 +141,25 @@ class CalendarReadabilityTest {
         val notice = schoolEvent(0, 60, emptyList()).let { it.copy(title = "Teacher absence notice: X", school = it.school!!.copy(kind = "absence")) }
         assertEquals("Teacher absence notice: X", notice.displayTitle())
         assertNull(CalendarEvent(2, 1, "Plain", "", "", 0, 1, false, zone.id).courseKeyOrNull())
+    }
+
+    @Test
+    fun aVerifiedCollegeCancellationKeepsItsVisibleTitleAndOutlineWithoutInventingTeacherAbsence() {
+        val regular = schoolEvent(9 * 60 + 50, 10 * 60 + 40, emptyList())
+            .copy(title = "Class cancelled: Musculation")
+        val cancelled = regular.copy(school = regular.school!!.copy(lift = SchoolClassLift(day, null, day.minusDays(1))))
+        assertEquals("Class cancelled: Musculation", cancelled.displayTitle())
+        assertEquals(io.github.sunsind.sunlith.data.SchoolAbsenceCoverage.NONE, cancelled.school!!.absenceCoverage)
+        assertTrue(cancelled.partialAbsences().isEmpty())
+        for (palette in listOf(LightPalette, DarkPalette)) {
+            val colors = eventColors(cancelled, palette, CourseColors.Empty)
+            assertNotNull(colors.border)
+            assertEquals(palette.surface, colors.container)
+            assertTrue(contrast(colors.container, colors.content) >= 4.5f)
+        }
+        val withdrawn = cancelled.copy(school = cancelled.school.copy(lift = null))
+        assertEquals(regular.school.courseTitle, withdrawn.displayTitle())
+        assertNull(eventColors(withdrawn, DarkPalette, CourseColors.Empty).border)
     }
 
     @Test
