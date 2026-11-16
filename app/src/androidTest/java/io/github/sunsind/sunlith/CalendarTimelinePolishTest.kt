@@ -87,9 +87,10 @@ class CalendarTimelinePolishTest {
     }
 
     @Composable
-    private fun DayTimeline(events: List<CalendarEvent>, scroll: ScrollState, focus: TimelineFocus? = null, onFocusHandled: () -> Unit = {}) {
+    private fun DayTimeline(events: List<CalendarEvent>, scroll: ScrollState, focus: TimelineFocus? = null,
+                            autoScroll: Boolean = true, onFocusHandled: () -> Unit = {}) {
         Timeline(listOf(day), { events }, day, LocalDate.now(), Formats(context, Locale.ENGLISH), false, scroll,
-            autoScroll = true, todayRequest = 0, motion = false, onSelectDay = null, onOpen = {}, onNew = {},
+            autoScroll = autoScroll, todayRequest = 0, motion = false, onSelectDay = null, onOpen = {}, onNew = {},
             onOverflow = { _, _ -> }, focus = focus, onFocusHandled = { onFocusHandled() }, fallback = {})
     }
 
@@ -99,7 +100,18 @@ class CalendarTimelinePolishTest {
 
     private fun node(selector: BySelector): UiObject2 {
         refreshAccessibility()
-        return requireNotNull(device.wait(Until.findObject(selector), 10_000)) { "Missing: $selector" }
+        val found = device.wait(Until.findObject(selector), 10_000)
+        if (found == null) captureFailure()
+        return requireNotNull(found) { "Missing: $selector" }
+    }
+
+    private fun captureFailure() {
+        try {
+            val folder = context.getExternalFilesDir(null) ?: context.filesDir
+            val stem = "timeline-polish-failure-${SystemClock.elapsedRealtime()}"
+            device.takeScreenshot(java.io.File(folder, "$stem.png"))
+            device.dumpWindowHierarchy(java.io.File(folder, "$stem.xml"))
+        } catch (_: Exception) { }
     }
 
     private fun tag(name: String): BySelector = By.pkg(context.packageName).res(name)
@@ -111,7 +123,9 @@ class CalendarTimelinePolishTest {
             instrumentation.waitForIdleSync()
             SystemClock.sleep(50)
         }
-        assertTrue(detail, ready())
+        val result = ready()
+        if (!result) captureFailure()
+        assertTrue(detail, result)
     }
 
     @Test
@@ -157,7 +171,7 @@ class CalendarTimelinePolishTest {
     fun midnightSitsALittleBelowTheTopOfTheDayGrid() {
         val first = event(-11, "Synthetic midnight class", 0, 60)
         val scroll = ScrollState(0)
-        show { DayTimeline(listOf(first), scroll) }
+        show { DayTimeline(listOf(first), scroll, autoScroll = false) }
         awaitUi("The Day grid must be laid out") { scroll.viewportSize > 0 }
         val body = node(tag("calendar_timeline")).visibleBounds
         val card = node(tag("timeline_event_${first.id}")).visibleBounds
@@ -210,7 +224,7 @@ class CalendarTimelinePolishTest {
     @Test
     fun anArrivingPageTakesTheLatestSharedMinuteBeforePublishingItsPosition() {
         val scroll = ScrollState(0)
-        val minute = mutableFloatStateOf(300f)
+        val minute = mutableFloatStateOf(120f)
         val active = mutableStateOf(false)
         val samples = Collections.synchronizedList(mutableListOf<Int>())
         val days = listOf(day, day.plusDays(1), day.plusDays(2))
@@ -225,16 +239,16 @@ class CalendarTimelinePolishTest {
             }
         }
         awaitUi("The neighbour must first follow the shared hour") { scroll.value > 0 }
-        val expected = 600f / 60f * 64f * density
+        val expected = 240f / 60f * 64f * density
         assertTrue("The shared target must be reachable on this viewport", expected <= scroll.maxValue)
         instrumentation.runOnMainSync {
             // The outgoing page moves in the same composition that commits the new page.
-            minute.floatValue = 600f
+            minute.floatValue = 240f
             active.value = true
         }
         awaitUi("The arriving page must draw") { samples.isNotEmpty() }
         assertEquals("The new publisher must not replace the latest minute with its previous frame's offset",
-            600f, minute.floatValue, 1f)
+            240f, minute.floatValue, 1f)
         assertEquals("Its first drawn active frame must already have the latest shared position",
             expected, samples.first().toFloat(), 2f)
     }

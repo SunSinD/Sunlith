@@ -27,6 +27,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
@@ -173,7 +174,6 @@ class CalendarCustomizationTest {
             weekLayout = "list"
             dayLayout = "cards"
             visibleWeekDays = 7
-            rollingFiveDays = true
             weekHeaderSelection = true
             groupEmptyHours = false
             layoutPreset = "sunlith"
@@ -324,8 +324,8 @@ class CalendarCustomizationTest {
         onMain { vm.changeViewMode(ViewMode.Week); vm.changeWeekLayout("list") }
         checkPeriod("week-list")
         listOf(3, 7).forEach { days ->
-            onMain { vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(days) }
-            checkPeriod("week-timeline$days")
+            onMain { vm.changeWeekLayout("continuous"); vm.changeVisibleWeekDays(days) }
+            checkPeriod("week-continuous$days")
         }
         onMain { vm.changeWeekLayout("list"); vm.changeViewMode(ViewMode.Month); vm.changeMonthLayout("split") }
         node(By.pkg(context.packageName).res("calendar_agenda"))
@@ -433,80 +433,180 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun weekListDefaultsAndExplicitTimelinesSurviveNewActivities() {
+    @androidx.test.filters.SdkSuppress(minSdkVersion = 29)
+    fun continuousEntryWaitsForDelayedRowsBeforePositioningTheActiveEvent() {
+        checkContinuousEntryAfterDelayedRead(failRead = false)
+    }
+
+    @Test
+    @androidx.test.filters.SdkSuppress(minSdkVersion = 29)
+    fun continuousTodayFinishesAfterALoadError() {
+        checkContinuousEntryAfterDelayedRead(failRead = true)
+    }
+
+    @Test
+    @androidx.test.filters.SdkSuppress(minSdkVersion = 29)
+    fun continuousRetryWaitsForRowsBeforePositioningTheActiveEvent() {
+        checkContinuousEntryAfterDelayedRead(failRead = false, retryAfterError = true)
+    }
+
+    private fun checkContinuousEntryAfterDelayedRead(failRead: Boolean, retryAfterError: Boolean = false) {
+        val today = LocalDate.now()
+        val zone = ZoneId.systemDefault()
+        val now = java.time.ZonedDateTime.now(zone).withSecond(0).withNano(0)
+        assumeTrue("The active start must precede the ordinary current-time target", now.hour >= 5)
+        // An early start stays reachable at the top of a tall viewport. A later one is clamped at the end of the day,
+        // where the hour before now lands too, so the check could no longer tell the two targets apart.
+        val activeStart = today.atTime(2, 0).atZone(zone)
+        repository.saveEvent(EventDraft(calendarId = calendarId, title = "Delayed active class",
+            startMillis = activeStart.toInstant().toEpochMilli(), endMillis = now.plusHours(1).toInstant().toEpochMilli(),
+            timeZone = zone.id, reminderMinutes = emptyList()))
+        val sentinelStart = today.plusDays(1).atTime(activeStart.toLocalTime()).atZone(zone)
+        val sentinel = repository.saveEvent(EventDraft(calendarId = calendarId, title = "Delayed start marker",
+            startMillis = sentinelStart.toInstant().toEpochMilli(), endMillis = sentinelStart.plusMinutes(45).toInstant().toEpochMilli(),
+            timeZone = zone.id, reminderMinutes = emptyList()))
+        val distant = today.plusMonths(9)
+        onMain { vm.select(distant); vm.reload() }
+        awaitUi { !vm.loadingEvents && vm.coversRange(distant, distant) }
+        assertFalse(vm.coversRange(today, today))
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val firstFailure = java.util.concurrent.atomic.AtomicBoolean(retryAfterError)
+        val resolver = ContentResolver.wrap(object : ContentProvider() {
+            override fun onCreate() = true
+            override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
+                if (uri.pathSegments.firstOrNull() == "instances") {
+                    if (firstFailure.getAndSet(false)) error("Deliberate initial calendar read failure")
+                    entered.countDown()
+                    check(release.await(15, TimeUnit.SECONDS))
+                    if (failRead) error("Deliberate calendar read failure")
+                }
+                return this@CalendarCustomizationTest.context.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)
+            }
+            override fun getType(uri: Uri) = this@CalendarCustomizationTest.context.contentResolver.getType(uri)
+            override fun insert(uri: Uri, values: ContentValues?) = error("Read only fixture")
+            override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = error("Read only fixture")
+            override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = error("Read only fixture")
+        }.apply {
+            attachInfo(this@CalendarCustomizationTest.context, android.content.pm.ProviderInfo().apply { authority = "com.android.calendar" })
+        })
+        val delayed = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getContentResolver() = resolver
+        }
+        val field = SunlithViewModel::class.java.getDeclaredField("repo").apply { isAccessible = true }
+        val original = field.get(vm)
+        field.set(vm, CalendarRepository(delayed))
+        try {
+            if (retryAfterError) {
+                onMain { vm.reload() }
+                awaitUi { !vm.loadingEvents && vm.loadError != null }
+            }
+            onMain {
+                vm.changeWeekLayout("continuous")
+                vm.changeVisibleWeekDays(3)
+                vm.changeViewMode(ViewMode.Week)
+                vm.goToday()
+            }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            awaitUi { vm.loadingEvents && !device.hasObject(By.pkg(context.packageName).res("calendar_continuous_timeline")) }
+            release.countDown()
+            if (failRead) {
+                awaitUi { !vm.loadingEvents && vm.loadError != null &&
+                    vm.timelineNavigationRequest == vm.handledTimelineNavigation &&
+                    device.hasObject(By.pkg(context.packageName).res("calendar_continuous_timeline")) }
+                captureMinor("continuous-today-load-error")
+                return
+            }
+            awaitUi(detail = {
+                val marker = device.findObject(By.pkg(context.packageName).res("timeline_event_$sentinel"))?.visibleBounds
+                "loading=${vm.loadingEvents} error=${vm.loadError} navigation=${vm.timelineNavigationRequest}/${vm.handledTimelineNavigation} " +
+                    "marker=$marker viewport=${device.findObject(By.pkg(context.packageName).res("calendar_timeline"))?.visibleBounds}"
+            }) {
+                !vm.loadingEvents && vm.timelineNavigationRequest == vm.handledTimelineNavigation &&
+                    device.findObject(By.pkg(context.packageName).res("timeline_event_$sentinel"))?.visibleBounds?.let { bounds ->
+                        val viewport = timelineScroller().visibleBounds
+                        bounds.height() > 0 && bounds.top >= viewport.top &&
+                            bounds.top - viewport.top <= 64 * context.resources.displayMetrics.density
+                    } == true
+            }
+            captureMinor("continuous-delayed-active-start")
+        } finally {
+            release.countDown()
+            field.set(vm, original)
+        }
+    }
+
+    @Test
+    fun continuousAllDayBandOnlyUsesVisibleDates() {
+        val shown = date.plusDays(20)
+        repository.saveEvent(EventDraft(calendarId = calendarId, title = "Nearby all day notice outside the viewport",
+            startMillis = CalendarDates.allDayMillis(shown.plusDays(4)),
+            endMillis = CalendarDates.allDayMillis(shown.plusDays(5)), allDay = true, timeZone = "UTC", reminderMinutes = emptyList()))
+        onMain {
+            vm.changeWeekLayout("continuous")
+            vm.changeVisibleWeekDays(3)
+            vm.changeViewMode(ViewMode.Week)
+            vm.select(shown)
+            vm.reload()
+        }
+        val band = By.pkg(context.packageName).res("calendar_timeline_all_day")
+        awaitUi { !vm.loadingEvents && vm.timelineViewportStart == shown &&
+            device.hasObject(By.pkg(context.packageName).res("calendar_continuous_timeline")) }
+        assertFalse("Precomposed offscreen days must not reserve an empty All day band.", device.hasObject(band))
+        onMain { vm.select(shown.plusDays(2)) }
+        awaitUi { vm.timelineViewportStart == shown.plusDays(2) && device.hasObject(band) }
+        onMain { vm.select(shown) }
+        awaitUi { vm.timelineViewportStart == shown && !device.hasObject(band) }
+        captureMinor("continuous-empty-all-day-band")
+    }
+
+    @Test
+    fun continuousWeekDefaultAndExplicitChoicesSurviveNewActivities() {
         finish()
         context.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit()
             .remove("week_layout").remove("visible_week_days").remove("layout_preset").commit()
         launch()
         onMain { vm.changeViewMode(ViewMode.Week) }
-        node(By.pkg(context.packageName).res("calendar_agenda"))
-        assertEquals("list", vm.weekLayout)
-        assertFalse(device.hasObject(By.pkg(context.packageName).res("calendar_timeline")))
-        captureMinor("week-fresh-list")
+        node(By.pkg(context.packageName).res("calendar_continuous_timeline"))
+        assertEquals("continuous", vm.weekLayout)
+        assertEquals(5, vm.visibleWeekDays)
+        captureMinor("week-fresh-continuous")
         listOf("sunlith", "planner").forEach { preset ->
             onMain { vm.applyLayoutPreset(preset) }
             finish()
             launch()
             onMain { vm.changeViewMode(ViewMode.Week) }
             assertEquals(preset, vm.layoutPreset)
-            assertEquals("list", vm.weekLayout)
+            assertEquals("A stock preset must not undo the continuous default", "continuous", vm.weekLayout)
             assertEquals("cards", vm.dayLayout)
-            assertEquals(7, vm.visibleWeekDays)
-            node(By.pkg(context.packageName).res("calendar_agenda"))
-            captureMinor("week-$preset-list")
+            assertEquals(5, vm.visibleWeekDays)
+            node(By.pkg(context.packageName).res("calendar_continuous_timeline"))
         }
+        onMain { vm.changeWeekLayout("list") }
+        finish()
+        launch()
+        onMain { vm.changeViewMode(ViewMode.Week) }
+        assertEquals("custom", vm.layoutPreset)
+        assertEquals("An explicit List must survive", "list", vm.weekLayout)
+        node(By.pkg(context.packageName).res("calendar_agenda"))
         listOf(3, 7).forEach { days ->
-            onMain { vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(days) }
+            onMain { vm.changeWeekLayout("continuous"); vm.changeVisibleWeekDays(days) }
             finish()
             launch()
             onMain { vm.changeViewMode(ViewMode.Week) }
-            assertEquals("custom", vm.layoutPreset)
-            assertEquals("timeline", vm.weekLayout)
+            assertEquals("continuous", vm.weekLayout)
             assertEquals(days, vm.visibleWeekDays)
-            node(By.pkg(context.packageName).res("calendar_timeline"))
-            captureMinor("week-custom-timeline$days")
+            node(By.pkg(context.packageName).res("calendar_continuous_timeline"))
+            captureMinor("week-continuous$days")
         }
-    }
-
-    @Test
-    fun defaultWorkweekShowsMondayThroughFridayAndRollingCanBeEnabled() {
-        val monday = date.with(DayOfWeek.MONDAY)
-        val saturday = monday.plusDays(5)
-        onMain {
-            vm.changeViewMode(ViewMode.Week)
-            vm.changeWeekLayout("timeline")
-            vm.changeVisibleWeekDays(5)
-            vm.setMondayFirst(false)
-            vm.changeShowNavigationArrows(true)
-            vm.changeRollingFiveDays(false)
-            vm.select(saturday)
-        }
-        fun shownWorkweek(start: LocalDate) {
-            awaitUi {
-                device.hasObject(By.pkg(context.packageName).res("calendar_timeline_headers")) &&
-                    (0L..4L).all { device.hasObject(day(start.plusDays(it))) }
-            }
-            assertFalse(device.hasObject(day(start.minusDays(1))))
-            assertFalse(device.hasObject(day(start.plusDays(5))))
-        }
-        shownWorkweek(monday)
-        node(By.pkg(context.packageName).desc(english.getString(R.string.action_next_week))).click()
-        awaitUi { vm.selectedDate == saturday.plusWeeks(1) }
-        shownWorkweek(monday.plusWeeks(1))
-        node(By.pkg(context.packageName).desc(english.getString(R.string.action_prev_week))).click()
-        awaitUi { vm.selectedDate == saturday }
-        shownWorkweek(monday)
-        onMain { vm.goToday() }
-        shownWorkweek(LocalDate.now().with(DayOfWeek.MONDAY))
-        awaitUi { !device.hasObject(By.pkg(context.packageName).desc(english.getString(R.string.action_today))) }
-        onMain { vm.select(saturday); vm.changeRollingFiveDays(true) }
-        awaitUi { (0L..4L).all { device.hasObject(day(saturday.plusDays(it))) } }
-        assertFalse(device.hasObject(day(monday)))
     }
 
     @Test
     fun longPressViewTabsChooseLayoutsWithoutChangingAnythingOnDismiss() {
         val hostDensity = device.displayWidth / 440f
+        // The chooser is a DropdownMenu popup, its own window drawn at the device density, not the host override.
+        val menuDensity = context.resources.displayMetrics.density
         onMain {
             vm.changeShowNavigationArrows(false)
             vm.changeNavigationAnimation(false)
@@ -524,23 +624,20 @@ class CalendarCustomizationTest {
         fun tab(mode: ViewMode) = By.pkg(context.packageName).res("calendar_tab_${mode.name.lowercase()}")
         fun option(value: String) = By.pkg(context.packageName).res("layout_choice_$value")
         fun layouts(): List<Any> = listOf(vm.monthLayout, vm.weekLayout, vm.dayLayout, vm.visibleWeekDays,
-            vm.rollingFiveDays, vm.weekHeaderSelection, vm.layoutPreset)
+            vm.weekHeaderSelection, vm.layoutPreset)
         fun storedLayouts(): List<Any> = SettingsStore(context).let {
             listOf(it.monthLayout, it.weekLayout, it.dayLayout, it.visibleWeekDays,
-                it.rollingFiveDays, it.weekHeaderSelection, it.layoutPreset)
+                it.weekHeaderSelection, it.layoutPreset)
         }
         fun selectedChoice(mode: ViewMode): String = when (mode) {
             ViewMode.Month -> vm.monthLayout
-            ViewMode.Week -> if (vm.weekLayout == "timeline") "timeline${vm.visibleWeekDays}" else vm.weekLayout
+            ViewMode.Week -> vm.weekLayout
             ViewMode.Day -> vm.dayLayout
         }
         fun choiceLabel(value: String): String = english.getString(when (value) {
             "split" -> R.string.layout_preset_agenda
             "full" -> R.string.layout_preset_grid
             "list", "cards" -> R.string.settings_week_list
-            "timeline3" -> R.string.settings_week_timeline3
-            "timeline5" -> R.string.settings_week_timeline5
-            "timeline7" -> R.string.settings_week_timeline7
             "continuous" -> R.string.settings_week_continuous
             else -> R.string.settings_day_all_hours
         })
@@ -548,14 +645,15 @@ class CalendarCustomizationTest {
             node(dialog)
             val rendered = device.findObjects(By.pkg(context.packageName).res(Pattern.compile("layout_choice_.*")))
                 .map { requireNotNull(it.resourceName).substringAfterLast('/') }.toSet()
-            assertEquals("The dialog must expose only that view's supported layouts.", choices.map { "layout_choice_$it" }.toSet(), rendered)
+            assertEquals("The menu must expose only that view's supported layouts.", choices.map { "layout_choice_$it" }.toSet(), rendered)
             val checked = choices.filter { value ->
                 val row = node(option(value))
                 val selectedRow = row.isSelected || row.isChecked
                 try {
                     assertTrue("Every layout must stay enabled; an unselected radio choice must expose its click action: $value selected=$selectedRow clickable=${row.isClickable}",
                         row.isEnabled && (selectedRow || row.isClickable))
-                    assertTrue("The whole layout row must be a usable touch target.", row.visibleBounds.height() >= 48 * hostDensity)
+                    assertTrue("The whole layout row must be a usable touch target: ${row.visibleBounds} at $menuDensity",
+                        row.visibleBounds.height() >= 48 * menuDensity)
                     val shown = (listOfNotNull(row.text) + row.findObjects(By.text(Pattern.compile("(?s).+"))).mapNotNull { it.text })
                         .flatMap { it.split(Regex(",\\s*|\n")) }.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
                     assertEquals("A layout row shows only its own name, with no extra subtitle: $value",
@@ -574,7 +672,7 @@ class CalendarCustomizationTest {
         }
         val choicesByMode = listOf(
             ViewMode.Month to listOf("split", "full"),
-            ViewMode.Week to listOf("list", "timeline3", "timeline5", "timeline7", "continuous"),
+            ViewMode.Week to listOf("list", "continuous"),
             ViewMode.Day to listOf("cards", "timeline"),
         )
         choicesByMode.forEach { (mode, choices) ->
@@ -589,9 +687,9 @@ class CalendarCustomizationTest {
             assertEquals(date, vm.selectedDate)
             assertEquals(before, layouts())
             assertEquals(stored, storedLayouts())
-            node(By.pkg(context.packageName).text(english.getString(R.string.action_cancel))).click()
+            device.pressBack()
             awaitUi { !device.hasObject(dialog) }
-            assertEquals("Cancel must retain the original view.", anchor, vm.viewMode)
+            assertEquals("Dismissing must retain the original view.", anchor, vm.viewMode)
             assertEquals(date, vm.selectedDate)
             assertEquals(before, layouts())
             assertEquals(stored, storedLayouts())
@@ -599,7 +697,6 @@ class CalendarCustomizationTest {
             choices.forEach { choice ->
                 val previousMode = vm.viewMode
                 val previousChoice = selectedChoice(mode)
-                val rolling = vm.rollingFiveDays
                 node(tab(mode)).longClick()
                 assertChoices(choices, previousChoice)
                 assertEquals("Long press must wait for a choice before changing the active view.", previousMode, vm.viewMode)
@@ -608,16 +705,24 @@ class CalendarCustomizationTest {
                 val saved = SettingsStore(context)
                 when (mode) {
                     ViewMode.Month -> assertEquals(choice, saved.monthLayout)
-                    ViewMode.Week -> if (choice.startsWith("timeline")) {
-                        assertEquals("timeline", saved.weekLayout)
-                        assertEquals(choice.removePrefix("timeline").toInt(), saved.visibleWeekDays)
-                    } else assertEquals(choice, saved.weekLayout)
+                    ViewMode.Week -> assertEquals(choice, saved.weekLayout)
                     ViewMode.Day -> assertEquals(choice, saved.dayLayout)
                 }
-                assertEquals("Choosing a view layout must preserve the separate rolling-days option.", rolling, vm.rollingFiveDays)
                 assertEquals("Changing layout must retain the chosen calendar date.", date, vm.selectedDate)
                 assertTrue("The chooser must not open an editor or another screen.", vm.stack.isEmpty())
                 assertEquals(null, vm.editor)
+            }
+            if (mode == ViewMode.Week) listOf(3, 7, 5).forEach { days ->
+                node(tab(mode)).longClick()
+                assertChoices(choices, "continuous")
+                val count = node(By.pkg(context.packageName).res("layout_days_$days"))
+                assertTrue("Each column count is a full touch target: ${count.visibleBounds} at $menuDensity",
+                    count.visibleBounds.height() >= 48 * menuDensity)
+                assertEquals(english.resources.getQuantityString(R.plurals.visible_days_count, days, days), count.contentDescription)
+                count.click()
+                awaitUi { !device.hasObject(dialog) && vm.viewMode == ViewMode.Week && vm.weekLayout == "continuous" && vm.visibleWeekDays == days }
+                assertEquals(days, SettingsStore(context).visibleWeekDays)
+                assertEquals(date, vm.selectedDate)
             }
             val after = layouts()
             val savedAfter = storedLayouts()
@@ -645,7 +750,7 @@ class CalendarCustomizationTest {
         fun choice(value: String) = By.pkg(context.packageName).res("layout_choice_$value")
         fun savedChoices(): List<Any> = SettingsStore(context).let {
             listOf(it.monthLayout, it.weekLayout, it.dayLayout, it.visibleWeekDays,
-                it.rollingFiveDays, it.weekHeaderSelection)
+                it.weekHeaderSelection)
         }
         val modes = listOf(ViewMode.Month, ViewMode.Week, ViewMode.Day)
         listOf(320f to 1f, 440f to 2f).forEach { (widthDp, fontScale) ->
@@ -691,7 +796,7 @@ class CalendarCustomizationTest {
                 val expected = when (mode) { ViewMode.Month -> "split"; ViewMode.Week -> "list"; ViewMode.Day -> "cards" }
                 assertTrue("The saved layout must be selected in the compact chooser.",
                     node(choice(expected)).let { it.isSelected || it.isChecked })
-                node(By.pkg(context.packageName).text(english.getString(R.string.action_cancel))).click()
+                device.pressBack()
                 awaitUi { !device.hasObject(dialog) }
                 assertEquals(current, vm.viewMode)
                 assertEquals(before, savedChoices())
@@ -699,14 +804,14 @@ class CalendarCustomizationTest {
                 node(menu).click()
                 node(row(mode)).longClick()
                 node(dialog)
-                val selected = when (mode) { ViewMode.Month -> "full"; ViewMode.Week -> "timeline5"; ViewMode.Day -> "timeline" }
-                node(choice(selected)).click()
+                if (mode == ViewMode.Week) node(By.pkg(context.packageName).res("layout_days_5")).click()
+                else node(choice(when (mode) { ViewMode.Month -> "full"; else -> "timeline" })).click()
                 awaitUi { !device.hasObject(dialog) && vm.viewMode == mode }
                 val settings = SettingsStore(context)
                 when (mode) {
                     ViewMode.Month -> assertEquals("full", settings.monthLayout)
                     ViewMode.Week -> {
-                        assertEquals("timeline", settings.weekLayout)
+                        assertEquals("continuous", settings.weekLayout)
                         assertEquals(5, settings.visibleWeekDays)
                     }
                     ViewMode.Day -> assertEquals("timeline", settings.dayLayout)
@@ -814,7 +919,7 @@ class CalendarCustomizationTest {
 
     @Test
     fun weekHeaderDatesRequireTheirOwnOptInAndDoNotDisableDayNavigation() {
-        listOf("list", "timeline", "continuous").forEach { layout ->
+        listOf("list", "continuous").forEach { layout ->
             onMain {
                 vm.changeViewMode(ViewMode.Week)
                 vm.changeWeekLayout(layout)
@@ -902,7 +1007,7 @@ class CalendarCustomizationTest {
         }
         val todayAction = By.pkg(context.packageName).desc(english.getString(R.string.action_today))
         showSchedule(today)
-        scrollAgendaUntilArrow(Direction.DOWN, "up")
+        scrollAgendaUntilArrow(Direction.DOWN, "up", "calendar_schedule")
         assertEquals("Scrolling the schedule must keep its selected date.", today, vm.selectedDate)
         assertFalse("Today must have left the rendered schedule viewport.", visibleMarker(today))
         assertTrue("The schedule must have reached a later synthetic event.", markers.keys.filter { it > today }.any(::visibleMarker))
@@ -915,10 +1020,10 @@ class CalendarCustomizationTest {
             showSchedule(selected)
             repeat(16) {
                 if (!visibleMarker(today)) {
-                    val list = node(By.pkg(context.packageName).res("calendar_agenda"))
+                    val list = node(By.pkg(context.packageName).res("calendar_schedule"))
                     val bounds = list.visibleBounds
                     list.setGestureMargins(bounds.width() / 5, bounds.height() / 6, bounds.width() / 5, bounds.height() / 4)
-                    list.scroll(Direction.UP, 0.6f)
+                    list.scroll(Direction.UP, 0.25f, (250 * context.resources.displayMetrics.density).roundToInt())
                     device.waitForIdle()
                 }
             }
@@ -934,11 +1039,45 @@ class CalendarCustomizationTest {
             assertEquals(selected, vm.selectedDate)
 
             showSchedule(today)
-            scrollAgendaUntilArrow(Direction.DOWN, "up")
+            scrollAgendaUntilArrow(Direction.DOWN, "up", "calendar_schedule")
             onMain { vm.changeDayLayout(layout) }
             node(By.pkg(context.packageName).res(if (layout == "cards") "calendar_day_cards" else "calendar_timeline"))
             awaitUi { vm.selectedDate == today && !device.hasObject(todayAction) }
         }
+    }
+
+    @Test
+    fun scheduleKeepsBrowsingWhenItsBoundedWindowDropsTheSelectedDateAndTodayReloadsIt() {
+        val today = LocalDate.now()
+        val todayId = addTimed(today, "Schedule bounded window today", 9, 10)
+        val browsedDate = today.plusDays(175)
+        val browsedId = addTimed(browsedDate, "Schedule bounded window later", 9, 10)
+        onMain {
+            vm.changeDayLayout("schedule")
+            vm.changeAgendaDisplay("events")
+            vm.select(today)
+        }
+        awaitUi { !vm.loadingEvents && vm.coversRange(today, today) &&
+            device.hasObject(By.pkg(context.packageName).res("schedule_event_$todayId")) }
+        repeat(8) {
+            if (!requireNotNull(vm.loadedFrom).isAfter(today)) {
+                val previousEnd = requireNotNull(vm.loadedTo)
+                onMain { vm.extendAgenda(true) }
+                awaitUi { !vm.extendingAgenda && requireNotNull(vm.loadedTo).isAfter(previousEnd) }
+            }
+        }
+        assertTrue("The bounded cache must drop the old selected date for this regression.", requireNotNull(vm.loadedFrom).isAfter(today))
+        assertTrue(java.time.temporal.ChronoUnit.DAYS.between(vm.loadedFrom, vm.loadedTo) < 730)
+        assertEquals("Browsing must preserve the selected date.", today, vm.selectedDate)
+        node(By.pkg(context.packageName).res("calendar_schedule"))
+
+        onMain { vm.select(browsedDate) }
+        node(By.pkg(context.packageName).res("schedule_event_$browsedId"))
+        val request = vm.todayRequest
+        onMain { vm.goToday() }
+        awaitUi { !vm.loadingEvents && vm.coversRange(today, today) && vm.selectedDate == today &&
+            vm.todayRequest == request + 1 && device.hasObject(By.pkg(context.packageName).res("schedule_event_$todayId")) }
+        node(By.pkg(context.packageName).res("calendar_schedule"))
     }
 
     @Test
@@ -991,7 +1130,7 @@ class CalendarCustomizationTest {
                 context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(language)
             }
             launch(Locale.forLanguageTag(language))
-            onMain { vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(3) }
+            onMain { vm.changeWeekLayout("list"); vm.changeVisibleWeekDays(3) }
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
                 setLocale(Locale.forLanguageTag(language))
             })
@@ -1001,22 +1140,24 @@ class CalendarCustomizationTest {
             listOf(R.string.layout_preset_grid to "full", R.string.layout_preset_agenda to "split").forEach { (label, layout) ->
                 node(By.pkg(context.packageName).text(localized.getString(label))).click()
                 awaitUi { vm.monthLayout == layout }
-                assertEquals("timeline", vm.weekLayout)
+                assertEquals("list", vm.weekLayout)
                 assertEquals(3, vm.visibleWeekDays)
             }
             captureMinor("heading-$language")
         }
     }
 
-    private fun scrollAgendaUntilArrow(direction: Direction, arrow: String) {
+    private fun scrollAgendaUntilArrow(direction: Direction, arrow: String, listTag: String = "calendar_agenda") {
         val selector = By.pkg(context.packageName).res("calendar_today_$arrow")
         repeat(16) {
             refreshAccessibility()
             if (device.hasObject(selector)) return
-            val list = node(By.pkg(context.packageName).res("calendar_agenda"))
+            val list = node(By.pkg(context.packageName).res(listTag))
             val bounds = list.visibleBounds
             list.setGestureMargins(bounds.width() / 5, bounds.height() / 6, bounds.width() / 5, bounds.height() / 4)
-            list.scroll(direction, 0.8f)
+            if (listTag == "calendar_schedule") {
+                list.scroll(direction, 0.25f, (250 * context.resources.displayMetrics.density).roundToInt())
+            } else list.scroll(direction, 0.8f)
             device.waitForIdle()
         }
         node(selector)
@@ -1037,7 +1178,7 @@ class CalendarCustomizationTest {
     fun customLayoutChangesAndPresetResetSurviveStartingANewActivity() {
         onMain {
             vm.applyLayoutPreset("planner")
-            vm.changeWeekLayout("timeline")
+            vm.changeWeekLayout("list")
             vm.changeVisibleWeekDays(3)
             vm.changeDayLayout("schedule")
             vm.changeAgendaRange("week")
@@ -1049,7 +1190,7 @@ class CalendarCustomizationTest {
         launch()
         assertEquals("custom", vm.layoutPreset)
         assertEquals("full", vm.monthLayout)
-        assertEquals("timeline", vm.weekLayout)
+        assertEquals("list", vm.weekLayout)
         assertEquals("schedule", vm.dayLayout)
         assertEquals(3, vm.visibleWeekDays)
         assertEquals("week", vm.agendaRange)
@@ -1060,9 +1201,9 @@ class CalendarCustomizationTest {
         launch()
         assertEquals("sunlith", vm.layoutPreset)
         assertEquals("split", vm.monthLayout)
-        assertEquals("list", vm.weekLayout)
+        assertEquals("continuous", vm.weekLayout)
         assertEquals("cards", vm.dayLayout)
-        assertEquals(7, vm.visibleWeekDays)
+        assertEquals(5, vm.visibleWeekDays)
         assertEquals("week", vm.agendaRange)
         assertTrue(vm.showNavigationArrows)
         assertFalse(vm.swipeNavigation)
@@ -1133,7 +1274,8 @@ class CalendarCustomizationTest {
         node(By.pkg(context.packageName).res("calendar_agenda"))
         onMain { vm.changeViewMode(ViewMode.Day); vm.select(date) }
         assertEquals("cards", vm.dayLayout)
-        assertEquals("list", vm.weekLayout)
+        assertEquals("continuous", vm.weekLayout)
+        assertEquals(5, vm.visibleWeekDays)
         node(By.pkg(context.packageName).res("calendar_day_cards"))
         node(By.pkg(context.packageName).res("day_event_$firstId"))
 
@@ -1153,7 +1295,8 @@ class CalendarCustomizationTest {
         assertTrue("Every row must have seven dates.", cells.groupBy { it.top }.values.all { it.size == 7 })
         onMain { vm.changeViewMode(ViewMode.Day); vm.select(date) }
         assertEquals("cards", vm.dayLayout)
-        assertEquals("list", vm.weekLayout)
+        assertEquals("continuous", vm.weekLayout)
+        assertEquals(5, vm.visibleWeekDays)
         node(By.pkg(context.packageName).res("calendar_day_cards"))
         val event = node(By.pkg(context.packageName).res("day_event_$firstId"))
         assertTrue(event.isEnabled)
@@ -1272,28 +1415,28 @@ class CalendarCustomizationTest {
         assertEquals("cards", vm.dayLayout)
         assertEquals("list", vm.weekLayout)
         assertEquals("full", vm.monthLayout)
-        assertEquals("A fresh Month drilldown uses All hours independently of the migrated Day preference.", "timeline", vm.drilldownLayout)
+        assertEquals("A fresh Month drilldown uses List independently of the migrated Day preference.", "cards", vm.drilldownLayout)
         awaitUi { vm.events.any { it.id == late } }
-        node(day(target)).click()
-        awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
-        node(By.pkg(context.packageName).res("calendar_timeline"))
-        revealTimelineEvent(late)
-        assertEquals("cards", vm.dayLayout)
-        device.pressBack()
-        awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
-        onMain { vm.changeDayLayout("schedule"); vm.changeDrilldownLayout("cards"); vm.changeMonthLayout("split"); vm.changeMonthLayout("full") }
-        recreateActivity()
-        assertEquals("schedule", vm.dayLayout)
-        assertEquals("cards", vm.drilldownLayout)
-        assertEquals("list", vm.weekLayout)
         node(day(target)).click()
         awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
         node(By.pkg(context.packageName).res("calendar_day_cards"))
         node(By.pkg(context.packageName).res("day_event_$late"))
+        assertEquals("cards", vm.dayLayout)
+        device.pressBack()
+        awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
+        onMain { vm.changeDayLayout("schedule"); vm.changeDrilldownLayout("timeline"); vm.changeMonthLayout("split"); vm.changeMonthLayout("full") }
         recreateActivity()
         assertEquals("schedule", vm.dayLayout)
-        assertEquals("cards", vm.drilldownLayout)
-        node(By.pkg(context.packageName).res("calendar_day_cards"))
+        assertEquals("timeline", vm.drilldownLayout)
+        assertEquals("list", vm.weekLayout)
+        node(day(target)).click()
+        awaitUi { vm.viewMode == ViewMode.Day && vm.selectedDate == target }
+        node(By.pkg(context.packageName).res("calendar_timeline"))
+        revealTimelineEvent(late)
+        recreateActivity()
+        assertEquals("schedule", vm.dayLayout)
+        assertEquals("timeline", vm.drilldownLayout)
+        node(By.pkg(context.packageName).res("calendar_timeline"))
         device.pressBack()
         awaitUi { vm.viewMode == ViewMode.Month && vm.selectedDate == date }
     }
@@ -2093,7 +2236,7 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun continuousResizeKeepsTheDateAndFractionWhenColumnsBecomeNarrower() {
+    fun continuousResizeKeepsTheSnappedDateWhenColumnsBecomeNarrower() {
         val shown = date.plusWeeks(2)
         onMain {
             vm.changeNavigationAnimation(false)
@@ -2128,18 +2271,20 @@ class CalendarCustomizationTest {
             }
             throw failure
         }
-        val before = requireNotNull(visibleTimelineHeader(shown.plusDays(1))).visibleBounds
-        val fraction = 1f - (before.left - viewport.left).toFloat() / before.width()
-        assertTrue("The saved offset must exceed the narrower column width.", fraction > 0.55f && fraction < 1f)
+        val snapped = shown.plusDays(1)
+        awaitUi(detail = ::hostState) {
+            val header = visibleTimelineHeader(snapped)?.visibleBounds
+            header != null && vm.timelineViewportStart == snapped &&
+                kotlin.math.abs(header.left - timelineHeaderViewport().left) <= 3
+        }
         captureFinal("continuous-resize-before")
+        val before = requireNotNull(visibleTimelineHeader(snapped)).visibleBounds
         onMain { width.value = 330.dp }
         awaitUi(detail = ::hostState) {
-            val resized = visibleTimelineHeader(shown.plusDays(1))?.visibleBounds
-            resized != null && resized.width() < before.width() &&
-                kotlin.math.abs((resized.left - timelineHeaderViewport().left).toFloat() / resized.width() - (1f - fraction)) < 0.06f
+            val resized = visibleTimelineHeader(snapped)?.visibleBounds
+            resized != null && resized.width() < before.width() && vm.timelineViewportStart == snapped &&
+                kotlin.math.abs(resized.left - timelineHeaderViewport().left) <= 3
         }
-        assertTrue("The next date must retain space for the preceding partial column.",
-            requireNotNull(visibleTimelineHeader(shown.plusDays(1))).visibleBounds.left > timelineHeaderViewport().left)
         assertEquals(shown, vm.selectedDate)
         captureFinal("continuous-resize-after")
     }
@@ -2206,7 +2351,7 @@ class CalendarCustomizationTest {
         val markerHour = if (LocalTime.now().hour < 12) 20 else 1
         val marker = addTimed(today, "Restored manual timeline hour", markerHour, markerHour + 1)
         onMain {
-            vm.changeWeekLayout("timeline")
+            vm.changeWeekLayout("continuous")
             vm.changeVisibleWeekDays(3)
             vm.changeStartView(ViewMode.Week.name)
             vm.changeViewMode(ViewMode.Week)
@@ -2272,11 +2417,13 @@ class CalendarCustomizationTest {
     @Test
     fun enteringDayFocusSupersedesAnUnfinishedWeekTodayRequest() {
         val today = LocalDate.now()
-        val marker = addTimed(today, "New Day focus owns navigation", 1, 2)
-        val nowHour = (LocalTime.now().hour - 1).coerceAtLeast(0)
-        val nowMarker = addTimed(today, "New Today request owns navigation", nowHour, nowHour + 1)
+        val nowMinute = LocalTime.now().let { it.hour * 60 + it.minute }
+        val anchorMinute = (nowMinute - 5).coerceIn(0, 60)
+        addTimedMinutes(today, "Class in progress owns navigation", anchorMinute, (nowMinute + 40).coerceAtMost(24 * 60))
+        // A short marker at the active class start must really be visible, even on a tall late-day viewport.
+        val marker = addTimedMinutes(today, "New Day and Today requests own navigation", anchorMinute, anchorMinute + 30)
         onMain {
-            vm.changeWeekLayout("timeline")
+            vm.changeWeekLayout("continuous")
             vm.changeDayLayout("timeline")
             vm.changeViewMode(ViewMode.Week)
             vm.changeNavigationAnimation(true)
@@ -2302,7 +2449,7 @@ class CalendarCustomizationTest {
             assertFalse("A newer Today request must also supersede an older Day focus.", vm.pendingDayFocus)
         }
         awaitUi {
-            val event = device.findObject(By.pkg(context.packageName).res("timeline_event_$nowMarker"))?.visibleBounds
+            val event = device.findObject(By.pkg(context.packageName).res("timeline_event_$marker"))?.visibleBounds
             val viewport = device.findObject(By.pkg(context.packageName).res("calendar_timeline"))?.visibleBounds
             vm.pagedTimelineTodayHandled.intValue == vm.todayRequest && event != null && viewport != null &&
                 event.height() > 20 && event.top >= viewport.top && event.top < viewport.top + viewport.height() / 2
@@ -2334,8 +2481,10 @@ class CalendarCustomizationTest {
         fun event(id: Long, day: LocalDate, hour: Int) = CalendarEvent(id, calendarId, "Axis restart class $hour", "", "",
             day.atTime(hour, 0).atZone(zone).toInstant().toEpochMilli(),
             day.atTime(hour + 1, 0).atZone(zone).toInstant().toEpochMilli(), false, zone.id)
-        val initial = listOf(event(-101, today.plusDays(1), 8), event(-102, today, 20))
-        val incoming = event(-103, today.plusDays(1), 12)
+        val focusDate = today.plusDays(1)
+        val contextDate = if (focusEvent) today else focusDate
+        val initial = listOf(event(-101, contextDate, 8), event(-102, focusDate, 20))
+        val incoming = event(-103, contextDate, 12)
         val events = mutableStateOf(initial)
         val request = mutableIntStateOf(0)
         val handled = mutableIntStateOf(0)
@@ -2400,7 +2549,7 @@ class CalendarCustomizationTest {
                 // Today below still proves an axis rebuild during actual animated movement.
                 events.value = initial + incoming
                 rebuiltDuringMotion.value = true
-                focus.value = TimelineFocus(today, 1)
+                focus.value = TimelineFocus(focusDate, 1)
             } else request.intValue = 1
         }
         awaitUi { rebuiltDuringMotion.value }
@@ -2525,7 +2674,7 @@ class CalendarCustomizationTest {
         awaitUi { vm.timelineViewportStart == shown && visibleTimelineHeader(shown) != null }
         positionTimelineEvent(longId)
         captureMinor("continuous-returned")
-        onMain { vm.changeGroupEmptyHours(false); vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(5); vm.select(shown) }
+        onMain { vm.changeGroupEmptyHours(false); vm.changeWeekLayout("continuous"); vm.changeVisibleWeekDays(5); vm.select(shown) }
         awaitUi { !vm.loadingEvents && visibleTimelineHeader(shown) != null }
         positionTimelineEvent(longId)
         if (context.resources.configuration.fontScale <= 1.15f) {
@@ -2608,7 +2757,7 @@ class CalendarCustomizationTest {
         val lateId = addTimed(targetDay, "Other column evening class", 18, 19)
         assertFalse(vm.groupEmptyHours)
         onMain {
-            vm.changeWeekLayout("timeline")
+            vm.changeWeekLayout("continuous")
             vm.changeVisibleWeekDays(3)
             vm.changeViewMode(ViewMode.Week)
             vm.select(date)
@@ -2634,6 +2783,7 @@ class CalendarCustomizationTest {
 
     @Test
     fun twoFingerPinchKeepsTheFocusedMinuteAndLeavesSingleFingerScrollingAvailable() {
+        boundGestureViewport()
         val density = context.resources.displayMetrics.density
         assumeTrue("This gesture regression uses a normal-font phone viewport.",
             context.resources.configuration.fontScale <= 1.15f)
@@ -2642,12 +2792,12 @@ class CalendarCustomizationTest {
         val lateId = addTimed(date, "Pinch late axis extent marker", 20, 21)
         onMain { vm.reload(); vm.changeNavigationAnimation(true) }
         awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } && vm.events.any { it.id == lateId } }
-        listOf("week", "continuous").forEach { layout ->
+        listOf("grouped", "continuous").forEach { layout ->
             onMain {
                 vm.changeWeekTimelineZoom(100)
-                vm.changeGroupEmptyHours(layout == "week")
+                vm.changeGroupEmptyHours(layout == "grouped")
                 vm.changeVisibleWeekDays(3)
-                vm.changeWeekLayout(if (layout == "continuous") "continuous" else "timeline")
+                vm.changeWeekLayout("continuous")
                 vm.changeViewMode(ViewMode.Week)
                 vm.select(date)
             }
@@ -2716,6 +2866,7 @@ class CalendarCustomizationTest {
 
     @Test
     fun immediateSingleFingerDragCancelsThePinchLimitSpringWithoutMovingBack() {
+        boundGestureViewport()
         val density = context.resources.displayMetrics.density
         assumeTrue("This regression needs a normal-font viewport and enabled system animation.",
             context.resources.configuration.fontScale <= 1.15f &&
@@ -2724,13 +2875,13 @@ class CalendarCustomizationTest {
         val markerId = addTimed(date, "Pinch limit interruption noon marker", 12, 13)
         onMain { vm.reload(); vm.changeNavigationAnimation(true) }
         awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } }
-        listOf("week", "continuous").forEach { layout ->
+        listOf("continuous").forEach { layout ->
             listOf(200, 50).forEach { limit ->
                 onMain {
                     vm.changeWeekTimelineZoom(100)
                     vm.changeGroupEmptyHours(false)
                     vm.changeVisibleWeekDays(3)
-                    vm.changeWeekLayout(if (layout == "continuous") "continuous" else "timeline")
+                    vm.changeWeekLayout("continuous")
                     vm.changeViewMode(ViewMode.Week)
                     vm.select(date)
                 }
@@ -2803,7 +2954,7 @@ class CalendarCustomizationTest {
         val markerId = addTimed(date, "Interrupted pinch noon marker", 12, 13)
         onMain { vm.reload(); vm.changeNavigationAnimation(true) }
         awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } }
-        listOf("week", "continuous").forEach { layout ->
+        listOf("continuous").forEach { layout ->
             fun zoom() = vm.weekTimelineZoom
             fun savedZoom() = SettingsStore(context).let { it.weekTimelineZoom }
             listOf(false, true).forEach { replacement ->
@@ -2811,7 +2962,7 @@ class CalendarCustomizationTest {
                     vm.changeWeekTimelineZoom(100)
                     vm.changeGroupEmptyHours(false)
                     vm.changeVisibleWeekDays(3)
-                    vm.changeWeekLayout(if (layout == "continuous") "continuous" else "timeline")
+                    vm.changeWeekLayout("continuous")
                     vm.changeViewMode(ViewMode.Week)
                     vm.select(date)
                 }
@@ -2856,30 +3007,43 @@ class CalendarCustomizationTest {
 
     @Test
     fun todayRequestStopsDrivingTheTimelineWhenAPinchTakesOver() {
+        boundGestureViewport()
         val density = context.resources.displayMetrics.density
-        val targetHour = (LocalTime.now().hour - 1).coerceAtLeast(0)
+        val targetHour = minOf(LocalTime.now().hour, 2)
         assumeTrue("This check exercises real timeline motion at normal text size.",
             context.resources.configuration.fontScale <= 1.15f &&
                 android.provider.Settings.Global.getFloat(context.contentResolver,
-                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f && targetHour in 2..17)
+                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f)
         val today = LocalDate.now()
-        val markerHour = if (targetHour >= 10) 4 else 17
-        val markerId = addTimed(today, "Today interrupted by pinch distant marker", markerHour, markerHour + 1)
-        val todayId = addTimed(today, "Today expected hour marker", targetHour, targetHour + 1)
+        val markerHour = 17
+        val sentinelDay = today.plusDays(1)
+        val activeId = addTimedMinutes(today, "Ongoing class fixes the Today target", targetHour * 60,
+            if (targetHour == 0) 1439 else 1440)
+        val markerId = addTimed(sentinelDay, "Today interrupted by pinch distant marker", markerHour, markerHour + 1)
+        val todayId = addTimed(sentinelDay, "Today expected hour marker", targetHour, targetHour + 1)
         onMain { vm.reload(); vm.changeNavigationAnimation(true) }
-        awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } && vm.events.any { it.id == todayId } }
-        listOf("week", "continuous").forEach { layout ->
+        awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } && vm.events.any { it.id == todayId } && vm.events.any { it.id == activeId } }
+        listOf("continuous").forEach { layout ->
             onMain {
                 vm.changeWeekTimelineZoom(100)
                 vm.changeGroupEmptyHours(false)
                 vm.changeVisibleWeekDays(3)
-                vm.changeWeekLayout(if (layout == "continuous") "continuous" else "timeline")
+                vm.changeWeekLayout("continuous")
                 vm.changeViewMode(ViewMode.Week)
                 vm.select(today)
             }
-            positionTimelineEvent(markerId)
             val selector = By.pkg(context.packageName).res("timeline_event_$markerId")
             val todaySelector = By.pkg(context.packageName).res("timeline_event_$todayId")
+            awaitUi {
+                !vm.loadingEvents && vm.timelineNavigationRequest == vm.handledTimelineNavigation &&
+                    device.findObject(todaySelector)?.visibleBounds?.let {
+                        it.height() > 20 && it.top - timelineScroller().visibleBounds.top in 0..(16 * density).toInt()
+                    } == true
+            }
+            val targetInset = node(todaySelector).visibleBounds.top - timelineScroller().visibleBounds.top
+            assertTrue("The ongoing class must initially put its sentinel at the leading edge, including midnight's inset.",
+                targetInset in 0..(16 * density).toInt())
+            positionTimelineEvent(markerId)
             val manual = node(selector).visibleBounds
             val viewport = timelineScroller().visibleBounds
             val manualTopMinute = markerHour * 60f - (manual.top - viewport.top) * 60f / manual.height()
@@ -2888,7 +3052,7 @@ class CalendarCustomizationTest {
             onMain { vm.goToday() }
             awaitUi {
                 device.findObject(todaySelector)?.visibleBounds?.let {
-                    kotlin.math.abs(it.top - timelineScroller().visibleBounds.top) <= 5 * density && it.height() > 20
+                    kotlin.math.abs(it.top - timelineScroller().visibleBounds.top - targetInset) <= 5 * density && it.height() > 20
                 } == true
             }
             positionTimelineEvent(markerId)
@@ -2927,23 +3091,36 @@ class CalendarCustomizationTest {
 
     @Test
     fun todayImmediatelyAfterPinchReleaseWinsOverTheRunningZoomSpring() {
+        boundGestureViewport()
         val density = context.resources.displayMetrics.density
-        val targetHour = (LocalTime.now().hour - 1).coerceAtLeast(0)
+        val targetHour = minOf(LocalTime.now().hour, 2)
         assumeTrue("This check needs a normal-font viewport, an unclamped Today hour, and enabled animation.",
-            context.resources.configuration.fontScale <= 1.15f && targetHour in 2..17 &&
+            context.resources.configuration.fontScale <= 1.15f &&
                 android.provider.Settings.Global.getFloat(context.contentResolver,
                     android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f)
         val today = LocalDate.now()
-        val distantHour = if (targetHour >= 10) 4 else 17
-        val markerId = addTimed(today, "Pinch spring distant hour marker", distantHour, distantHour + 1)
-        val todayId = addTimed(today, "Pinch spring Today target marker", targetHour, targetHour + 1)
+        val distantHour = 17
+        val sentinelDay = today.plusDays(1)
+        val activeId = addTimedMinutes(today, "Ongoing class fixes the spring Today target", targetHour * 60,
+            if (targetHour == 0) 1439 else 1440)
+        val markerId = addTimed(sentinelDay, "Pinch spring distant hour marker", distantHour, distantHour + 1)
+        val todayId = addTimed(sentinelDay, "Pinch spring Today target marker", targetHour, targetHour + 1)
         onMain { vm.reload() }
-        awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } && vm.events.any { it.id == todayId } }
-        listOf("week", "continuous").forEach { layout ->
+        awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } && vm.events.any { it.id == todayId } && vm.events.any { it.id == activeId } }
+        listOf("continuous").forEach { layout ->
             showGestureTimeline(layout, today)
-            positionTimelineEvent(markerId)
             val selector = By.pkg(context.packageName).res("timeline_event_$markerId")
             val target = By.pkg(context.packageName).res("timeline_event_$todayId")
+            awaitUi {
+                !vm.loadingEvents && vm.timelineNavigationRequest == vm.handledTimelineNavigation &&
+                    device.findObject(target)?.visibleBounds?.let {
+                        it.height() > 20 && it.top - timelineScroller().visibleBounds.top in 0..(16 * density).toInt()
+                    } == true
+            }
+            val targetInset = node(target).visibleBounds.top - timelineScroller().visibleBounds.top
+            assertTrue("The ongoing class must initially put its sentinel at the leading edge, including midnight's inset.",
+                targetInset in 0..(16 * density).toInt())
+            positionTimelineEvent(markerId)
             val before = node(selector).visibleBounds
             val viewport = timelineScroller().visibleBounds
             val available = minOf(before.centerY() - viewport.top, viewport.bottom - before.centerY()) - 16 * density
@@ -2955,7 +3132,7 @@ class CalendarCustomizationTest {
             fun zoom() = vm.weekTimelineZoom
             awaitUi {
                 zoom() == 200 && device.findObject(target)?.visibleBounds?.let {
-                    kotlin.math.abs(it.top - timelineScroller().visibleBounds.top) <= 5 * density && it.height() > 20
+                    kotlin.math.abs(it.top - timelineScroller().visibleBounds.top - targetInset) <= 5 * density && it.height() > 20
                 } == true
             }
             val after = node(target).visibleBounds
@@ -2965,8 +3142,8 @@ class CalendarCustomizationTest {
             val later = node(target).visibleBounds
             assertTrue("The old spring must not reclaim the earlier focal hour after Today: $layout after=$after later=$later",
                 kotlin.math.abs(later.top - after.top) <= 3 * density)
-            assertTrue("The final visible hour must remain the actual now-minus-one-hour target.",
-                kotlin.math.abs(later.top - timelineScroller().visibleBounds.top) <= 5 * density)
+            assertTrue("The final visible hour must remain the ongoing class start.",
+                kotlin.math.abs(later.top - timelineScroller().visibleBounds.top - targetInset) <= 5 * density)
             assertEquals(request + 1, vm.todayRequest)
             assertEquals(today, vm.selectedDate)
             assertTrue(vm.stack.isEmpty())
@@ -2984,7 +3161,7 @@ class CalendarCustomizationTest {
         val markerId = addTimed(date, "Pointer restart noon marker", 12, 13)
         onMain { vm.reload() }
         awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } }
-        listOf("week", "continuous").forEach { layout ->
+        listOf("continuous").forEach { layout ->
             showGestureTimeline(layout, date)
             positionTimelineEvent(markerId)
             val selector = By.pkg(context.packageName).res("timeline_event_$markerId")
@@ -3028,7 +3205,7 @@ class CalendarCustomizationTest {
         val markerId = addTimed(date, "Second pinch takes over marker", 12, 13)
         onMain { vm.reload() }
         awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } }
-        listOf("week", "continuous").forEach { layout ->
+        listOf("continuous").forEach { layout ->
             showGestureTimeline(layout, date)
             positionTimelineEvent(markerId)
             val selector = By.pkg(context.packageName).res("timeline_event_$markerId")
@@ -3102,7 +3279,7 @@ class CalendarCustomizationTest {
         val markerId = addTimed(date, "Deliberate week zoom marker", 12, 13)
         onMain { vm.reload() }
         awaitUi { !vm.loadingEvents && vm.events.any { it.id == markerId } }
-        listOf("week", "continuous").forEach { layout ->
+        listOf("continuous").forEach { layout ->
             showGestureTimeline(layout, date)
             positionTimelineEvent(markerId)
             val selector = By.pkg(context.packageName).res("timeline_event_$markerId")
@@ -3339,7 +3516,8 @@ class CalendarCustomizationTest {
                 val minutePx = 64 * screenDensity / 60f
                 val inset = 2 * screenDensity
                 fun start(e: CalendarEvent) = java.time.Instant.ofEpochMilli(e.startMillis).atZone(zone).let { it.hour * 60 + it.minute }
-                val origin = target.getValue(sparse[0].id).top - 1 * screenDensity
+                // Every card has the same 1dp top inset, so the 9:00 card's own top is the origin for the others.
+                val origin = target.getValue(sparse[0].id).top.toFloat()
                 everything.forEach { e ->
                     val t = target.getValue(e.id)
                     val minutes = ((e.endMillis - e.startMillis) / 60_000L).toInt()
@@ -3428,7 +3606,7 @@ class CalendarCustomizationTest {
         val titles = (1..3).map { "Customization simultaneous laboratory $it" }
         val ids = titles.map { addTimedMinutes(shown, it, 12 * 60 + 15, 13 * 60 + 45) }
         onMain {
-            vm.changeWeekLayout("timeline")
+            vm.changeWeekLayout("continuous")
             vm.changeVisibleWeekDays(7)
             vm.setMondayFirst(true)
             vm.changeViewMode(ViewMode.Week)
@@ -3463,6 +3641,53 @@ class CalendarCustomizationTest {
             }
             return
         }
+        val heading = calendarContext().resources.getQuantityString(R.plurals.event_count, events.size, events.size)
+        fun listItem(event: CalendarEvent): UiObject2? = device.findObjects(By.pkg(context.packageName).descContains(event.title))
+            .firstOrNull { item -> titles.count { item.contentDescription.orEmpty().contains(it) } == 1 }
+        fun spokenFor(id: Long) = node(By.pkg(context.packageName).res("timeline_event_$id")).contentDescription.orEmpty()
+        if (present.isNotEmpty() && present.none { id -> titles.count { spokenFor(id).contains(it) } > 1 }) {
+            // A middle width column has room for two readable lanes: the first lanes keep their own cards and the rest
+            // share the "+N" chooser in the last lane (see overflowLanes).
+            val shown = events.filter { it.id in present }
+            val hidden = events.filter { it.id !in present }
+            assertTrue("Only events beyond the readable lanes move to the chooser: $present", hidden.size >= 2)
+            shown.forEach { event ->
+                val spoken = spokenFor(event.id)
+                assertTrue("A lane card must name ${event.title} with its real time: $spoken",
+                    spoken.contains(event.title) && spoken.contains(formats.timeRange(event.startMillis, event.endMillis)))
+            }
+            val hiddenHeading = calendarContext().resources.getQuantityString(R.plurals.event_count, hidden.size, hidden.size)
+            val chooser = By.pkg(context.packageName).desc(hiddenHeading)
+            val cards = assertSeparatedRoundedCards("week-simultaneous-lanes", shown, nowMarkerMayCrossCards = today) { cards ->
+                cards.forEach { assertReadableTitle(it, em) }
+                val box = node(chooser).visibleBounds
+                cards.forEach { card ->
+                    assertTrue("The chooser must sit beside ${card.event.title} on the same time line: $box / ${card.target}",
+                        kotlin.math.abs(box.top - card.target.top) <= 3 * context.resources.displayMetrics.density &&
+                            (box.left >= card.target.right || box.right <= card.target.left))
+                }
+            }
+            captureFinal("week-simultaneous-lanes")
+            cards.forEach { card ->
+                assertTrue(device.click(card.bounds.centerX(), card.bounds.centerY()))
+                verifyDetails(card.event)
+            }
+            hidden.forEach { event ->
+                node(chooser).click()
+                node(By.pkg(context.packageName).text(hiddenHeading))
+                assertTrue("Opening the chooser must leave the week underneath the list.", vm.stack.isEmpty())
+                hidden.forEach { listedEvent ->
+                    awaitUi { listItem(listedEvent) != null }
+                    val description = requireNotNull(listItem(listedEvent)).contentDescription.orEmpty()
+                    assertTrue("The list must show ${listedEvent.title} with its real start and end: $description",
+                        description.contains(formats.time(listedEvent.startMillis)) && description.contains(formats.time(listedEvent.endMillis)))
+                }
+                if (event == hidden.first()) captureFinal("week-simultaneous-lanes-list")
+                requireNotNull(listItem(event)).click()
+                verifyDetails(event)
+            }
+            return
+        }
         assertEquals("A narrow week shows one group card that starts with the first event, never slivers", listOf(ids.first()), present)
         val spoken = node(By.pkg(context.packageName).res("timeline_event_${ids.first()}")).contentDescription.orEmpty()
         events.forEach { event ->
@@ -3473,9 +3698,6 @@ class CalendarCustomizationTest {
             assertReadableTitle(cards.single(), em)
         }.single()
         captureFinal("week-simultaneous-group")
-        val heading = calendarContext().resources.getQuantityString(R.plurals.event_count, events.size, events.size)
-        fun listItem(event: CalendarEvent): UiObject2? = device.findObjects(By.pkg(context.packageName).descContains(event.title))
-            .firstOrNull { item -> titles.count { item.contentDescription.orEmpty().contains(it) } == 1 }
         events.forEach { event ->
             assertTrue(device.click(group.bounds.centerX(), group.bounds.centerY()))
             node(By.pkg(context.packageName).text(heading))
@@ -3569,51 +3791,47 @@ class CalendarCustomizationTest {
     }
 
     @Test
-    fun normalSevenDayTimelineFitsTheWholeWeekWithoutAnInnerHorizontalScroll() {
+    fun normalSevenContinuousColumnsFitAndEveryDragSettlesOnWholeDays() {
         val density = context.resources.displayMetrics.density
-        assumeTrue("This check exercises a fitted normal-font phone week.",
+        assumeTrue("This check exercises fitted normal-font columns.",
             context.resources.configuration.fontScale <= 1.15f && device.displayWidth / density >= 280)
-        val monday = date.with(DayOfWeek.MONDAY)
-        val expected = (0L..6L).map(monday::plusDays)
         onMain {
-            vm.changeWeekLayout("timeline")
+            vm.changeWeekLayout("continuous")
             vm.changeVisibleWeekDays(7)
             vm.changeViewMode(ViewMode.Week)
             vm.setMondayFirst(true)
-            vm.changeSwipeNavigation(false)
             // Exercise the product default: opted-in clicks expand semantics to a 48dp touch target.
             vm.changeWeekHeaderSelection(false)
             vm.select(date)
         }
-        fun fittedHeaders() {
-            awaitUi { expected.all { visibleTimelineHeader(it) != null } }
+        val candidates = (-21L..28L).map(date::plusDays)
+        fun fittedColumns(): List<LocalDate> {
+            refreshAccessibility()
             val viewport = timelineHeaderViewport()
-            val bounds = expected.map { value ->
-                val header = requireNotNull(visibleTimelineHeader(value))
-                assertFalse("The default fitted week must retain read-only date headers.", header.isClickable)
-                header.visibleBounds
-            }
-            bounds.forEachIndexed { index, rect ->
-                assertTrue("${expected[index]} must be completely inside the seven-day viewport: $rect / $viewport",
-                    rect.left >= viewport.left - 1 && rect.right <= viewport.right + 1 &&
-                        viewport.contains(rect.centerX(), rect.centerY()))
+            val shown = candidates.mapNotNull { value -> visibleTimelineHeader(value)?.let { value to it.visibleBounds } }
+            shown.forEach { (value, rect) ->
+                assertFalse("The default fitted week must retain read-only date headers.", requireNotNull(visibleTimelineHeader(value)).isClickable)
+                assertTrue("$value must be completely inside the viewport, never cut by a half column: $rect / $viewport",
+                    rect.left >= viewport.left - 2 && rect.right <= viewport.right + 2)
                 assertTrue("A fitted day must keep readable date space.", rect.width() >= 24 * density)
             }
-            assertEquals("Seven dates must occupy seven distinct horizontal columns.", 7, bounds.map { it.centerX() }.toSet().size)
-            assertFalse(device.hasObject(day(monday.minusDays(1))))
-            assertFalse(device.hasObject(day(monday.plusDays(7))))
+            assertEquals("Exactly the seven chosen columns must be visible", 7, shown.size)
+            assertEquals("Seven dates must occupy seven distinct columns.", 7, shown.map { it.second.centerX() }.toSet().size)
+            return shown.map { it.first }.sorted()
         }
-        fittedHeaders()
+        awaitUi { !vm.loadingEvents && visibleTimelineHeader(date) != null }
+        assertEquals((0L..6L).map(date::plusDays), fittedColumns())
         val viewport = timelineHeaderViewport()
-        listOf(true, false).forEach { forward ->
+        listOf(true, false, true).forEach { forward ->
             val left = viewport.left + viewport.width() / 5
             val right = viewport.right - viewport.width() / 5
             assertTrue(device.swipe(if (forward) right else left, viewport.centerY(),
                 if (forward) left else right, viewport.centerY(), 30))
             device.waitForIdle()
-            refreshAccessibility()
-            assertEquals("A fitted week has no inner date strip to drift sideways.", date, vm.selectedDate)
-            fittedHeaders()
+            SystemClock.sleep(400)
+            val shown = fittedColumns()
+            assertEquals("The columns must stay seven consecutive days", (0L..6L).map(shown.first()::plusDays), shown)
+            assertEquals("Scrolling the columns must keep the selected date.", date, vm.selectedDate)
             assertTrue("A header drag must not open another screen.", vm.stack.isEmpty())
         }
     }
@@ -3626,7 +3844,7 @@ class CalendarCustomizationTest {
         val start = date.with(DayOfWeek.FRIDAY)
         val expected = (0L until 5L).map(start::plusDays)
         onMain {
-            vm.changeWeekLayout("timeline")
+            vm.changeWeekLayout("continuous")
             vm.changeVisibleWeekDays(5)
             vm.changeViewMode(ViewMode.Week)
             vm.select(start)
@@ -3639,64 +3857,11 @@ class CalendarCustomizationTest {
                 viewport.contains(header.visibleCenter.x, header.visibleCenter.y))
             assertTrue("Every fitted date needs a usable width.", header.visibleBounds.width() >= 32 * density)
         }
-        assertFalse(device.hasObject(day(start.minusDays(1))))
-        assertFalse(device.hasObject(day(start.plusDays(5))))
+        assertEquals(null, visibleTimelineHeader(start.minusDays(1)))
+        assertEquals(null, visibleTimelineHeader(start.plusDays(5)))
         node(day(start.plusDays(1))).click()
         awaitUi { vm.selectedDate == start.plusDays(1) && expected.all { visibleTimelineHeader(it) != null } }
         assertEquals(5, vm.visibleWeekDays)
-    }
-
-    @Test
-    fun threeDayAndSevenDayWeekTimelinesChangeTheNumberOfSelectableDates() {
-        val zone = ZoneId.systemDefault()
-        val shortId = repository.saveEvent(EventDraft(calendarId = calendarId, title = "Short event ending at 10:30",
-            startMillis = date.plusDays(2).atTime(10, 0).atZone(zone).toInstant().toEpochMilli(),
-            endMillis = date.plusDays(2).atTime(10, 30).atZone(zone).toInstant().toEpochMilli(),
-            timeZone = zone.id, reminderMinutes = emptyList()))
-        onMain { vm.applyLayoutPreset("planner"); vm.changeWeekLayout("timeline"); vm.changeViewMode(ViewMode.Week); vm.select(date); vm.reload() }
-        node(By.pkg(context.packageName).res("calendar_timeline"))
-        val dates = date.minusDays(2).let { monday -> (0L until 7L).map { monday.plusDays(it) } }
-        onMain { vm.changeSwipeNavigation(false) }
-        val minimumHeaderWidth = (24 * context.resources.displayMetrics.density).toInt()
-        fun visibleHeader(value: LocalDate): UiObject2? = device.findObject(day(value))?.takeIf {
-            it.visibleBounds.width() >= minimumHeaderWidth
-        }
-        fun dragHeaders(forward: Boolean) {
-            refreshAccessibility()
-            val headerY = requireNotNull(dates.firstNotNullOfOrNull(::visibleHeader)).visibleBounds.centerY()
-            val bounds = node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds
-            val left = bounds.left + bounds.width() / 4
-            val right = bounds.right - bounds.width() / 8
-            assertTrue(device.swipe(if (forward) right else left, headerY, if (forward) left else right, headerY, 30))
-            device.waitForIdle()
-            refreshAccessibility()
-            assertEquals("Scrolling the readable columns must retain the selected date.", date, vm.selectedDate)
-            assertFalse("A column scroll must not expose a date before this week.", visibleHeader(dates.first().minusDays(1)) != null)
-            assertFalse("A column scroll must not expose a date after this week.", visibleHeader(dates.last().plusDays(1)) != null)
-        }
-        val reached = mutableSetOf<LocalDate>()
-        fun observeHeaders() { dates.filterTo(reached) { visibleHeader(it) != null } }
-        awaitUi { !vm.loadingEvents && visibleHeader(date) != null }
-        observeHeaders()
-        listOf(true, false).forEach { forward ->
-            repeat(4) {
-                if (reached.size < dates.size) { dragHeaders(forward); observeHeaders() }
-            }
-        }
-        assertEquals("All seven dates must remain reachable in the same readable week.", dates.toSet(), reached)
-        val eventDate = date.plusDays(2)
-        repeat(4) { if (visibleHeader(eventDate) == null) dragHeaders(true) }
-        requireNotNull(visibleHeader(eventDate)).click()
-        awaitUi { vm.selectedDate == eventDate && visibleHeader(eventDate)?.let { it.isSelected || it.isChecked } == true }
-        revealTimelineEvent(shortId)
-        device.takeScreenshot(File(context.filesDir, "week-seven-days.png"))
-        onMain { vm.changeSwipeNavigation(true); vm.changeVisibleWeekDays(3) }
-        node(By.pkg(context.packageName).res("calendar_timeline"))
-        awaitUi { dates.count { device.hasObject(day(it)) } == 3 }
-        assertEquals("The three-day timeline must show only three selectable dates.", 3, dates.count { device.hasObject(day(it)) })
-        assertFalse(device.hasObject(day(eventDate.minusDays(1))))
-        assertFalse(device.hasObject(day(eventDate.plusDays(3))))
-        assertEquals("custom", vm.layoutPreset)
     }
 
     @Test
@@ -3734,75 +3899,19 @@ class CalendarCustomizationTest {
     fun threeDayWindowKeepsTheSelectedMiddleDateAndVisibleDatesAfterActivityRecreation() {
         val start = date.plusWeeks(1)
         val shownDates = (0L until 3L).map(start::plusDays)
-        onMain { vm.applyLayoutPreset("planner"); vm.changeWeekLayout("timeline"); vm.changeViewMode(ViewMode.Week); vm.changeVisibleWeekDays(3); vm.select(start) }
-        awaitUi { shownDates.all { device.hasObject(day(it)) } && !device.hasObject(day(start.minusDays(1))) && !device.hasObject(day(start.plusDays(3))) }
+        onMain { vm.applyLayoutPreset("planner"); vm.changeWeekLayout("continuous"); vm.changeViewMode(ViewMode.Week); vm.changeVisibleWeekDays(3); vm.select(start) }
+        awaitUi { shownDates.all { visibleTimelineHeader(it) != null } && visibleTimelineHeader(start.minusDays(1)) == null && visibleTimelineHeader(start.plusDays(3)) == null }
         val middle = start.plusDays(1)
         node(day(middle)).click()
         awaitUi { vm.selectedDate == middle && shownDates.all { device.hasObject(day(it)) } && device.findObject(day(middle))?.let { it.isSelected || it.isChecked } == true }
         assertTrue("The middle date must expose its selected state.", node(day(middle)).let { it.isSelected || it.isChecked })
         recreateActivity()
         node(By.pkg(context.packageName).res("calendar_timeline"))
-        awaitUi { shownDates.all { device.hasObject(day(it)) } && !device.hasObject(day(start.minusDays(1))) && !device.hasObject(day(start.plusDays(3))) && device.findObject(day(middle))?.let { it.isSelected || it.isChecked } == true }
+        awaitUi { shownDates.all { visibleTimelineHeader(it) != null } && visibleTimelineHeader(start.minusDays(1)) == null && visibleTimelineHeader(start.plusDays(3)) == null && device.findObject(day(middle))?.let { it.isSelected || it.isChecked } == true }
         assertEquals("Recreation must keep the selected middle date.", middle, vm.selectedDate)
         assertEquals(ViewMode.Week, vm.viewMode)
         assertEquals(3, vm.visibleWeekDays)
         assertTrue("The restored middle date must remain selected.", node(day(middle)).let { it.isSelected || it.isChecked })
-    }
-
-    @Test
-    fun threeDayTimelineKeepsItsFirstDateLoadedWhenSelectionCrossesTheMonthBoundary() {
-        listOf(
-            true to LocalDate.of(2027, 1, 30),
-            false to LocalDate.of(2026, 10, 30),
-        ).forEach { (mondayFirst, start) ->
-            val shownDates = (0L until 3L).map(start::plusDays)
-            val marker = addTimed(start, "Boundary first date", 9, 10)
-            onMain {
-                vm.applyLayoutPreset("planner")
-                vm.changeWeekLayout("timeline")
-                vm.changeViewMode(ViewMode.Week)
-                vm.changeVisibleWeekDays(3)
-                vm.setMondayFirst(mondayFirst)
-                vm.select(start)
-                vm.reload()
-            }
-            awaitUi { shownDates.all { device.hasObject(day(it)) } && vm.events.any { it.id == marker } }
-            node(day(shownDates.last())).click()
-            val nextMonth = java.time.YearMonth.from(shownDates.last())
-            val nextGrid = gridStart(nextMonth, mondayFirst)
-            val bufferMonth = java.time.YearMonth.from(start)
-            val bufferedFrom = gridStart(bufferMonth.minusMonths(2), mondayFirst)
-            val bufferedTo = gridStart(bufferMonth.plusMonths(2), mondayFirst).plusDays(41)
-            awaitUi {
-                vm.selectedDate == shownDates.last() && vm.gridLoadedFrom == bufferedFrom && vm.gridLoadedTo == bufferedTo &&
-                    vm.coversRange(start, shownDates.last()) &&
-                    device.hasObject(By.pkg(context.packageName).res("calendar_timeline")) &&
-                    shownDates.all { device.hasObject(day(it)) }
-            }
-            assertTrue("The first date's event must survive a reload for the selected month.", vm.events.any { it.id == marker })
-            revealTimelineEvent(marker)
-
-            onMain { vm.changeWeekLayout("list"); vm.select(start); vm.reload() }
-            awaitUi { vm.coversRange(start, shownDates.last()) }
-            onMain { vm.select(shownDates.last()) }
-            awaitUi { vm.gridLoadedFrom == bufferedFrom && vm.gridLoadedTo == bufferedTo && vm.coversRange(nextGrid, nextGrid.plusDays(41)) }
-            onMain { vm.changeWeekLayout("timeline") }
-            awaitUi {
-                vm.coversRange(start, shownDates.last()) &&
-                    device.hasObject(By.pkg(context.packageName).res("calendar_timeline")) &&
-                    shownDates.all { device.hasObject(day(it)) }
-            }
-
-            onMain { vm.changeVisibleWeekDays(7); vm.reload() }
-            awaitUi { vm.loadedFrom == nextGrid }
-            onMain { vm.changeVisibleWeekDays(3) }
-            awaitUi {
-                vm.coversRange(start, shownDates.last()) &&
-                    device.hasObject(By.pkg(context.packageName).res("calendar_timeline")) &&
-                    shownDates.all { device.hasObject(day(it)) }
-            }
-            assertTrue("Layout changes must retain the first date's event.", vm.events.any { it.id == marker })
-        }
     }
 
     @Test
@@ -3934,22 +4043,52 @@ class CalendarCustomizationTest {
     }
 
     private fun assertTimelineHeadersAlignWithMarkers(markers: Map<LocalDate, Long>) {
-        val viewport = timelineHeaderViewport()
+        data class Snapshot(val viewport: Rect, val first: LocalDate, val last: LocalDate,
+            val pairs: List<Triple<LocalDate, Rect, Rect>>)
         val minimum = 48 * context.resources.displayMetrics.density
         val tolerance = 3 * context.resources.displayMetrics.density
-        val first = requireNotNull(vm.timelineViewportStart)
-        val last = requireNotNull(vm.timelineViewportEnd)
-        var checked = 0
-        markers.filterKeys { it >= first && it <= last }.forEach { (day, id) ->
-            val header = visibleTimelineHeader(day)?.visibleBounds ?: return@forEach
-            if (header.width() < minimum || header.left < viewport.left || header.right > viewport.right) return@forEach
-            val event = node(By.pkg(context.packageName).res("timeline_event_$id")).visibleBounds
-            assertTrue("The real $day marker must stay visible in the hourly body.", event.height() > 20)
-            assertTrue("The $day header and hourly event must move together: $header / $event",
-                kotlin.math.abs(event.centerX() - header.centerX()) <= tolerance)
-            checked++
+        fun read(): Snapshot? {
+            refreshAccessibility()
+            return try {
+                val viewport = device.findObject(By.pkg(context.packageName).res("calendar_timeline_headers"))?.visibleBounds ?: return null
+                val first = vm.timelineViewportStart ?: return null
+                val last = vm.timelineViewportEnd ?: return null
+                val pairs = markers.filterKeys { it >= first && it <= last }.mapNotNull { (day, id) ->
+                    val header = visibleTimelineHeader(day)?.visibleBounds ?: return@mapNotNull null
+                    if (header.width() < minimum || header.left < viewport.left || header.right > viewport.right) return@mapNotNull null
+                    val event = device.findObject(By.pkg(context.packageName).res("timeline_event_$id"))?.visibleBounds ?: return null
+                    Triple(day, header, event)
+                }
+                Snapshot(viewport, first, last, pairs)
+            } catch (_: StaleObjectException) { null }
         }
-        assertTrue("At least one fully visible date must prove header/body alignment.", checked > 0)
+        fun captureFailure() {
+            device.takeScreenshot(File(context.filesDir, "timeline-header-alignment-failure.png"))
+            device.dumpWindowHierarchy(File(context.filesDir, "timeline-header-alignment-failure.xml"))
+        }
+        val deadline = SystemClock.elapsedRealtime() + 3_000
+        var previous: Snapshot? = null
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val current = read()
+            if (current != null && current == previous) {
+                try {
+                    assertTrue("At least one fully visible date must prove header/body alignment.", current.pairs.isNotEmpty())
+                    current.pairs.forEach { (day, header, event) ->
+                        assertTrue("The real $day marker must stay visible in the hourly body.", event.height() > 20)
+                        assertTrue("The $day header and hourly event must move together: $header / $event",
+                            kotlin.math.abs(event.centerX() - header.centerX()) <= tolerance)
+                    }
+                } catch (failure: AssertionError) {
+                    captureFailure()
+                    throw failure
+                }
+                return
+            }
+            previous = current
+            SystemClock.sleep(120)
+        }
+        captureFailure()
+        error("Header and marker bounds must settle before alignment is measured: $previous")
     }
 
     private fun dragTimelineHorizontally(forward: Boolean, header: Boolean) {
@@ -4370,6 +4509,17 @@ class CalendarCustomizationTest {
         }
     }
 
+    /** Keep scroll room at 50% zoom on tall phones, while using the real app and device density. */
+    private fun boundGestureViewport() {
+        onMain {
+            requireNotNull(activity).setContent {
+                Box(Modifier.fillMaxWidth().height(700.dp).semantics { testTagsAsResourceId = true }) {
+                    SunlithApp(vm)
+                }
+            }
+        }
+    }
+
     private fun showGestureTimeline(layout: String, day: LocalDate) {
         onMain {
             vm.changeNavigationAnimation(true)
@@ -4381,7 +4531,7 @@ class CalendarCustomizationTest {
                 vm.changeDayLayout("timeline")
                 vm.changeViewMode(ViewMode.Day)
             } else {
-                vm.changeWeekLayout(if (layout == "continuous") "continuous" else "timeline")
+                vm.changeWeekLayout("continuous")
                 vm.changeViewMode(ViewMode.Week)
             }
             vm.select(day)

@@ -1,6 +1,8 @@
 # Versioning
 
-The current version is **v0.6.10**. Android and the companion use `0.6.10`; Android's `versionCode` is `21`. This update refines calendar transitions, timeline labels and school message loading. Earlier published binaries remain unchanged.
+The current version is **v0.7.0**. Android and the companion use `0.7.0`, and Android's `versionCode` is `22`. This update adds a manual update check in Settings. Earlier published releases and their files stay unchanged.
+
+The app only checks for updates when the user taps Check for updates. It reads the latest stable GitHub release, downloads the APK named for that version, and checks it against the GitHub digest, `SHA256SUMS.txt`, the package name, the signing certificate and the version code before Android shows its install screen. Keep publishing both files with these exact names, signed with the same key, or the in app update will refuse the release.
 
 Use plain `MAJOR.MINOR.PATCH` numbers, without testing suffixes or an extra build counter. The `v` prefix belongs to the Git tag and release title. Major zero means initial development under [Semantic Versioning](https://semver.org/). Physical-device and integration testing are still in progress.
 

@@ -108,8 +108,8 @@ fun DetailsScreen(vm: SunlithViewModel, opened: CalendarEvent) {
         event.allDay, knownDetailsBlock(event), calendar?.writable, vm.todoRevision)
     LaunchedEffect(event.id, revision) {
         // The previous answer stays on screen while this refresh runs, so rows never disappear and come back.
-        val draft = vm.loadDraft(event.id)
-        meta = DetailsMeta(draft, vm.editBlockReason(event.id))
+        val (draft, reason) = vm.detailsMeta(event.id)
+        meta = DetailsMeta(draft, reason)
     }
     val loaded = meta
     val draft = loaded?.draft
@@ -200,9 +200,8 @@ fun DetailsScreen(vm: SunlithViewModel, opened: CalendarEvent) {
                     else -> R.string.details_unsupported
                 }))
             }
-            // Everything below depends on the provider query. It appears once, complete, below rows already on screen,
-            // and a later refresh keeps the previous answer until the new one is ready.
-            if (permissionsLoaded) {
+            // Everything below is already known from the calendar and shows in the first frame. Only the To-do switch
+            // waits for the provider's edit check before it can be used, and reminders appear once they are read.
             DetailRow(Icons.Outlined.CheckBox) {
                 val todoLabel = stringResource(R.string.todo_tag)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -213,7 +212,7 @@ fun DetailsScreen(vm: SunlithViewModel, opened: CalendarEvent) {
                     Switch(
                         checked = TodoMarker.has(detailsDescription(event, live, draft?.description)),
                         onCheckedChange = { vm.setEventTodo(event, it) },
-                        enabled = writable && blockReason == null && event.id !in vm.todoSavingIds,
+                        enabled = writable && permissionsLoaded && blockReason == null && event.id !in vm.todoSavingIds,
                         colors = switchColors(),
                         modifier = Modifier.semantics { contentDescription = todoLabel },
                     )
@@ -238,7 +237,9 @@ fun DetailsScreen(vm: SunlithViewModel, opened: CalendarEvent) {
                     }
                 }) { PrimaryText(event.location) }
             }
-            draft?.reminderMinutes?.takeIf { it.isNotEmpty() && periods.isEmpty() }?.let { reminders ->
+            // The calendar load already read reminders in one batch; the fresh provider read replaces them when it lands.
+            // Unknown reminders show nothing rather than claiming there are none.
+            (draft?.reminderMinutes ?: event.reminderMinutes)?.takeIf { it.isNotEmpty() && periods.isEmpty() }?.let { reminders ->
                 DetailRow(Icons.Outlined.Notifications) { reminders.sorted().forEach { PrimaryText(f.reminder(it)) } }
             }
             val notes = TodoMarker.strip(if (periods.isNotEmpty()) event.description else detailsDescription(event, live, draft?.description))
@@ -264,7 +265,6 @@ fun DetailsScreen(vm: SunlithViewModel, opened: CalendarEvent) {
                 DetailRow(Icons.AutoMirrored.Outlined.Notes) {
                     SelectionContainer { Text(notes, color = p.ink, style = MaterialTheme.typography.bodyLarge) }
                 }
-            }
             }
         }
         }

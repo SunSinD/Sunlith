@@ -1,6 +1,4 @@
 <resources>
-    <string name="calendar_prev_three_days">Previous 3 days</string>
-    <string name="calendar_next_three_days">Next 3 days</string>
     <string name="layout_setup_title">Choose your layout</string>
     <string name="layout_setup_lead">Pick a starting point. You can change every view later in Settings.</string>
     <string name="layout_continue">Continue</string>

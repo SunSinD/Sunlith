@@ -40,7 +40,16 @@ class WidgetSmokeTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
-        DemoFixtureTest().seedDemoCalendarAndLaunch()
+        val preferences = SharedPreferencesSnapshot(context)
+        try {
+            showWidget(instrumentation, context, device)
+        } finally {
+            preferences.restore()
+        }
+    }
+
+    private fun showWidget(instrumentation: android.app.Instrumentation, context: android.content.Context, device: UiDevice) {
+        DemoFixtureTest().seedAndLaunch()
         instrumentation.uiAutomation.executeShellCommand("appwidget grantbind --package ${context.packageName} --user 0")
             .let { ParcelFileDescriptor.AutoCloseInputStream(it).use { input -> input.readBytes() } }
         val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)

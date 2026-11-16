@@ -151,7 +151,10 @@ class SchoolManagerFixtureTest {
             }
         } finally {
             if (calendar >= 0) context.contentResolver.delete(ContentUris.withAppendedId(calendarUri(), calendar), null, null)
-            if (::base.isInitialized) preferenceNames.forEach { base.deleteSharedPreferences(it) }
+            if (::base.isInitialized) synchronized(preferenceNames) { preferenceNames.toList() }.forEach { name ->
+                check(base.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit())
+                check(base.deleteSharedPreferences(name))
+            }
             if (::directory.isInitialized) directory.deleteRecursively()
         }
     }

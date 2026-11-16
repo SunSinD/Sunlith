@@ -46,7 +46,11 @@ class CalendarRepository(context: Context) {
         } ?: emptyList()
     }
 
-    fun events(startMillis: Long, endMillis: Long, calendarIds: Set<Long>, school: Boolean = false): List<CalendarEvent> {
+    /**
+     * Event occurrences in the range. With [reminders], the alert reminders of every row that has any are read in a
+     * few batched queries and attached to the snapshot, so Details can show them without its own read.
+     */
+    fun events(startMillis: Long, endMillis: Long, calendarIds: Set<Long>, school: Boolean = false, reminders: Boolean = false): List<CalendarEvent> {
         checkRead()
         require(endMillis > startMillis) { "Choose a valid date range." }
         require(endMillis - startMillis <= 366L * 24 * 60 * 60 * 1000 * 3) { "Load at most three years at a time." }
@@ -56,25 +60,54 @@ class CalendarRepository(context: Context) {
             ContentUris.appendId(it, endMillis)
         }.build()
         val ids = calendarIds.toList()
-        val events = resolver.query(uri,
+        val withAlarms = mutableSetOf<Long>()
+        val rows = resolver.query(uri,
             arrayOf(Instances.EVENT_ID, Instances.CALENDAR_ID, Instances.TITLE, Instances.DESCRIPTION,
                 Instances.EVENT_LOCATION, Instances.BEGIN, Instances.END, Instances.ALL_DAY,
-                Instances.EVENT_TIMEZONE, Instances.RRULE, Instances.DISPLAY_COLOR, Instances.CALENDAR_DISPLAY_NAME),
+                Instances.EVENT_TIMEZONE, Instances.RRULE, Instances.DISPLAY_COLOR, Instances.CALENDAR_DISPLAY_NAME, Instances.HAS_ALARM),
             "${Instances.CALENDAR_ID} IN (${ids.joinToString(",") { "?" }}) AND (${Instances.STATUS} IS NULL OR ${Instances.STATUS} != ?)",
             (ids.map(Long::toString) + Events.STATUS_CANCELED.toString()).toTypedArray(),
             "${Instances.BEGIN} ASC, ${Instances.END} ASC, ${Instances.TITLE} COLLATE NOCASE ASC",
         )?.use { cursor ->
             buildList {
-                while (cursor.moveToNext()) add(CalendarEvent(
-                    cursor.long(Instances.EVENT_ID), cursor.long(Instances.CALENDAR_ID),
-                    cursor.string(Instances.TITLE), cursor.string(Instances.DESCRIPTION),
-                    cursor.string(Instances.EVENT_LOCATION), cursor.long(Instances.BEGIN), cursor.long(Instances.END),
-                    cursor.int(Instances.ALL_DAY) != 0, cursor.string(Instances.EVENT_TIMEZONE).ifBlank { TimeZone.getDefault().id },
-                    cursor.optional(Instances.RRULE), cursor.int(Instances.DISPLAY_COLOR), cursor.string(Instances.CALENDAR_DISPLAY_NAME),
-                ))
+                while (cursor.moveToNext()) {
+                    val id = cursor.long(Instances.EVENT_ID)
+                    if (cursor.int(Instances.HAS_ALARM) != 0) withAlarms += id
+                    add(CalendarEvent(
+                        id, cursor.long(Instances.CALENDAR_ID),
+                        cursor.string(Instances.TITLE), cursor.string(Instances.DESCRIPTION),
+                        cursor.string(Instances.EVENT_LOCATION), cursor.long(Instances.BEGIN), cursor.long(Instances.END),
+                        cursor.int(Instances.ALL_DAY) != 0, cursor.string(Instances.EVENT_TIMEZONE).ifBlank { TimeZone.getDefault().id },
+                        cursor.optional(Instances.RRULE), cursor.int(Instances.DISPLAY_COLOR), cursor.string(Instances.CALENDAR_DISPLAY_NAME),
+                    ))
+                }
             }
         } ?: emptyList()
+        val events = if (!reminders) rows else {
+            val minutes = alertReminders(withAlarms)
+            rows.map { it.copy(reminderMinutes = minutes[it.id].orEmpty()) }
+        }
         return if (school) SchoolCalendarPresentation.annotate(context, events) else events
+    }
+
+    /** Alert reminder minutes per event, read in batches so a large range costs a few queries, not one per event. */
+    private fun alertReminders(eventIds: Set<Long>): Map<Long, List<Int>> {
+        if (eventIds.isEmpty()) return emptyMap()
+        val result = mutableMapOf<Long, MutableList<Int>>()
+        eventIds.chunked(400).forEach { chunk ->
+            resolver.query(Reminders.CONTENT_URI, arrayOf(Reminders.EVENT_ID, Reminders.MINUTES, Reminders.METHOD),
+                "${Reminders.EVENT_ID} IN (${chunk.joinToString(",") { "?" }})", chunk.map(Long::toString).toTypedArray(), null,
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val method = cursor.int(Reminders.METHOD)
+                    val minutes = cursor.int(Reminders.MINUTES)
+                    if ((method == Reminders.METHOD_ALERT || method == Reminders.METHOD_DEFAULT) && minutes >= 0) {
+                        result.getOrPut(cursor.long(Reminders.EVENT_ID)) { mutableListOf() }.add(minutes)
+                    }
+                }
+            }
+        }
+        return result.mapValues { (_, list) -> list.distinct().sorted() }
     }
 
     fun getEvent(id: Long): EventDraft? {

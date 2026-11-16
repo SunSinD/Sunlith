@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
@@ -52,14 +54,56 @@ enum class ViewMode { Month, Week, Day }
 
 internal val DAY_LAYOUT_CHOICES = listOf("cards", "timeline")
 
-/** A Day opened from the Month grid shows only that date as a list or all hours. All hours is the default. */
-internal fun drilldownLayoutOrDefault(saved: String?): String = saved?.takeIf { it in DAY_LAYOUT_CHOICES } ?: "timeline"
+/** A Day opened from the Month grid shows only that date as a list or all hours. The list is the default. */
+internal fun drilldownLayoutOrDefault(saved: String?): String = saved?.takeIf { it in DAY_LAYOUT_CHOICES } ?: "cards"
 
-/** Layouts offered by long-pressing a view tab, in display order. Day keeps the retired compact schedule out. */
+/**
+ * Layouts offered by long-pressing a view tab, in display order. Day keeps the retired compact schedule out. The
+ * continuous Week also offers its column counts ([SettingsStore.VISIBLE_DAY_CHOICES]).
+ */
 internal fun layoutChoices(mode: ViewMode): List<String> = when (mode) {
     ViewMode.Month -> listOf("split", "full")
-    ViewMode.Week -> listOf("list", "timeline3", "timeline5", "timeline7", "continuous")
+    ViewMode.Week -> listOf("list", "continuous")
     ViewMode.Day -> DAY_LAYOUT_CHOICES
+}
+
+/** The calendar position kept across process recreation: the view, the date and how Day was opened. */
+internal data class CalendarPosition(
+    val viewMode: ViewMode,
+    val selected: LocalDate,
+    val selectedWasToday: Boolean,
+    val dayParent: Pair<ViewMode, LocalDate>?,
+    val fromMonthGrid: Boolean,
+    val viewportStart: LocalDate?,
+) {
+    fun toBundle(): Bundle = Bundle().apply {
+        putString("view", viewMode.name)
+        putLong("selected", selected.toEpochDay())
+        putBoolean("today", selectedWasToday)
+        dayParent?.let { putString("parent_view", it.first.name); putLong("parent_date", it.second.toEpochDay()) }
+        putBoolean("grid", fromMonthGrid)
+        viewportStart?.let { putLong("viewport", it.toEpochDay()) }
+    }
+
+    /** The date to show now: a saved Today follows the current date, so returning the next morning shows that day. */
+    fun selectedOn(today: LocalDate): LocalDate = if (selectedWasToday) today else selected
+
+    fun viewportOn(today: LocalDate): LocalDate? =
+        viewportStart.takeUnless { selectedWasToday && selected != today }
+
+    companion object {
+        fun from(bundle: Bundle?): CalendarPosition? {
+            if (bundle == null || !bundle.containsKey("view") || !bundle.containsKey("selected")) return null
+            return runCatching {
+                fun date(key: String) = LocalDate.ofEpochDay(bundle.getLong(key)).takeIf { it.year in 1900..2100 }
+                val mode = ViewMode.valueOf(requireNotNull(bundle.getString("view")))
+                val parentMode = bundle.getString("parent_view")?.let(ViewMode::valueOf)
+                val parent = if (parentMode != null && bundle.containsKey("parent_date")) date("parent_date")?.let { parentMode to it } else null
+                CalendarPosition(mode, requireNotNull(date("selected")), bundle.getBoolean("today"), parent,
+                    bundle.getBoolean("grid") && parent != null, if (bundle.containsKey("viewport")) date("viewport") else null)
+            }.getOrNull()
+        }
+    }
 }
 
 sealed interface Screen {
@@ -86,8 +130,11 @@ data class ImportUi(
     val error: String? = null,
 )
 
-class SunlithViewModel(app: Application) : AndroidViewModel(app) {
+class SunlithViewModel(app: Application, private val savedState: SavedStateHandle) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, SavedStateHandle())
+
     private val context: Context get() = getApplication()
+    private val restored = CalendarPosition.from(savedState.get<Bundle>(KEY_POSITION))
     private val repo = CalendarRepository(app)
     private val transfer = IcsTransfer(app, repo)
     private val settings = SettingsStore(app)
@@ -200,7 +247,8 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var monthLayout by mutableStateOf(settings.monthLayout); private set
     var weekLayout by mutableStateOf(settings.weekLayout); private set
     var groupEmptyHours by mutableStateOf(settings.groupEmptyHours); private set
-    var timelineViewportStart by mutableStateOf<LocalDate?>(null); private set
+    var timelineTint by mutableIntStateOf(settings.timelineTint); private set
+    var timelineViewportStart by mutableStateOf(restored?.viewportOn(LocalDate.now())); private set
     var timelineViewportEnd by mutableStateOf<LocalDate?>(null); private set
     var timelineNavigationRequest by mutableStateOf(0); private set
     var handledTimelineNavigation by mutableStateOf(0); private set
@@ -208,16 +256,15 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     var dayTimelineZoom by mutableIntStateOf(settings.dayTimelineZoom); private set
     var weekTimelineZoom by mutableIntStateOf(settings.weekTimelineZoom); private set
     var visibleWeekDays by mutableStateOf(settings.visibleWeekDays); private set
-    var rollingFiveDays by mutableStateOf(settings.rollingFiveDays); private set
     var weekHeaderSelection by mutableStateOf(settings.weekHeaderSelection); private set
     var courseColorSlots by mutableStateOf(settings.courseColorSlots); private set
     var layoutPreset by mutableStateOf(settings.layoutPreset); private set
 
     var today by mutableStateOf(LocalDate.now()); private set
-    var selectedDate by mutableStateOf(today); private set
-    private var dayParent by mutableStateOf<Pair<ViewMode, LocalDate>?>(null)
+    var selectedDate by mutableStateOf(restored?.selectedOn(today) ?: today); private set
+    private var dayParent by mutableStateOf(restored?.dayParent)
     val hasDayParent: Boolean get() = dayParent != null
-    private var openedFromMonthGrid by mutableStateOf(false)
+    private var openedFromMonthGrid by mutableStateOf(restored?.fromMonthGrid == true)
 
     /** Day opened by tapping a Month grid date: one date, no week strip, no Today shortcut, and its own layout. */
     val dayDrilldown: Boolean get() = openedFromMonthGrid && dayParent != null && viewMode == ViewMode.Day
@@ -248,7 +295,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         if (request == dayFocusRequest) handledDayFocus = request
     }
     val month: YearMonth get() = YearMonth.from(selectedDate)
-    var viewMode by mutableStateOf(launchViewMode()); private set
+    var viewMode by mutableStateOf(restored?.viewMode ?: launchViewMode()); private set
 
     /** Bumped by [goToday] so the calendar can re-center and confirm the action even when today is already selected. */
     var todayRequest by mutableStateOf(0); private set
@@ -282,8 +329,15 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     private var pendingLink: (() -> Unit)? = null
 
     init {
+        // Read when Android saves the activity, so a recreated process returns to the same view and dates.
+        savedState.setSavedStateProvider(KEY_POSITION) {
+            CalendarPosition(viewMode, selectedDate, selectedDate == today, dayParent, openedFromMonthGrid, timelineViewportStart).toBundle()
+        }
         if (hasPermission) reload()
     }
+
+    /** Completed Details metadata reads. Lets a check wait for the provider answer instead of guessing a delay. */
+    internal var detailsMetaLoads by mutableIntStateOf(0); private set
 
     // region permissions and lifecycle
 
@@ -322,7 +376,8 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (changed) refreshApp()
-        reload()
+        // The first resume follows the load started in init; restarting it would only discard a query in flight.
+        if (changed || loadJob?.isActive != true) reload()
         pendingLink?.let { link -> pendingLink = null; link() }
     }
 
@@ -408,21 +463,12 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         (viewMode == ViewMode.Day && activeDayLayout == "schedule")
 
     private fun initialWindow(): Pair<LocalDate, LocalDate> = if (continuousAgenda()) {
-        val anchor = if (continuousTimeline()) timelineViewportStart ?: selectedDate else selectedDate
+        val anchor = timelineLoadAnchor()
         anchor.minusDays(60) to anchor.plusDays(120)
     } else gridRange()
 
     private fun wantedRange(): Pair<LocalDate, LocalDate> {
-        if (continuousAgenda()) return targetWindow ?: initialWindow()
-        val grid = gridRange()
-        if (workweekTimeline()) {
-            val monday = weekStart(selectedDate, true)
-            return minOf(grid.first, monday) to maxOf(grid.second, monday.plusDays(4))
-        }
-        // A rolling timeline can retain earlier dates while the selection stays in its window.
-        return if (viewMode == ViewMode.Week && weekLayout == "timeline" && visibleWeekDays < 7) {
-            grid.first.minusDays((visibleWeekDays - 1).toLong()) to grid.second
-        } else grid
+        return if (continuousAgenda()) targetWindow ?: initialWindow() else gridRange()
     }
 
     fun coversRange(from: LocalDate, to: LocalDate): Boolean =
@@ -432,7 +478,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         start != null && end != null && !start.isAfter(from) && !end.isBefore(to)
 
     private fun ensureLoaded() {
-        val anchor = if (continuousTimeline()) timelineViewportStart ?: selectedDate else selectedDate
+        val anchor = timelineLoadAnchor()
         if (continuousAgenda() && !containsRange(targetWindow?.first, targetWindow?.second, anchor, anchor)) {
             targetWindow = initialWindow()
         }
@@ -449,11 +495,15 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         if (!coversRange(from, to) || !coversRange(gridFrom, gridTo) || !coversRange(buffer.first, buffer.second)) reload()
     }
 
+    private fun timelineLoadAnchor(): LocalDate =
+        if (continuousTimeline() && timelineNavigationRequest == handledTimelineNavigation) timelineViewportStart ?: selectedDate
+        else selectedDate
+
     private fun eventsBetween(from: LocalDate, to: LocalDate, ids: Set<Long>): List<CalendarEvent> {
         val zone = ZoneId.systemDefault()
         val start = from.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         val end = to.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
-        return repo.events(start, end, ids, school = true)
+        return repo.events(start, end, ids, school = true, reminders = true)
     }
 
     fun reload() {
@@ -499,8 +549,10 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
             } catch (c: CancellationException) {
                 throw c
             } catch (e: Exception) {
-                loadError = e.userMessage()
-                loaded = true
+                if (generation == loadGeneration) {
+                    loadError = e.userMessage()
+                    loaded = true
+                }
             } finally {
                 if (generation == loadGeneration) loadingEvents = false
             }
@@ -596,12 +648,14 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         if (editorInitial?.calendarId == null) editorInitial = editorInitial?.copy(calendarId = id)
     }
 
-    suspend fun loadDraft(id: Long): EventDraft? = withContext(Dispatchers.IO) {
-        runCatching { repo.getEvent(id) }.getOrNull()
-    }
-
-    suspend fun editBlockReason(id: Long): EditBlockReason? = withContext(Dispatchers.IO) {
-        runCatching { repo.editBlockReason(id) }.getOrDefault(EditBlockReason.INVALID_PROVIDER_DATA)
+    /** The stored draft and why editing is blocked, read together in one background hop. */
+    suspend fun detailsMeta(id: Long): Pair<EventDraft?, EditBlockReason?> {
+        val result = withContext(Dispatchers.IO) {
+            runCatching { repo.getEvent(id) }.getOrNull() to
+                runCatching { repo.editBlockReason(id) }.getOrDefault(EditBlockReason.INVALID_PROVIDER_DATA)
+        }
+        detailsMetaLoads++
+        return result
     }
 
     // endregion
@@ -1120,6 +1174,7 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         weekTimelineZoom = settings.weekTimelineZoom
     }
 
+    /** Column count of the continuous Week. Changing it keeps the first shown date. */
     fun changeVisibleWeekDays(value: Int) {
         settings.visibleWeekDays = value
         visibleWeekDays = settings.visibleWeekDays
@@ -1127,12 +1182,9 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         ensureLoaded()
     }
 
-    fun workweekTimeline(): Boolean = viewMode == ViewMode.Week && weekLayout == "timeline" && visibleWeekDays == 5 && !rollingFiveDays
-
-    fun changeRollingFiveDays(value: Boolean) {
-        settings.rollingFiveDays = value
-        rollingFiveDays = value
-        ensureLoaded()
+    fun changeTimelineTint(value: Int) {
+        settings.timelineTint = value
+        timelineTint = settings.timelineTint
     }
 
     fun changeWeekHeaderSelection(value: Boolean) {
@@ -1143,43 +1195,47 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
     /** The chooser value for [mode]'s current layout, or null when it uses a layout the chooser does not offer. */
     fun currentLayoutChoice(mode: ViewMode): String? = when (mode) {
         ViewMode.Month -> monthLayout
-        ViewMode.Week -> if (weekLayout == "timeline") "timeline$visibleWeekDays" else weekLayout
+        ViewMode.Week -> weekLayout
         ViewMode.Day -> dayLayout.takeIf { it in DAY_LAYOUT_CHOICES }
     }
 
-    /** Applies a layout from the view chooser, persists it like Settings does, then opens that view. */
-    fun applyViewLayout(mode: ViewMode, choice: String) {
+    /**
+     * Applies a layout from the view chooser, persists it like Settings does, then opens that view. [days] is the
+     * continuous Week's column count; null keeps the saved one.
+     */
+    fun applyViewLayout(mode: ViewMode, choice: String, days: Int? = null) {
         require(choice in layoutChoices(mode))
+        require(days == null || (mode == ViewMode.Week && choice == "continuous" && days in SettingsStore.VISIBLE_DAY_CHOICES))
+        if (days != null && days != visibleWeekDays) changeVisibleWeekDays(days)
         if (currentLayoutChoice(mode) != choice) when (mode) {
             ViewMode.Month -> changeMonthLayout(choice)
-            ViewMode.Week -> if (choice == "list" || choice == "continuous") changeWeekLayout(choice) else {
-                val days = choice.removePrefix("timeline").toInt()
-                if (visibleWeekDays != days) changeVisibleWeekDays(days)
-                if (weekLayout != "timeline") changeWeekLayout("timeline")
-            }
+            ViewMode.Week -> changeWeekLayout(choice)
             ViewMode.Day -> changeDayLayout(choice)
         }
         changeViewMode(mode)
     }
 
+    /** A stock preset sets the three views and the continuous Week's default column count. */
     fun applyLayoutPreset(value: String) {
         require(value in setOf("sunlith", "schedule", "planner"))
         val (monthChoice, weekChoice, dayChoice) = when (value) {
             "schedule" -> Triple("split", "list", "schedule")
-            "planner" -> Triple("full", "list", "cards")
-            else -> Triple("split", "list", "cards")
+            "planner" -> Triple("full", SettingsStore.DEFAULT_WEEK_LAYOUT, "cards")
+            else -> Triple("split", SettingsStore.DEFAULT_WEEK_LAYOUT, "cards")
         }
+        val days = SettingsStore.DEFAULT_VISIBLE_DAYS
         Snapshot.withMutableSnapshot {
             settings.monthLayout = monthChoice
             settings.weekLayout = weekChoice
             settings.dayLayout = dayChoice
-            settings.visibleWeekDays = 7
+            settings.visibleWeekDays = days
             settings.layoutPreset = value
             monthLayout = monthChoice
             weekLayout = weekChoice
             dayLayout = dayChoice
-            visibleWeekDays = 7
+            visibleWeekDays = days
             layoutPreset = value
+            if (continuousTimeline()) { timelineViewportStart = selectedDate; timelineViewportEnd = selectedDate }
             targetWindow = initialWindow()
         }
         reload()
@@ -1332,5 +1388,6 @@ class SunlithViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_DRILLDOWN_LAYOUT = "month_drilldown_layout"
         private const val KEY_LAST_CALENDAR = "last_calendar"
         private const val KEY_NOTIFY_ASKED = "notify_asked"
+        private const val KEY_POSITION = "calendar_position"
     }
 }

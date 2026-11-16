@@ -23,8 +23,10 @@ function Invoke-SunlithAdb {
 }
 
 function Invoke-SunlithTest {
-    param([string]$ClassName)
-    $result = Invoke-SunlithAdb @('shell', 'am', 'instrument', '-w', '-e', 'class', $ClassName, 'io.github.sunsind.sunlith.test/androidx.test.runner.AndroidJUnitRunner')
+    param([string]$ClassName, [switch]$KeepDemoState)
+    $testArguments = @('shell', 'am', 'instrument', '-w', '-e', 'class', $ClassName)
+    if ($KeepDemoState) { $testArguments += @('-e', 'keepDemoState', 'true') }
+    $result = Invoke-SunlithAdb ($testArguments + 'io.github.sunsind.sunlith.test/androidx.test.runner.AndroidJUnitRunner')
     $result | Write-Output
     if (($result -join "`n") -match 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|INSTRUMENTATION_CODE: 0') {
         throw "Instrumentation failed: $ClassName"
@@ -46,7 +48,7 @@ if (-not $SkipInstall) {
 }
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-Invoke-SunlithTest 'io.github.sunsind.sunlith.DemoFixtureTest'
+Invoke-SunlithTest 'io.github.sunsind.sunlith.DemoFixtureTest' -KeepDemoState
 Invoke-SunlithAdb @('shell', 'am', 'start', '-W', '-n', 'io.github.sunsind.sunlith/.MainActivity')
 $sunlithCalendarVisible = $false
 for ($sunlithAttempt = 0; $sunlithAttempt -lt 6; $sunlithAttempt++) {

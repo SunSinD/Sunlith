@@ -18,7 +18,20 @@ import android.provider.Settings
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -37,6 +50,8 @@ import io.github.sunsind.sunlith.data.EventDraft
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.system.LauncherIcons
 import io.github.sunsind.sunlith.ui.Formats
+import io.github.sunsind.sunlith.ui.CalendarPosition
+import io.github.sunsind.sunlith.ui.SunlithApp
 import io.github.sunsind.sunlith.ui.SunlithViewModel
 import io.github.sunsind.sunlith.ui.ViewMode
 import io.github.sunsind.sunlith.ui.gridStart
@@ -60,6 +75,36 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CalendarExperienceTest {
+    @Test
+    fun calendarPositionBundleRestoresAFreshViewModelAndDropsAnOldTodayViewport() {
+        val selected = LocalDate.now().plusMonths(2).withDayOfMonth(15)
+        val viewport = selected.minusDays(2)
+        val position = CalendarPosition(ViewMode.Week, selected, false, null, false, viewport)
+        val decoded = requireNotNull(CalendarPosition.from(position.toBundle()))
+        assertEquals(position, decoded)
+        val yesterday = LocalDate.now().minusDays(1)
+        val oldToday = CalendarPosition(ViewMode.Week, yesterday, true, null, false, yesterday)
+        assertEquals(LocalDate.now(), oldToday.selectedOn(LocalDate.now()))
+        assertEquals(null, oldToday.viewportOn(LocalDate.now()))
+        val store = ViewModelStore()
+        try {
+            instrumentation.runOnMainSync {
+                val app = context.applicationContext as android.app.Application
+                val factory = object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                        SunlithViewModel(app, SavedStateHandle(mapOf("calendar_position" to decoded.toBundle()))) as T
+                }
+                val restored = ViewModelProvider(store, factory)[SunlithViewModel::class.java]
+                assertEquals(ViewMode.Week, restored.viewMode)
+                assertEquals(selected, restored.selectedDate)
+                assertEquals(viewport, restored.timelineViewportStart)
+            }
+        } finally {
+            instrumentation.runOnMainSync { store.clear() }
+        }
+    }
+
     @get:Rule
     val permissions: GrantPermissionRule = GrantPermissionRule.grant(*buildList {
         add(Manifest.permission.READ_CALENDAR)
@@ -280,17 +325,18 @@ class CalendarExperienceTest {
         back()
         scrollToText(english.getString(R.string.beta_settings_appearance)).click()
         captureSettings("appearance", R.string.layout_preset_grid)
-        chooseSetting(R.string.view_week, "timeline3")
+        chooseSetting(R.string.view_week, "continuous")
+        chooseSetting(R.string.settings_visible_days, "3")
         assertFalse("The detailed General Day label must not be duplicated in Appearance.", device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.settings_day_view))))
         scrollToText(english.getString(R.string.layout_preset_grid)).click()
         awaitUi { settings.monthLayout == "full" }
-        assertEquals("timeline", settings.weekLayout)
+        assertEquals("continuous", settings.weekLayout)
         assertEquals(3, settings.visibleWeekDays)
         assertEquals("schedule", settings.dayLayout)
         scrollToText(english.getString(R.string.beta_collapse_calendar))
         scrollToText(english.getString(R.string.layout_preset_agenda)).click()
         awaitUi { settings.monthLayout == "split" }
-        assertEquals("timeline", settings.weekLayout)
+        assertEquals("continuous", settings.weekLayout)
         assertEquals(3, settings.visibleWeekDays)
         assertEquals("schedule", settings.dayLayout)
         scrollToText(english.getString(R.string.beta_collapse_calendar)).click()
@@ -340,7 +386,7 @@ class CalendarExperienceTest {
         fun text(id: Int) = localized.getString(id)
         node(By.pkg(context.packageName).desc(text(R.string.title_settings))).click()
         node(By.pkg(context.packageName).text(text(R.string.beta_settings_appearance))).click()
-        listOf(R.string.view_week to "timeline7", R.string.settings_theme to "dark").forEach { (label, choice) ->
+        listOf(R.string.view_week to "continuous", R.string.settings_visible_days to "7", R.string.settings_theme to "dark").forEach { (label, choice) ->
             val title = scrollToText(text(label))
             val bounds = title.visibleBounds
             assertTrue("Dropdown title must have visible width: ${text(label)} / $bounds", bounds.width() >= 24 * context.resources.displayMetrics.density)
@@ -355,7 +401,7 @@ class CalendarExperienceTest {
             SystemClock.sleep(300)
             assertTrue(device.takeScreenshot(File(context.filesDir, "dropdown-$language-$choice-selected.png")))
         }
-        assertEquals("timeline", settings.weekLayout)
+        assertEquals("continuous", settings.weekLayout)
         assertEquals(7, settings.visibleWeekDays)
         assertEquals("cards", settings.dayLayout)
         assertEquals("dark", settings.themeMode)
@@ -902,10 +948,30 @@ class CalendarExperienceTest {
                     .filterIsInstance<MainActivity>().firstOrNull()?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             }
             awaitUi { device.displayWidth > device.displayHeight && context.resources.configuration.fontScale >= 1.99f }
-            onMain { vm.applyLayoutPreset("planner"); vm.changeViewMode(ViewMode.Month); vm.goToday() }
+            onMain {
+                val current = requireNotNull(ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .filterIsInstance<MainActivity>().firstOrNull())
+                activity = current
+                vm = ViewModelProvider(current)[SunlithViewModel::class.java]
+                vm.applyLayoutPreset("planner")
+                vm.changeViewMode(ViewMode.Month)
+                vm.goToday()
+                current.setContent {
+                    Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                        Box(Modifier.fillMaxWidth().height(300.dp).testTag("full_month_test_host")) { SunlithApp(vm) }
+                    }
+                }
+            }
             val today = LocalDate.now()
             val todayAction = By.pkg(context.packageName).desc(english.getString(R.string.action_today))
+            awaitUi {
+                val host = device.findObject(By.pkg(context.packageName).res("full_month_test_host"))?.visibleBounds
+                host != null && host.height() in ((300 * context.resources.displayMetrics.density).toInt() - 2)..((300 * context.resources.displayMetrics.density).toInt() + 2)
+            }
             val bounds = stableBounds(By.pkg(context.packageName).res("calendar_grid"))
+            val rowHeight = stableBounds(day(today)).height()
+            assertTrue("The test viewport must be short enough to move a middle week out of view: $bounds, row=$rowHeight",
+                rowHeight > 20 && bounds.height() < rowHeight * 3)
             val top = bounds.top + bounds.height() / 5
             val bottom = bounds.bottom - bounds.height() / 5
             val early = java.time.temporal.ChronoUnit.DAYS.between(gridStart(vm.month, vm.weekStartsMonday), today) < 21

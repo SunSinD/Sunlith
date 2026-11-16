@@ -72,9 +72,9 @@ class TimelinePackingTest {
             assertNull(after.group)
             assertEquals(1, clusters.last().cols)
         }
-        // Week keeps its exact short blocks: no group and no extra lanes.
+        // Week groups the same cramped run into one readable card instead of three slivers, with no extra lanes.
         val week = packTimeline(trio, date, zone, 30)
-        assertTrue(week.flatMap { it.blocks }.all { it.group == null })
+        assertEquals(listOf(1L, 2L, 3L), cards(week).single().group!!.map { it.event.id })
         assertTrue(week.all { it.cols == 1 })
     }
 
@@ -264,13 +264,16 @@ class TimelinePackingTest {
     }
 
     @Test
-    fun shortLabelsUseFreeTimeWithoutCreatingFalseOverlaps() {
+    fun shortEventsTooCloseForTheirTitlesShareOneCardWithoutFalseOverlaps() {
         val clusters = packTimeline(listOf(event(1, 540, 545), event(2, 560, 565)), date, zone, 30)
-        assertEquals(2, clusters.size)
         assertTrue(clusters.all { it.cols == 1 })
-        val blocks = clusters.flatMap { it.blocks }
-        assertEquals(listOf(540, 560), blocks.map { it.start })
-        assertEquals(listOf(560, 590), blocks.map { it.end })
+        val card = cards(clusters).single()
+        assertEquals("The 9:20 event starts inside the 9:00 title line", listOf(1L, 2L), card.group!!.map { it.event.id })
+        assertEquals("Both keep their real starts", listOf(540, 560), card.group!!.map { it.start })
+        assertEquals(570, card.end)
+        val apart = packTimeline(listOf(event(1, 540, 545), event(2, 580, 585)), date, zone, 30)
+        assertEquals("Events with room for their titles keep their own cards", 2, cards(apart).size)
+        assertTrue(apart.flatMap { it.blocks }.all { it.group == null && it.end == it.start + 30 })
     }
 
     @Test
@@ -310,21 +313,19 @@ class TimelinePackingTest {
     @Test
     fun adjacentTinyEventsKeepExactStartsAndAFullWidthLane() {
         val clusters = packTimeline(listOf(event(1, 540, 545), event(2, 545, 550), event(3, 550, 551)), date, zone, 53)
-        assertEquals(3, clusters.size)
         assertTrue(clusters.all { it.cols == 1 })
         val blocks = clusters.flatMap { it.blocks }
         assertEquals(listOf(540, 545, 550), blocks.map { it.start })
-        assertEquals(listOf(545, 550, 603), blocks.map { it.end })
+        assertEquals("One readable card for the whole run", 593, cards(clusters).single().end)
     }
 
     @Test
     fun realShortOverlapsStillUseSeparateLanes() {
         val clusters = packTimeline(listOf(event(1, 540, 545), event(2, 543, 546), event(3, 546, 547)), date, zone, 30)
-        assertEquals(2, clusters.size)
-        assertEquals(2, clusters.first().cols)
-        assertEquals(listOf(540, 543), clusters.first().blocks.map { it.start })
-        assertEquals(listOf(545, 546), clusters.first().blocks.map { it.end })
-        assertEquals(1, clusters.last().cols)
+        val blocks = clusters.flatMap { it.blocks }.associateBy { it.event.id }
+        assertTrue("Events that really overlap never share a lane", blocks.getValue(1).col != blocks.getValue(2).col)
+        assertEquals("Only the two real lanes", 2, clusters.maxOf { it.cols })
+        assertEquals(listOf(540, 543, 546), blocks.values.map { it.start }.sorted())
     }
 
     @Test
@@ -349,9 +350,13 @@ class TimelinePackingTest {
     }
 
     @Test
-    fun tinyEventShortcutRetainsEveryAdjacentAndIsolatedShortEvent() {
-        val items = listOf(event(1, 540, 545), event(2, 545, 550), event(3, 550, 555), event(4, 600, 660), event(5, 800, 800))
-        assertEquals(listOf(1L, 2L, 3L, 5L), shortTimelineEvents(items, date, zone, 15).map { it.id })
+    fun aLoneShortEventIsAReadableCardAtItsRealHourInWeek() {
+        val items = listOf(event(1, 800, 801), event(4, 600, 660))
+        val week = packTimeline(items, date, zone, 30)
+        val short = week.flatMap { it.blocks }.single { it.event.id == 1L }
+        assertNull("A single short event never becomes a group or a shortcut", short.group)
+        assertEquals("It stays at its real start", 800, short.start)
+        assertEquals("It gets one full title line", 830, short.end)
     }
 
     @Test
@@ -393,6 +398,36 @@ class TimelinePackingTest {
         assertNull("Midnight at the very top, with the edge room showing", timelineTodayDirection(axis, 0, 0, 100, top))
         assertNull("Midnight just scrolled into the edge room", timelineTodayDirection(axis, 0, 15, 100, top))
         assertNull("The end of the day at the bottom of the content", timelineTodayDirection(axis, 1440, 24 * 60 + 40 - 100, 100, top))
+    }
+
+    @Test
+    fun todayOpensAtTheStartOfTheClassInProgressAndNeverJumpsToALaterOne() {
+        fun now(minute: Int) = date.atStartOfDay(zone).plusMinutes(minute.toLong()).toInstant().toEpochMilli()
+        val morning = event(1, 8 * 60, 10 * 60)
+        val overlapping = event(2, 9 * 60 + 30, 11 * 60)
+        val evening = event(3, 18 * 60, 19 * 60)
+        val items = listOf(evening, overlapping, morning)
+        assertEquals("Inside a class: its start", 8 * 60, timelineTodayMinute(items, date, zone, now(9 * 60), 9 * 60))
+        assertEquals("Overlapping classes: the earliest start", 8 * 60, timelineTodayMinute(items, date, zone, now(9 * 60 + 45), 9 * 60 + 45))
+        assertEquals("Only the later class runs", 9 * 60 + 30, timelineTodayMinute(items, date, zone, now(10 * 60), 10 * 60))
+        assertEquals("The end is not inside", timelineTodayMinute(11 * 60), timelineTodayMinute(items, date, zone, now(11 * 60), 11 * 60))
+        assertEquals("Between classes: the usual hour, not the evening class",
+            timelineTodayMinute(14 * 60 + 10), timelineTodayMinute(items, date, zone, now(14 * 60 + 10), 14 * 60 + 10))
+        val allDay = event(4, 0, 24 * 60).copy(allDay = true)
+        assertEquals("A banner is not a class in progress", timelineTodayMinute(13 * 60), timelineTodayMinute(listOf(allDay), date, zone, now(13 * 60), 13 * 60))
+        assertEquals("The list points at the class in progress", morning.id, focusTarget(items, date, zone, now(9 * 60))?.id)
+        assertEquals("Then at the next one that has not ended", evening.id, focusTarget(items, date, zone, now(12 * 60))?.id)
+        assertEquals("Another date keeps its first event", morning.id, focusTarget(items, date, zone, now(12 * 60) + 86_400_000L)?.id)
+    }
+
+    @Test
+    fun continuousColumnsFitTheChosenCountAtNormalTextAndStayReadableAtLargeText() {
+        val phone = 360.dp - 48.dp
+        for (days in listOf(3, 5, 7)) {
+            assertEquals("$days columns fit a phone at normal text", (phone / days).value, continuousColumnWidth(phone, days, 12.dp, 1f).value, 0.01f)
+        }
+        assertTrue("Large text keeps readable columns that scroll sideways", continuousColumnWidth(phone, 7, 24.dp, 2f) > phone / 7)
+        assertTrue(continuousColumnWidth(phone, 7, 24.dp, 2f) >= 60.dp)
     }
 
     /** Today lands where the target hour's events are drawn, top + axis y, not on the bare axis y. */
@@ -578,9 +613,8 @@ class TimelinePackingTest {
             if (readable) assertDayInvariants(crowdedFriday(), minimum)
             val labs = blocks.filter { it.event.id in 3L..5L }
             assertEquals("Three simultaneous labs need three lanes", 3, labs.map { it.col }.toSet().size)
-            if (!readable || minimum <= 30) assertTrue("At normal text the labs stay side by side cards", labs.all { it.group == null })
-            assertTrue("Week never groups on Day's title rule", readable || blocks.all { it.group == null })
-            if (readable && minimum >= 30) {
+            if (minimum <= 30) assertTrue("At normal text the labs stay side by side cards", labs.all { it.group == null })
+            if (minimum >= 30) {
                 val shortRun = blocks.single { it.event.id == 7L }.group
                 assertEquals("The 18:00, 18:15 and 18:20 run is one compact card, not false lanes ($minimum)",
                     listOf(7L, 8L, 9L), shortRun?.map { it.event.id })

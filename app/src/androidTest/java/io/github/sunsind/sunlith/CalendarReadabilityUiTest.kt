@@ -161,7 +161,6 @@ class CalendarReadabilityUiTest {
             weekStartsMonday = true
             weekLayout = "list"
             visibleWeekDays = 7
-            rollingFiveDays = true
             weekHeaderSelection = true
             dayLayout = "timeline"
             agendaRange = "month"
@@ -254,61 +253,36 @@ class CalendarReadabilityUiTest {
     }
 
     @Test
-    fun rollingFiveDaySettingPagesAcrossWeekendAndSurvivesRecreationAndToday() = checked {
+    fun continuousWeekColumnCountIsChosenInSettingsFitsAtNormalTextAndSurvivesRecreation() = checked {
         node(By.desc(text(R.string.title_settings))).click()
         node(By.text(text(R.string.beta_settings_appearance))).click()
         scrollTo(By.text(text(R.string.view_week))).click()
-        node(By.res("settings_choice_timeline5")).click()
-        await("The setting must switch both the layout and the saved day count") { vm.weekLayout == "timeline" && vm.visibleWeekDays == 5 }
-        assertEquals("timeline", settings.weekLayout)
-        assertEquals(5, settings.visibleWeekDays)
+        node(By.res("settings_choice_continuous")).click()
+        await("Week must switch to the continuous timeline") { vm.weekLayout == "continuous" }
+        scrollTo(By.text(text(R.string.settings_visible_days))).click()
+        node(By.res("settings_choice_3")).click()
+        await("The column count must be saved") { vm.visibleWeekDays == 3 }
+        assertEquals("continuous", settings.weekLayout)
+        assertEquals(3, settings.visibleWeekDays)
         device.pressBack()
         device.pressBack()
-        timeline(friday, 5)
-        assertWindowReachable(friday, 5)
-        node(By.desc(text(R.string.calendar_next_five_days))).click()
-        await("The next arrow must move exactly five days") { vm.selectedDate == friday.plusDays(5) }
-        checkedHeader(friday.plusDays(5))
-        node(By.desc(text(R.string.calendar_prev_five_days))).click()
-        await("The previous arrow must return to the original five-day start") { vm.selectedDate == friday }
-        checkedHeader(friday)
-        dragHeader(forward = true, distanceFraction = 0.63f)
-        await("A fitted timeline swipe must advance exactly five days") { vm.selectedDate == friday.plusDays(5) }
-        checkedHeader(friday.plusDays(5))
-        dragHeader(forward = false, distanceFraction = 0.63f)
-        await("The reverse timeline swipe must return exactly five days") { vm.selectedDate == friday }
-        checkedHeader(friday)
-        reachableHeader(friday.plusDays(1)).click()
-        await("A Saturday inside the window must stay selectable") { vm.selectedDate == friday.plusDays(1) }
-        checkedHeader(friday.plusDays(1))
-        assertWindowReachable(friday, 5)
+        timeline(friday, 3)
+        val viewport = headerViewport()
+        for (offset in 0L..2L) assertTrue("All three chosen columns fit at normal text", readableHeader(friday.plusDays(offset), viewport) != null)
         recreate()
-        assertEquals(friday.plusDays(1), vm.selectedDate)
-        assertEquals(5, vm.visibleWeekDays)
-        assertWindowReachable(friday, 5)
-        node(By.desc(text(R.string.action_today))).click()
-        await("Today must restore today's actual date") { vm.selectedDate == vm.today }
-        val todayHeader = checkedHeader(vm.today)
-        assertTrue("Today must be the checked date header", todayHeader.isCheckable && todayHeader.isChecked)
-        for (offset in 1L..4L) {
-            val other = reachableHeader(vm.today.plusDays(offset))
-            assertTrue("Every other date must remain unchecked", other.isCheckable && !other.isChecked)
-        }
-        assertEquals(5, settings.visibleWeekDays)
+        assertEquals("continuous", vm.weekLayout)
+        assertEquals(3, vm.visibleWeekDays)
     }
 
     @Test
-    fun largeTextHorizontalOverflowRemainsScrollableWithPeriodSwipesDisabled() = checked { exerciseHorizontalOverflow(false) }
+    fun largeTextContinuousWeekKeepsReadableColumnsThatScrollSideways() = checked { exerciseHorizontalOverflow() }
 
     @Test
-    fun largeTextHorizontalOverflowConsumesItsOwnScrollBeforePeriodSwipes() = checked { exerciseHorizontalOverflow(true) }
-
-    @Test
-    fun disabledSwipesOnFittedThreeAndFiveDayTimelinesNeverPageOrTap() = checked {
+    fun continuousColumnsScrollWithoutTappingOrChangingTheSelectedDate() = checked {
         onMain { vm.changeSwipeNavigation(false) }
         for (count in listOf(3, 5)) {
             timeline(friday, count)
-            assertTrue("This regression must exercise a fitted $count-day viewport", readableHeader(friday) != null && readableHeader(friday.plusDays(count - 1L)) != null)
+            assertTrue("This regression must exercise $count fitted columns", readableHeader(friday) != null && readableHeader(friday.plusDays(count - 1L)) != null)
             val timeline = node(By.res("calendar_timeline")).visibleBounds
             val before = vm.selectedDate
             val y = timeline.top + timeline.height() / 3
@@ -316,12 +290,12 @@ class CalendarReadabilityUiTest {
             val x2 = device.displayWidth / 4
             assertTrue(device.swipe(x1, y, x2, y, 45))
             idle()
-            assertEquals("Disabled $count-day swipes must keep the same period", before, vm.selectedDate)
+            assertEquals("Scrolling the $count columns keeps the selected date", before, vm.selectedDate)
             assertTrue("A horizontal drag must not turn into an event click or a new-event tap", vm.stack.isEmpty())
             assertEquals(null, vm.editor)
             assertEquals(count, vm.visibleWeekDays)
             dragHeader(forward = true)
-            assertEquals("Dragging a fitted date header must not select the release target", before, vm.selectedDate)
+            assertEquals("Dragging a date header must not select the release target", before, vm.selectedDate)
             assertTrue(vm.stack.isEmpty())
         }
     }
@@ -396,6 +370,8 @@ class CalendarReadabilityUiTest {
                         device.hasObject(By.desc(text(R.string.action_edit))))
                     assertFalse("A managed event must never briefly offer Delete while its status is loading.",
                         device.hasObject(By.desc(text(R.string.action_delete))))
+                    assertTrue("Rows the calendar already knows must not wait for the held provider read.",
+                        device.hasObject(By.text(text(R.string.todo_tag))))
                 } else if (requireVisible) {
                     error("An already visible Details screen disappeared during a provider refresh.")
                 }
@@ -485,11 +461,13 @@ class CalendarReadabilityUiTest {
             } while (SystemClock.elapsedRealtime() < deadline)
         }
         try {
+            val loadsBefore = vm.detailsMetaLoads
             instrumentation.runOnMainSync { vm.open(Screen.Details(event)) }
             node(title)
             node(notice)
-            // This lower row is drawn only after the first ownership query completed, so both directions exercise cached metadata.
             node(By.text(text(R.string.todo_tag)))
+            // Both directions must exercise metadata cached from a completed first provider read.
+            await("The first Details provider read must complete") { vm.detailsMetaLoads > loadsBefore }
             repositoryField.set(vm, CalendarRepository(heldContext))
 
             val releasedOwnership = originalRecord.copy(ledger = originalRecord.ledger.filterNot { it.rowId == event.id })
@@ -603,10 +581,7 @@ class CalendarReadabilityUiTest {
         assertWindowReachable(friday.with(DayOfWeek.MONDAY), 7)
         onMain { vm.select(friday.with(DayOfWeek.SUNDAY)) }
         checkedHeader(friday.with(DayOfWeek.SUNDAY))
-        await("The final day column must be fully visible") {
-            readFresh { device.findObject(By.descStartsWith(formats.dayLong(friday.with(DayOfWeek.SUNDAY))))?.visibleBounds?.width() }
-                ?.let { it >= 79 * base.resources.displayMetrics.density } == true
-        }
+        awaitFullHeader(friday.with(DayOfWeek.SUNDAY), "The final day column must be fully visible")
         onMain { vm.select(friday) }
         checkedHeader(friday)
         eventNode(gym())
@@ -640,7 +615,7 @@ class CalendarReadabilityUiTest {
         loaded(friday)
         val absent = vm.eventsByDay[friday].orEmpty().single { it.school?.course == "340-ABSENT" }
         eventNode(absent)
-        capture("fully-absent-outline")
+        capture("fully-absent-striped")
         onMain { vm.openSearch(); vm.updateSearch(gymTitle) }
         await("Search must return the combined class once") { !vm.searchLoading && vm.searchResults.size == 1 && vm.searchResults.single().school?.periods?.size == 3 }
         onMain {
@@ -666,31 +641,21 @@ class CalendarReadabilityUiTest {
         capture("settings-week-choices")
     }
 
-    private fun exerciseHorizontalOverflow(swipeEnabled: Boolean) {
+    private fun exerciseHorizontalOverflow() {
         installContent(fontScaleOverride = 2f)
         idle()
         val monday = friday.with(DayOfWeek.MONDAY)
-        onMain { vm.changeSwipeNavigation(swipeEnabled) }
         timeline(monday, 7)
         val first = header(monday).visibleBounds
-        assertEquals("Seven readable columns must overflow the phone viewport", null, readableHeader(monday.plusDays(6)))
+        assertEquals("Seven readable columns must overflow the phone viewport at large text", null, readableHeader(monday.plusDays(6)))
         val selected = vm.selectedDate
         dragHeader(forward = true)
-        assertEquals("Scrolling a child viewport must keep the selected period", selected, vm.selectedDate)
+        assertEquals("Scrolling the columns must keep the selected date", selected, vm.selectedDate)
         val moved = readFresh { device.findObject(By.descStartsWith(formats.dayLong(monday)))?.visibleBounds }
         assertTrue("The timeline must actually move horizontally", moved == null || moved != first)
         assertWindowReachable(monday, 7)
         assertEquals(selected, vm.selectedDate)
-        if (!swipeEnabled) {
-            repeat(2) { dragHeader(forward = true) }
-            assertEquals("Disabled period swipes must stay disabled at the child scroll edge", selected, vm.selectedDate)
-        } else {
-            reachableHeader(monday.plusDays(6))
-            dragHeader(forward = true, distanceFraction = 0.63f)
-            await("A deliberate drag beyond the child scroll edge must move exactly one week") { vm.selectedDate == selected.plusWeeks(1) }
-            checkedHeader(selected.plusWeeks(1))
-        }
-        assertEquals(swipeEnabled, settings.swipeNavigation)
+        assertEquals(7, vm.visibleWeekDays)
     }
 
     private fun assertDetails(event: CalendarEvent) {
@@ -737,7 +702,7 @@ class CalendarReadabilityUiTest {
     }
 
     private fun timeline(date: LocalDate, count: Int) {
-        onMain { vm.changeVisibleWeekDays(count); vm.changeWeekLayout("timeline"); vm.changeViewMode(ViewMode.Week); vm.select(date) }
+        onMain { vm.changeVisibleWeekDays(count); vm.changeWeekLayout("continuous"); vm.changeViewMode(ViewMode.Week); vm.select(date) }
         loaded(date)
         node(By.res("calendar_timeline"))
         checkedHeader(date)
@@ -765,8 +730,9 @@ class CalendarReadabilityUiTest {
     }
 
     private fun headerViewport(): Rect = readFresh {
-        // Descendant accessibility bounds can extend into the fixed hour gutter. Use the scroll container itself.
-        device.findObject(By.clazz("android.widget.HorizontalScrollView").hasDescendant(By.checkable(true)))?.visibleBounds
+        // Descendant accessibility bounds can extend into the fixed hour gutter. Use the rendered date strip itself.
+        device.findObject(By.res("calendar_timeline_headers"))?.visibleBounds
+            ?: device.findObject(By.clazz("android.widget.HorizontalScrollView").hasDescendant(By.checkable(true)))?.visibleBounds
             ?: run {
                 val timeline = requireNotNull(device.findObject(By.res("calendar_timeline"))).visibleBounds
                 val headers = device.findObjects(By.descContains(", ")).filter {
@@ -777,12 +743,51 @@ class CalendarReadabilityUiTest {
             }
     }
 
-    // At 200% text a week spans several screens. Keep each drag short enough to avoid paging.
+    // At 200% text a week spans several screens. Each drag advances a readable column.
     private val headerScrollAttempts get() = if (renderedFontScale > 1.3f) 96 else 24
+
+    // Settled date headers as drawn, read together so the full column width and each date come from one frame.
+    private fun headerSnapshot(viewport: Rect): List<Pair<String, Rect>> {
+        val deadline = SystemClock.elapsedRealtime() + 1_500
+        var previous: List<Pair<String, Rect>>? = null
+        while (true) {
+            val current = readFresh {
+                device.findObjects(By.checkable(true).descContains(", ")).map { it.contentDescription.orEmpty() to Rect(it.visibleBounds) }
+            }.filter { (_, bounds) -> bounds.top < viewport.bottom && bounds.bottom > viewport.top }
+            if (current == previous || SystemClock.elapsedRealtime() >= deadline) return current
+            previous = current
+            SystemClock.sleep(60)
+        }
+    }
+
+    // A date is fully shown when its header is as wide as the widest sibling column and the date strip cuts none of it.
+    // The slack covers accessibility rounding only: API 36 reports the RTL seven-column headers 6px off their drawn columns.
+    private fun fullHeader(date: LocalDate, viewport: Rect, headers: List<Pair<String, Rect>> = headerSnapshot(viewport)): Rect? {
+        val full = headers.maxOfOrNull { it.second.width() } ?: return null
+        val slack = 4 * base.resources.displayMetrics.density
+        val bounds = headers.firstOrNull { it.first.startsWith(formats.dayLong(date)) }?.second ?: return null
+        val shown = Rect(bounds).apply { if (!intersect(viewport)) setEmpty() }
+        return bounds.takeIf {
+            it.width() >= full - slack && shown.width() >= full - slack && it.centerX() >= viewport.left && it.centerX() < viewport.right
+        }
+    }
+
+    private fun headerDiagnostics(viewport: Rect): String {
+        val headers = headerSnapshot(viewport)
+        return "viewport=$viewport fullWidth=${headers.maxOfOrNull { it.second.width() }} density=${base.resources.displayMetrics.density} " +
+            "font=$renderedFontScale selected=${vm.selectedDate} visibleDays=${vm.visibleWeekDays} headers=${headers.map { "${it.first} ${it.second}" }}"
+    }
+
+    private fun awaitFullHeader(date: LocalDate, message: String) {
+        val deadline = SystemClock.elapsedRealtime() + 15_000
+        while (fullHeader(date, headerViewport()) == null && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(50)
+        val viewport = headerViewport()
+        if (fullHeader(date, viewport) == null) throw AssertionError("$message: $date; ${headerDiagnostics(viewport)}")
+        idle()
+    }
 
     private fun reachableHeader(date: LocalDate): UiObject2 {
         val selected = vm.selectedDate
-        val minimum = 48 * base.resources.displayMetrics.density
         val selector = By.descStartsWith(formats.dayLong(date))
         val viewport = headerViewport()
         fun stableVisible(waitMillis: Long): UiObject2? {
@@ -791,9 +796,9 @@ class CalendarReadabilityUiTest {
             var samples = 0
             while (SystemClock.elapsedRealtime() < deadline) {
                 try {
-                    val found = device.findObject(selector)
-                    val bounds = found?.let { clippedHeaderBounds(it, viewport) }
-                    if (found != null && bounds != null && bounds.width() >= minimum && bounds.contains(found.visibleCenter.x, found.visibleCenter.y)) {
+                    val bounds = fullHeader(date, viewport)
+                    val found = bounds?.let { device.findObject(selector) }
+                    if (found != null && bounds != null) {
                         samples = if (bounds == previous) samples + 1 else 1
                         previous = Rect(bounds)
                         if (samples >= 3) return found
@@ -804,30 +809,32 @@ class CalendarReadabilityUiTest {
             return null
         }
         stableVisible(2_000)?.let { return it }
-        val observed = readFresh { device.findObjects(By.clazz("android.widget.Button")).map {
-            "${it.contentDescription} ${it.visibleBounds} checked=${it.isChecked}"
-        } }
-        Log.i("ReadabilityFixture", "Missing header date=$date prefix=${formats.dayLong(date)} minWidth=$minimum density=${base.resources.displayMetrics.density} selected=$selected headers=$observed")
-        // A fitted viewport has every header already; absence is a failure, never a reason to change pages.
+        val observed = headerDiagnostics(viewport)
+        Log.i("ReadabilityFixture", "Missing header date=$date prefix=${formats.dayLong(date)} $observed")
+        // A fitted viewport has every header already; absence is a failure, never a reason to scroll elsewhere.
         if (vm.visibleWeekDays <= 5 && renderedFontScale <= 1.3f && device.displayWidth / base.resources.displayMetrics.density >= 360) {
-            return stableNode(selector) { clippedHeaderBounds(it, viewport).width() >= minimum }
+            stableVisible(6_000)?.let { return it }
+            error("The fitted date must be fully visible without scrolling: $date; ${headerDiagnostics(viewport)}")
         }
+        // Continuous dates never end, so search both ways. Neighbours may scroll into view; the selection may not change.
         for (forward in listOf(false, true)) repeat(headerScrollAttempts) {
             dragHeader(forward)
-            assertEquals("Finding an in-window day must not change the calendar period", selected, vm.selectedDate)
+            assertEquals("Finding an in-window day must not change the selected date", selected, vm.selectedDate)
             stableVisible(600)?.let { return it }
         }
-        error("The in-window date must remain reachable: $date; prefix=${formats.dayLong(date)} minimumWidth=$minimum headers=$observed")
+        error("The in-window date must remain reachable: $date; prefix=${formats.dayLong(date)} first=$observed last=${headerDiagnostics(viewport)}")
     }
 
     private fun assertWindowReachable(start: LocalDate, count: Int) {
+        val selected = vm.selectedDate
         val expected = (0L until count.toLong()).map { start.plusDays(it) }
         val reached = mutableSetOf<LocalDate>()
         val viewport = headerViewport()
         reachableHeader(start)
         fun observe() {
+            val headers = headerSnapshot(viewport)
             expected.forEach { date ->
-                if (readableHeader(date, viewport) != null) reached += date
+                if (fullHeader(date, viewport, headers) != null) reached += date
             }
         }
         observe()
@@ -837,12 +844,13 @@ class CalendarReadabilityUiTest {
         repeat(headerScrollAttempts) {
             if (reached.size < count) { dragHeader(forward = false); observe() }
         }
-        assertEquals("Every date including Saturday and Sunday must remain reachable in the same window (rendered font=$renderedFontScale, attempts=$headerScrollAttempts)", expected.toSet(), reached)
-        assertEquals(null, readableHeader(start.minusDays(1), viewport))
-        assertEquals(null, readableHeader(start.plusDays(count.toLong()), viewport))
+        if (reached != expected.toSet()) assertEquals("Every date including Saturday and Sunday must be fully reachable in the same window " +
+            "(rendered font=$renderedFontScale, attempts=$headerScrollAttempts, missing=${expected - reached}); ${headerDiagnostics(viewport)}",
+            expected.toSet(), reached)
+        assertEquals("Reaching every date must keep the selected date", selected, vm.selectedDate)
     }
 
-    private fun dragHeader(forward: Boolean, distanceFraction: Float = 0.08f) {
+    private fun dragHeader(forward: Boolean) {
         val timeline = node(By.res("calendar_timeline")).visibleBounds
         val viewport = headerViewport()
         assertTrue("The real date viewport must sit above the hourly timeline", viewport.bottom <= timeline.top)
@@ -851,13 +859,17 @@ class CalendarReadabilityUiTest {
         val start = viewport.left.coerceAtLeast(0) + inset
         val end = viewport.right.coerceAtMost(device.displayWidth) - inset
         val right = minOf((device.displayWidth * 0.88).toInt(), end)
-        val left = maxOf(start, (right - device.displayWidth * distanceFraction).toInt())
+        val before = headerSnapshot(viewport)
+        val columnWidth = requireNotNull(before.maxOfOrNull { it.second.width() }) { "The date strip must expose its headers" }
+        val distance = (columnWidth * 0.85f + inset).toInt()
+        val left = maxOf(start, right - distance)
         assertTrue("The drag must stay inside the scrollable dates, clear of the fixed hour gutter", right > left)
         val toLeft = forward != rtl
         val from = if (toLeft) right else left
         val to = if (toLeft) left else right
-        assertTrue(device.swipe(from, y, to, y, 45))
+        assertTrue(device.swipe(from, y, to, y, 90))
         idle()
+        assertNotEquals("A deliberate column swipe must advance the date strip", before, headerSnapshot(viewport))
     }
 
     private fun eventNode(event: CalendarEvent): UiObject2 = scrollTo(By.res("timeline_event_${event.id}"))

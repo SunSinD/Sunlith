@@ -12,6 +12,7 @@ import io.github.sunsind.sunlith.school.SchoolClassLift
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -127,13 +128,36 @@ class CalendarReadabilityTest {
     }
 
     @Test
-    fun fullAbsenceIsOutlinedAndHasNoPartialRanges() {
+    fun fullAbsenceIsStripedWholeAndHasNoPartialRanges() {
         val event = schoolEvent(9 * 60 + 50, 10 * 60 + 40, listOf(SchoolEventAbsence(at(9 * 60 + 50), at(10 * 60 + 40), false, emptyList())))
         assertTrue(event.partialAbsences().isEmpty())
-        val colors = eventColors(event, DarkPalette, CourseColors.Empty)
-        assertNotNull(colors.border)
-        assertEquals(DarkPalette.surface, colors.container)
-        assertTrue(contrast(colors.container, colors.content) >= 4.5f)
+        assertEquals(listOf(0f to 1f), event.hatchRanges())
+        for (palette in listOf(LightPalette, DarkPalette)) {
+            val colors = eventColors(event, palette, CourseColors.Empty)
+            assertNotNull(colors.hatch)
+            val normal = eventColors(event.copy(school = event.school!!.copy(absences = emptyList())), palette, CourseColors.Empty)
+            assertEquals("The class keeps its course color under the stripes", normal.container, colors.container)
+            assertTrue(contrast(colors.container, colors.content) >= 4.5f)
+        }
+    }
+
+    @Test
+    fun partialAbsenceStripesOnlyItsOwnIntervalAndNeverTheWholeClass() {
+        val event = schoolEvent(13 * 60 + 30, 15 * 60 + 10, listOf(SchoolEventAbsence(at(13 * 60 + 30), at(14 * 60 + 20), false, emptyList())),
+            listOf(SchoolEventPeriod(1, at(13 * 60 + 30), at(14 * 60 + 20), "B1", ""), SchoolEventPeriod(2, at(14 * 60 + 20), at(15 * 60 + 10), "B2", "")))
+        assertEquals(io.github.sunsind.sunlith.data.SchoolAbsenceCoverage.PARTIAL, event.school!!.absenceCoverage)
+        assertFalse(event.wholeCardHatched())
+        assertNull("A partial absence keeps its normal card", eventColors(event, DarkPalette, CourseColors.Empty).hatch)
+        val (from, to) = event.hatchRanges().single()
+        assertEquals(0f, from, 0.001f)
+        assertEquals(0.5f, to, 0.001f)
+    }
+
+    @Test
+    fun anOrdinaryEventIsNeverStripedWhateverItsTitleSays() {
+        val plain = CalendarEvent(3, 1, "Cancelled: absent teacher", "", "", at(600), at(660), false, zone.id)
+        assertTrue(plain.hatchRanges().isEmpty())
+        assertNull(eventColors(plain, DarkPalette, CourseColors.Empty).hatch)
     }
 
     @Test
@@ -153,24 +177,13 @@ class CalendarReadabilityTest {
         assertTrue(cancelled.partialAbsences().isEmpty())
         for (palette in listOf(LightPalette, DarkPalette)) {
             val colors = eventColors(cancelled, palette, CourseColors.Empty)
-            assertNotNull(colors.border)
-            assertEquals(palette.surface, colors.container)
+            assertNotNull(colors.hatch)
+            assertEquals(listOf(0f to 1f), cancelled.hatchRanges())
             assertTrue(contrast(colors.container, colors.content) >= 4.5f)
         }
         val withdrawn = cancelled.copy(school = cancelled.school.copy(lift = null))
         assertEquals(regular.school.courseTitle, withdrawn.displayTitle())
-        assertNull(eventColors(withdrawn, DarkPalette, CourseColors.Empty).border)
+        assertNull(eventColors(withdrawn, DarkPalette, CourseColors.Empty).hatch)
     }
 
-    @Test
-    fun rollingWindowKeepsItsStartWhileTheSelectionFits() {
-        val start = LocalDate.of(2026, 11, 2)
-        assertEquals(start, rollingWindowStart(start, 5, start.plusDays(4), 5))
-        assertEquals(start.plusDays(5), rollingWindowStart(start, 5, start.plusDays(5), 5))
-        assertEquals(start, rollingWindowStart(null, 0, start, 5))
-        // 3 to 5 keeps the start, 5 to 3 ends the window on the selection so it stays in view.
-        assertEquals(start, rollingWindowStart(start, 3, start.plusDays(2), 5))
-        assertEquals(start.plusDays(2), rollingWindowStart(start, 5, start.plusDays(4), 3))
-        assertEquals(start, rollingWindowStart(start, 5, start.plusDays(1), 3))
-    }
 }

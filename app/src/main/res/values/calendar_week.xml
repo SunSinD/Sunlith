@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_visible_days">Days shown</string>
+    <plurals name="visible_days_count">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <string name="settings_timeline_tint">Background tint</string>
+    <string name="settings_timeline_tint_reset">Reset</string>
+    <string name="settings_timeline_tint_reset_label">Reset background tint</string>
+    <string name="calendar_absent_until">Absent until %1$s</string>
+    <string name="calendar_absent_from">Absent from %1$s</string>
+    <string name="school_messages_section_main">Messages</string>
+    <string name="school_messages_section_dates">Dates found</string>
+    <string name="school_messages_section_label">Section</string>
+</resources>

@@ -94,24 +94,11 @@ class TodayDirectionTest {
     private val today = LocalDate.of(2026, 11, 7)
 
     @Test
-    fun fiveDayWorkweekAlwaysAnchorsMondayIncludingWeekendSelections() {
-        val monday = LocalDate.of(2026, 11, 2)
-        val expected = (0L..4L).map { monday.plusDays(it) }
-        for (offset in 0L..6L) for (mondayFirst in listOf(false, true)) {
-            assertEquals(expected, weekTimelineDates(monday.plusDays(offset), 5, mondayFirst, true))
-        }
-        assertEquals(expected.map { it.plusWeeks(1) }, weekTimelineDates(monday.plusDays(12), 5, false, true))
-        assertEquals(expected.map { it.minusWeeks(1) }, weekTimelineDates(monday.minusDays(1), 5, false, true))
-    }
-
-    @Test
-    fun workweekToggleLeavesRollingFiveDayAndOtherCountsUnchanged() {
-        assertEquals((0L..4L).map { today.plusDays(it) }, weekTimelineDates(today, 5, false, false))
-        assertEquals((0L..2L).map { today.plusDays(it) }, weekTimelineDates(today, 3, true, true))
-        assertEquals(weekTimelineDates(today, 7, false, false), weekTimelineDates(today, 7, false, true))
-        val monday = weekTimelineDates(today, 5, false, true).first()
+    fun weekTodayDirectionCoversTheWholeShownWeek() {
+        val monday = weekStart(today, true)
         assertNull(horizontalTodayDirection(today, monday, monday.plusDays(6)))
         assertEquals(TodayDirection.Next, horizontalTodayDirection(today, monday.minusWeeks(1), monday.minusDays(1)))
+        assertEquals(TodayDirection.Previous, horizontalTodayDirection(today, monday.plusWeeks(1), monday.plusDays(13)))
     }
 
     @Test

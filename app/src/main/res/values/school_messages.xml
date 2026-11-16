@@ -20,7 +20,6 @@
     <string name="school_admin_show_day">Show day</string>
     <string name="school_admin_superseded">Replaces an earlier notice for this day.</string>
     <string name="school_admin_title_only">Only the title could be read. Open Col.NET for the full text.</string>
-    <string name="school_admin_suggestions">Dates found in notices</string>
     <string name="school_admin_suggestions_note">Not added automatically. Check the notice before adding.</string>
     <string name="school_admin_suggestion_add">Add to calendar</string>
     <string name="school_admin_list">All administration messages</string>

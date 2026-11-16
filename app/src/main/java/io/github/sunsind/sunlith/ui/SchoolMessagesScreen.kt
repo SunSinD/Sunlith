@@ -41,6 +41,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
@@ -87,6 +97,10 @@ fun SchoolMessagesScreen(
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
     var openAdmin by rememberSaveable { mutableStateOf<String?>(null) }
+    // The chosen section and each list's scroll live here, so opening a message and coming Back keeps both.
+    var section by rememberSaveable { mutableStateOf(SECTION_MAIN) }
+    val mainList = rememberLazyListState()
+    val datesList = rememberLazyListState()
     var links by remember { mutableStateOf<List<SchoolPortalLink>?>(null) }
     var linkFailed by remember { mutableStateOf(false) }
     var linksProblem by remember { mutableStateOf<SchoolAdminStatus?>(null) }
@@ -111,9 +125,13 @@ fun SchoolMessagesScreen(
             when {
                 !state.connected -> Note(stringResource(R.string.school_messages_not_connected))
                 admin != null -> AdminDetail(admin, state.collegeNotices.firstOrNull { it.sourceId == admin.id }, ::openPortal, onOpenDate)
-                else -> AdminList(
-                    state.admin, state.adminStatus, state.adminUpdatedMillis, state.collegeNotices, state.suggestions,
-                    onOpen = { openAdmin = it.id }, onOpenDate = onOpenDate, onAddSuggestion = onAddSuggestion,
+                else -> Column(Modifier.fillMaxSize()) {
+                // The picker stays above the list, so it is reachable however far the list is scrolled.
+                if (state.suggestions.isNotEmpty()) SectionPicker(section) { section = it }
+                if (state.suggestions.isNotEmpty() && section == SECTION_DATES) SuggestionList(state.suggestions, datesList, onAddSuggestion)
+                else AdminList(
+                    state.admin, state.adminStatus, state.adminUpdatedMillis, state.collegeNotices, mainList,
+                    onOpen = { openAdmin = it.id }, onOpenDate = onOpenDate,
                     onOpenPortal = ::openPortal,
                     // A college that publishes no links gets no links button. An empty answer opens Col.NET instead of an empty dialog.
                     onLinks = if (state.portalLinksAvailable == false) null else ({
@@ -129,6 +147,7 @@ fun SchoolMessagesScreen(
                     }),
                     linksLoading = linksLoading,
                 )
+                }
             }
         }
     }
@@ -166,14 +185,75 @@ fun SchoolMessagesScreen(
     }
 }
 
+private const val SECTION_MAIN = "main"
+private const val SECTION_DATES = "dates"
+
+/**
+ * A small control at the top right that switches between the messages and the dates found in notices. It names the
+ * shown section, works as one button at any text size, and its menu marks the selected section.
+ */
+@Composable
+private fun SectionPicker(section: String, onSelect: (String) -> Unit) {
+    val p = LocalPalette.current
+    var expanded by remember { mutableStateOf(false) }
+    val sections = listOf(SECTION_MAIN to stringResource(R.string.school_messages_section_main),
+        SECTION_DATES to stringResource(R.string.school_messages_section_dates))
+    val current = sections.first { it.first == section }.second
+    val label = stringResource(R.string.school_messages_section_label)
+    Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp), contentAlignment = Alignment.TopEnd) {
+        Box {
+            Row(
+                Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).testTag("school_messages_section")
+                    .clickable(role = Role.DropdownList) { expanded = true }
+                    .semantics { contentDescription = "$label: $current" }
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(current, color = p.ink, style = MaterialTheme.typography.labelLarge, maxLines = 2)
+                Icon(Icons.Outlined.ArrowDropDown, null, tint = p.muted)
+            }
+            DropdownMenu(expanded, onDismissRequest = { expanded = false }, containerColor = p.surface,
+                modifier = Modifier.semantics { testTagsAsResourceId = true }) {
+                sections.forEach { (key, name) ->
+                    val on = key == section
+                    DropdownMenuItem(
+                        text = { Text(name, color = p.ink) },
+                        onClick = { expanded = false; onSelect(key) },
+                        trailingIcon = { if (on) Icon(Icons.Outlined.Check, null, tint = p.accent) },
+                        modifier = Modifier.testTag("school_messages_section_$key").semantics { selected = on },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Dates found in notices, each with its source text in full and an action to review it as a new event. */
+@Composable
+private fun SuggestionList(suggestions: List<SchoolNoticeSuggestion>, state: LazyListState, onAddSuggestion: (SchoolNoticeSuggestion) -> Unit) {
+    val p = LocalPalette.current
+    LazyColumn(Modifier.fillMaxSize().testTag("school_suggestion_list"), state = state,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)) {
+        item { Note(stringResource(R.string.school_admin_suggestions_note)) }
+        items(suggestions, key = { it.id }) { s ->
+            Card {
+                Text(longDate(s.date), color = p.ink, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(s.title, color = p.muted, style = MaterialTheme.typography.bodySmall)
+                Text(s.detail, color = p.ink, style = MaterialTheme.typography.bodyMedium)
+                TextButton({ onAddSuggestion(s) }, Modifier.heightIn(min = 48.dp).testTag("school_suggestion_add_${s.id}")) { Text(stringResource(R.string.school_admin_suggestion_add)) }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AdminList(
     notices: List<SchoolAdminNotice>, status: SchoolAdminStatus, updated: Long?, college: List<SchoolCollegeNotice>,
-    suggestions: List<SchoolNoticeSuggestion>, onOpen: (SchoolAdminNotice) -> Unit, onOpenDate: (LocalDate) -> Unit,
-    onAddSuggestion: (SchoolNoticeSuggestion) -> Unit, onOpenPortal: () -> Unit, onLinks: (() -> Unit)?, linksLoading: Boolean,
+    listState: LazyListState, onOpen: (SchoolAdminNotice) -> Unit, onOpenDate: (LocalDate) -> Unit,
+    onOpenPortal: () -> Unit, onLinks: (() -> Unit)?, linksLoading: Boolean,
 ) {
     val p = LocalPalette.current
-    LazyColumn(Modifier.fillMaxSize().testTag("school_admin_list"), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)) {
+    LazyColumn(Modifier.fillMaxSize().testTag("school_admin_list"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)) {
         val message = when (status) {
             SchoolAdminStatus.OK -> null
             SchoolAdminStatus.NOT_LOADED -> R.string.school_admin_not_loaded
@@ -194,17 +274,6 @@ private fun AdminList(
         if (college.isNotEmpty()) {
             item { SectionTitle(stringResource(R.string.school_admin_notices)) }
             items(college, key = { it.identity }) { n -> CollegeCard(n, onOpenDate) { notices.firstOrNull { it.id == n.sourceId }?.let(onOpen) } }
-        }
-        if (suggestions.isNotEmpty()) {
-            item { SectionTitle(stringResource(R.string.school_admin_suggestions)); Note(stringResource(R.string.school_admin_suggestions_note)) }
-            items(suggestions, key = { it.id }) { s ->
-                Card {
-                    Text(longDate(s.date), color = p.ink, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                    Text(s.title, color = p.muted, style = MaterialTheme.typography.bodySmall)
-                    Text(s.detail, color = p.ink, style = MaterialTheme.typography.bodyMedium)
-                    TextButton({ onAddSuggestion(s) }, Modifier.heightIn(min = 48.dp).testTag("school_suggestion_add_${s.id}")) { Text(stringResource(R.string.school_admin_suggestion_add)) }
-                }
-            }
         }
         item { SectionTitle(stringResource(R.string.school_admin_list)) }
         if (notices.isEmpty() && status == SchoolAdminStatus.OK) item { Note(stringResource(R.string.school_admin_empty)) }

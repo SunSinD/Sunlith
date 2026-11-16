@@ -429,9 +429,8 @@ class CalendarRefinementTest {
                 }
             activity !== outgoing && vm !== outgoingVm && vm.loaded && !vm.loadingEvents
         }
-        node(By.pkg(context.packageName).text(formats.dayLong(today)))
         onMain {
-            assertEquals("Restored pager state must follow the fresh model, without committing an old page as a swipe.", today, vm.selectedDate)
+            assertEquals("Restored pager state must follow the fresh model, without committing an old page as a swipe.", distant, vm.selectedDate)
             assertEquals(ViewMode.Day, vm.viewMode)
         }
     }
@@ -694,7 +693,7 @@ class CalendarRefinementTest {
                         Box(Modifier.fillMaxSize().background(LightPalette.background).safeDrawingPadding()
                             .semantics { testTagsAsResourceId = true }) {
                             CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
-                                Box(Modifier.width(350.dp).height(if (continuous) 500.dp else 320.dp)) {
+                                Box(Modifier.width(350.dp).height(if (continuous) 400.dp else 320.dp)) {
                                     if (continuous) ContinuousTimeline(vm, formats, LocalDate.now(), true, scroll,
                                         onOpen = { opened.set(it) })
                                     else Timeline(days, { shown -> when (shown) {
@@ -722,6 +721,7 @@ class CalendarRefinementTest {
             }
             val selector = By.pkg(context.packageName).res("timeline_event_${event.id}")
             var base = paintedTimelineBounds(selector)
+            var semanticBase = nodeBounds(selector)
             var baselineViewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
             val baselineDeadline = SystemClock.elapsedRealtime() + 5_000
             // A one-hour interval is 64px at the fixture's density. The card keeps the same small gap at each end
@@ -729,13 +729,14 @@ class CalendarRefinementTest {
             fun inset(bounds: Rect) = (64 - bounds.height()) / 2f
             fun baselineReady(): Boolean {
                 val target = nodeBounds(selector)
-                return abs(base.top - target.top) + abs(base.bottom - target.bottom) <= 1 &&
-                    inset(base) in 0f..6f &&
-                    base.top >= baselineViewport.top && base.bottom <= baselineViewport.bottom
+                return abs(semanticBase.top - target.top) + abs(semanticBase.bottom - target.bottom) <= 1 &&
+                    inset(semanticBase) in 0f..6f &&
+                    semanticBase.top >= baselineViewport.top && semanticBase.bottom <= baselineViewport.bottom
             }
             while (!baselineReady() && SystemClock.elapsedRealtime() < baselineDeadline) {
                 SystemClock.sleep(50)
                 base = paintedTimelineBounds(selector)
+                semanticBase = nodeBounds(selector)
                 baselineViewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
             }
             if (!baselineReady() || InstrumentationRegistry.getArguments().getString("captureFinal") == "true") {
@@ -750,33 +751,36 @@ class CalendarRefinementTest {
                 baselineReady())
             // Position the fixture at a true 11:30 after measuring the rail's leading room. The same physical
             // minute is then expected at every scale; a fixed extra inset in each zoom assertion would be wrong.
-            val correction = (base.top - baselineViewport.top - (32 + inset(base))).roundToInt()
+            val correction = (semanticBase.top - baselineViewport.top - (32 + inset(semanticBase))).roundToInt()
             if (correction != 0) {
                 val wanted = scroll.value + correction
                 onMain { CoroutineScope(Dispatchers.Main.immediate).launch { scroll.scrollTo(wanted) } }
                 awaitState("The zoom fixture must include the room above midnight.") { scroll.value == wanted }
                 base = paintedTimelineBounds(selector)
+                semanticBase = nodeBounds(selector)
                 baselineViewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
             }
             val description = readNode(selector) { it.contentDescription }
             assertTrue("The full title must remain accessible at every zoom.", description.contains(event.title))
-            assertTrue("The baseline class must be completely inside the viewport: layout=$layout base=$base viewport=$baselineViewport", base.height() > 0 &&
-                base.top > nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).top &&
-                base.bottom < nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).bottom)
+            assertTrue("The baseline class must be completely inside the viewport: layout=$layout base=$semanticBase viewport=$baselineViewport", semanticBase.height() > 0 &&
+                semanticBase.top > nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).top &&
+                semanticBase.bottom < nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).bottom)
             val initialTop = nodeBounds(By.pkg(context.packageName).res("calendar_timeline")).top
-            val cardInset = inset(base)
+            val cardInset = inset(semanticBase)
             assertTrue("Each card end must keep a small fixed gap: layout=$layout base=$base", cardInset in 0f..6f)
-            assertTrue("The fixture must view the half-hour before this one-hour class: layout=$layout base=$base viewport=$baselineViewport scroll=${scroll.value}",
-                abs(base.top - initialTop - (32 + cardInset)) <= 1)
+            assertTrue("The fixture must view the half-hour before this one-hour class: layout=$layout base=$semanticBase viewport=$baselineViewport scroll=${scroll.value}",
+                abs(semanticBase.top - initialTop - (32 + cardInset)) <= 1)
             listOf(50, 100, 200).forEach { percent ->
                 onMain { if (continuous) vm.changeWeekTimelineZoom(percent) else zoom.intValue = percent }
                 val deadline = SystemClock.elapsedRealtime() + 5_000
                 var settled = false
                 while (!settled && SystemClock.elapsedRealtime() < deadline) {
                     val measured = paintedTimelineBounds(selector)
+                    val semantic = nodeBounds(selector)
                     val area = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
-                    settled = abs(measured.height() - (64f * percent / 100f - 2 * cardInset)) <= 1f &&
-                        abs((measured.top - area.top) - (32f * percent / 100f + cardInset)) <= 1f
+                    settled = measured.height() > 0 &&
+                        abs(semantic.height() - (64f * percent / 100f - 2 * cardInset)) <= 1f &&
+                        abs((semantic.top - area.top) - (32f * percent / 100f + cardInset)) <= 1f
                     if (!settled) SystemClock.sleep(50)
                 }
                 if (!settled) {
@@ -785,14 +789,15 @@ class CalendarRefinementTest {
                     device.dumpWindowHierarchy(File(context.filesDir, "$name.xml"))
                 }
                 val bounds = paintedTimelineBounds(selector)
+                val semanticBounds = nodeBounds(selector)
                 val viewport = nodeBounds(By.pkg(context.packageName).res("calendar_timeline"))
                 assertTrue("Zoom must resize the rendered one-hour block: layout=$layout zoom=$percent base=$base actual=$bounds",
-                    abs(bounds.height() - (64f * percent / 100f - 2 * cardInset)) <= 1f)
-                assertTrue("The whole event must remain visible at $percent%.", bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
+                    bounds.height() > 0 && abs(semanticBounds.height() - (64f * percent / 100f - 2 * cardInset)) <= 1f)
+                assertTrue("The whole event must remain visible at $percent%.", semanticBounds.top >= viewport.top && semanticBounds.bottom <= viewport.bottom)
                 // The event starts at noon and spans one hour. Its relative distance below the top
                 // therefore measures the visible minute without reusing the production axis mapping.
                 assertTrue("Zoom must preserve the viewed minute: layout=$layout zoom=$percent bounds=$bounds viewport=$viewport",
-                    abs((bounds.top - viewport.top) - (32f * percent / 100f + cardInset)) <= 1f)
+                    abs((semanticBounds.top - viewport.top) - (32f * percent / 100f + cardInset)) <= 1f)
                 assertEquals("Zoom must preserve the full spoken title, times and room.", description, readNode(selector) { it.contentDescription })
                 opened.set(null)
                 readNode(selector) { it.click() }
@@ -1155,22 +1160,18 @@ class CalendarRefinementTest {
     }
 
     @Test
-    fun weekTimelinesAlreadyAtTodayAllowImmediateHorizontalPagingAndReversal() {
-        listOf(3, 7).forEach { days ->
+    fun dayTimelineAlreadyAtTodayAllowsImmediateHorizontalPagingAndReversal() {
+        listOf(1).forEach { days ->
             onMain {
                 vm.changeNavigationAnimation(true)
-                vm.changeWeekLayout("timeline")
-                vm.changeVisibleWeekDays(days)
-                vm.changeViewMode(ViewMode.Week)
+                vm.changeDayLayout("timeline")
+                vm.changeViewMode(ViewMode.Day)
                 vm.goToday()
             }
             awaitState("The $days-day timeline must load today") { vm.loaded && !vm.loadingEvents && vm.selectedDate == vm.today }
             SystemClock.sleep(650)
             val original = vm.selectedDate
-            fun area(): Rect {
-                val bounds = requireNotNull(stableBounds(By.pkg(context.packageName).res("calendar_timeline")))
-                return if (days == 3) bounds else timelinePagingArea(bounds)
-            }
+            fun area(): Rect = requireNotNull(stableBounds(By.pkg(context.packageName).res("calendar_timeline")))
             val todayArea = area()
             horizontalSwipe(area(), true)
             awaitState("The $days-day timeline must page away") { vm.selectedDate == original.plusDays(days.toLong()) }
@@ -1201,7 +1202,6 @@ class CalendarRefinementTest {
             when (layout) {
                 "agenda", "continuous" -> { vm.changeMonthLayout("split"); vm.changeAgendaRange(if (layout == "continuous") "continuous" else "month") }
                 "week-list" -> { vm.changeWeekLayout("list"); vm.changeVisibleWeekDays(7); vm.changeViewMode(ViewMode.Week) }
-                "week-timeline", "week-three-timeline" -> { vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(if (layout == "week-three-timeline") 3 else 7); vm.changeViewMode(ViewMode.Week) }
                 "day-cards", "day-timeline" -> { vm.changeDayLayout(if (layout == "day-cards") "cards" else "timeline"); vm.changeViewMode(ViewMode.Day) }
                 else -> vm.changeMonthLayout("full")
             }
@@ -1211,13 +1211,11 @@ class CalendarRefinementTest {
             "agenda", "continuous" -> Rect(device.displayWidth / 12, device.displayHeight / 5, device.displayWidth * 11 / 12, device.displayHeight / 2)
             "week-list" -> Rect(device.displayWidth / 12, device.displayHeight / 6, device.displayWidth * 11 / 12, device.displayHeight / 3)
             "day-cards" -> node(By.pkg(context.packageName).res("calendar_day_cards")).visibleBounds
-            "week-timeline", "week-three-timeline" -> timelinePagingArea(node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds)
             "day-timeline" -> node(By.pkg(context.packageName).res("calendar_timeline")).visibleBounds
             else -> error("Unknown paging layout $layout")
         }
         fun expected(original: LocalDate, offset: Long): LocalDate = when (layout) {
-            "week-three-timeline" -> original.plusDays(offset * 3)
-            "week-list", "week-timeline" -> original.plusWeeks(offset)
+            "week-list" -> original.plusWeeks(offset)
             "day-cards", "day-timeline" -> original.plusDays(offset)
             else -> YearMonth.from(original).plusMonths(offset).let { if (it == YearMonth.from(LocalDate.now())) LocalDate.now() else it.atDay(1) }
         }

@@ -8,7 +8,7 @@ class LayoutChoicesTest {
     @Test
     fun longPressChoicesMatchEachViewAndKeepTheRetiredScheduleOut() {
         assertEquals(listOf("split", "full"), layoutChoices(ViewMode.Month))
-        assertEquals(listOf("list", "timeline3", "timeline5", "timeline7", "continuous"), layoutChoices(ViewMode.Week))
+        assertEquals("The paged 3, 5 and 7 day timelines became column counts of Continuous", listOf("list", "continuous"), layoutChoices(ViewMode.Week))
         assertEquals(listOf("cards", "timeline"), layoutChoices(ViewMode.Day))
         assertFalse("schedule" in layoutChoices(ViewMode.Day))
     }

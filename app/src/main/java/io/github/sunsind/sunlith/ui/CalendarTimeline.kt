@@ -60,6 +60,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -122,6 +123,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
+import io.github.sunsind.sunlith.system.SettingsStore
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -137,11 +139,17 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withTimeoutOrNull
 
 private const val DAY_MINUTES = 24 * 60
+/**
+ * Inset of every hour tile and every event card from its cell edge. Cards and tiles share it, and both round it to
+ * whole pixels, so a card covers the tile beside it exactly instead of leaving a sliver of tile along its sides.
+ */
+private val TIMELINE_CELL_INSET = 1.dp
+private val TIMELINE_CELL_CORNER = 6.dp
 /** Vertical inset of every event card; back-to-back events keep twice this as a visible gap. */
-private val TIMELINE_BLOCK_INSET = 1.dp
+private val TIMELINE_BLOCK_INSET = TIMELINE_CELL_INSET
 /** Horizontal inset of every event card, so side-by-side cards and neighbouring days never touch. */
-private val TIMELINE_CARD_SIDE_INSET = 2.dp
-private val TIMELINE_CARD_SHAPE = RoundedCornerShape(8.dp)
+private val TIMELINE_CARD_SIDE_INSET = TIMELINE_CELL_INSET
+private val TIMELINE_CARD_SHAPE = RoundedCornerShape(TIMELINE_CELL_CORNER)
 private val TIMELINE_LABEL_PADDING = 3.dp
 /**
  * Room below Day's lowest card for the floating Add button (56dp, 16dp from the edge) and the Today pill (48dp touch
@@ -195,14 +203,15 @@ private val timelineOrder = compareBy<TimelineBlock> { it.start }.thenByDescendi
 /**
  * Keeps exact local starts and ends. Lanes come from real overlaps only, never from the room a title needs.
  *
- * Without [readableLabels] (Week and Continuous), a label extends only into free time before the next start or
- * midnight, so events one after another never become side by side columns.
+ * Every card gets at least one measured title line ([minMinutes]), so a short event is a readable card at its real
+ * time instead of a sliver. When the next event in the same real lane starts before that line ends (a 1 minute event
+ * at 18:00, then others at 18:15 and 18:20), those events share one compact card in that lane: it starts at the first
+ * real start, is as tall as one title line or the real span of its events when that is longer, and shows one title
+ * with a count of the others. Events after the card keep their own cards at their real times, and genuinely
+ * simultaneous events keep separate lanes.
  *
- * Day's [readableLabels] gives every card at least one measured title line ([minMinutes]). When the next event in
- * the same real lane starts before that line ends (a 1 minute event at 18:00, then others at 18:15 and 18:20), those
- * events share one compact card in that lane: it starts at the first real start, is as tall as one title line or
- * the real span of its events when that is longer, and shows one title with a count of the others. Events after
- * the card keep their own cards at their real times, and genuinely simultaneous events keep separate lanes.
+ * Day's [readableLabels] lets a card finish its title line below midnight. Week and Continuous columns end at
+ * midnight, so their cards stop there.
  */
 internal fun packTimeline(events: List<CalendarEvent>, day: LocalDate, zone: ZoneId, minMinutes: Int, readableLabels: Boolean = false): List<TimelineCluster> {
     val blocks = events.map { e ->
@@ -212,29 +221,20 @@ internal fun packTimeline(events: List<CalendarEvent>, day: LocalDate, zone: Zon
         val end = if (en.toLocalDate().isAfter(day)) DAY_MINUTES else en.hour * 60 + en.minute
         TimelineBlock(e, start, max(end, start + 1).coerceAtMost(DAY_MINUTES))
     }.sortedWith(timelineOrder)
-    val row = minMinutes.coerceAtLeast(1)
-    if (readableLabels) return readableClusters(blocks, row)
-    val starts = blocks.map { it.start }.distinct()
-    val nextStarts = starts.zipWithNext().toMap()
-    val shownBlocks = blocks.map { block ->
-        val labelEnd = (block.start + row).coerceAtMost(nextStarts[block.start] ?: DAY_MINUTES)
-        TimelineBlock(block.event, block.start, max(block.end, labelEnd), block.end)
-    }
-    return laneClusters(shownBlocks)
+    return readableClusters(blocks, minMinutes.coerceAtLeast(1), if (readableLabels) Int.MAX_VALUE else DAY_MINUTES)
 }
 
 /**
- * Day packing. Each event goes in a lane that is free at its real start. A lane whose card still shows its title
- * line is used only when no lane is free on screen, and then the event joins that card instead of opening a lane
- * the real times do not need. A new lane opens only when every lane holds an event that really overlaps.
- * Cards may extend below midnight to finish their title line.
+ * Each event goes in a lane that is free at its real start. A lane whose card still shows its title line is used
+ * only when no lane is free on screen, and then the event joins that card instead of opening a lane the real times
+ * do not need. A new lane opens only when every lane holds an event that really overlaps. Cards end at [limit].
  */
-private fun readableClusters(blocks: List<TimelineBlock>, row: Int): List<TimelineCluster> {
+private fun readableClusters(blocks: List<TimelineBlock>, row: Int, limit: Int): List<TimelineCluster> {
     class Card(val col: Int, first: TimelineBlock) {
         val members = mutableListOf(first)
         var realEnd = first.end
         val start get() = members.first().start
-        val end get() = max(start + row, realEnd)
+        val end get() = minOf(max(start + row, realEnd), maxOf(limit, realEnd))
         var span = 1
     }
     val clusters = mutableListOf<TimelineCluster>()
@@ -269,41 +269,6 @@ private fun readableClusters(blocks: List<TimelineBlock>, row: Int): List<Timeli
             else -> Card(lanes.size, b).also { lanes += it; cards += it }
         }
         clusterEnd = max(clusterEnd, card.end)
-    }
-    close()
-    return clusters
-}
-
-/** Real overlap groups, each with the fewest columns, reusing a column as soon as its last event ends. */
-private fun laneClusters(shownBlocks: List<TimelineBlock>): List<TimelineCluster> {
-    val clusters = mutableListOf<TimelineCluster>()
-    var current = mutableListOf<TimelineBlock>()
-    val columnEnds = mutableListOf<Int>()
-    var clusterEnd = -1
-    fun close() {
-        if (current.isEmpty()) return
-        val cols = columnEnds.size
-        val blocks = current
-        blocks.forEach { b ->
-            b.cols = cols
-            while (b.col + b.span < cols && blocks.none { it.col == b.col + b.span && it.start < b.end && b.start < it.end }) b.span++
-        }
-        clusters += TimelineCluster(current, cols)
-        current = mutableListOf()
-        columnEnds.clear()
-    }
-    for (b in shownBlocks) {
-        if (current.isNotEmpty() && b.start >= clusterEnd) close()
-        val free = columnEnds.indexOfFirst { it <= b.start }
-        if (free >= 0) {
-            b.col = free
-            columnEnds[free] = b.end
-        } else {
-            b.col = columnEnds.size
-            columnEnds += b.end
-        }
-        current += b
-        clusterEnd = max(clusterEnd, b.end)
     }
     close()
     return clusters
@@ -757,9 +722,6 @@ internal fun Timeline(
     val dayEvents = days.map(eventsOn)
     val allDay = dayEvents.map { events -> events.filter { it.isTimelineBanner() } }
     val timed = dayEvents.map { events -> events.filter { !it.isTimelineBanner() } }
-    val shortEvents = remember(timed, days, zone, minMinutes, readableLabels) {
-        if (readableLabels) emptyList() else days.mapIndexed { i, day -> shortTimelineEvents(timed[i], day, zone, minMinutes) }
-    }
     val hourPx = with(density) { hour.toPx() }
     val gapPx = with(density) { maxOf(48.dp, titleLine * 3f).toPx() }
     val packed = remember(days, timed, zone, minMinutes, readableLabels) {
@@ -798,8 +760,13 @@ internal fun Timeline(
     val commitZoom by rememberUpdatedState(onZoomChange)
     val pinchScope = rememberCoroutineScope()
     val reportDirection by rememberUpdatedState(onDirectionChanged)
-    // One clock for the line, the dot, the rail pill and the Today direction.
+    // One clock for the line, the Today direction and where Today opens.
     val currentMinute by rememberCurrentMinute()
+    val todayIndexInDays = days.indexOf(today)
+    val todayEvents = if (todayIndexInDays >= 0) timed[todayIndexInDays] else emptyList()
+    val todayMinute = remember(todayEvents, today, zone, currentMinute) {
+        timelineTodayMinute(todayEvents, today, zone, System.currentTimeMillis(), currentMinute)
+    }
     LaunchedEffect(scroll, autoScroll, days, today, axis, currentMinute, topPx, onDirectionChanged) {
         if (!autoScroll) return@LaunchedEffect
         if (today !in days) {
@@ -851,10 +818,13 @@ internal fun Timeline(
     val focusPending = autoScroll && focus != null && focus.date in days && positionedFocus !== focus
     // New date pages use a fresh ScrollState. Placement puts the focus target in place before the first frame
     // instead of drawing midnight and animating through unrelated events on the way to it.
-    val focusMinute = if (!focusPending) null else requireNotNull(focus).let { request ->
-        val target = focusTarget(eventsOn(request.date), request.date, zone)
-        if (target != null && !target.isTimelineBanner()) (startMinuteOn(target, request.date, zone) - 30).coerceAtLeast(0) else 0
+    // An explicit date keeps its first event in view. Today instead opens where Today would: the class in progress or
+    // the hour before now, never a later event.
+    fun focusScroll(date: LocalDate, a: TimelineAxis): Float = if (date == today) timelineTodayScroll(a, todayMinute, topPx) else {
+        val target = focusTarget(eventsOn(date), date, zone)
+        a.minuteToY(if (target != null && !target.isTimelineBanner()) (startMinuteOn(target, date, zone) - 30).coerceAtLeast(0) else 0)
     }
+    val focusY = if (!focusPending) null else focusScroll(requireNotNull(focus).date, axis)
     val sideways = rememberScrollState()
     var highlighted by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(highlighted) {
@@ -898,22 +868,24 @@ internal fun Timeline(
                 positionedAsActive = autoScroll
                 when {
                     zoom.live != null || zoom.pinching -> null
-                    focusMinute != null -> {
+                    focusY != null -> {
                         sharedPositioned = true
+                        initialPositioned = true
                         pendingAnchor = null
-                        axis.minuteToY(focusMinute)
+                        focusY
                     }
                     sharedMinute != null && (!sharedPositioned || !autoScroll || becameActive) -> {
                         sharedPositioned = true
+                        initialPositioned = true
                         pendingAnchor = null
                         axis.minuteToY(sharedMinute.floatValue)
                     }
                     pendingAnchor != null -> pendingAnchor!!.scrollOn(axis, topPx).also { pendingAnchor = null }
                     !initialPositioned -> {
                         initialPositioned = true
-                        if (autoScroll && showHeaders && focus == null && scroll.value == 0 && !scroll.isScrollInProgress) {
+                        if (autoScroll && focus == null && scroll.value == 0 && !scroll.isScrollInProgress) {
                             // Same spot a Today tap reaches, so tapping Today right after opening never nudges the grid.
-                            if (today in days) timelineTodayScroll(axis, timelineTodayMinute(currentMinute), topPx)
+                            if (today in days) timelineTodayScroll(axis, todayMinute, topPx)
                             else axis.minuteToY(DEFAULT_START_HOUR * 60)
                         } else null
                     }
@@ -939,7 +911,7 @@ internal fun Timeline(
                     if (!awaitScrollable(scroll)) return@LaunchedEffect
                     withFrameNanos { }
                     scroll.stopScroll()
-                    val target = timelineTodayScroll(axis, timelineTodayMinute(currentMinute), topPx).roundToInt()
+                    val target = timelineTodayScroll(axis, todayMinute, topPx).roundToInt()
                         .coerceIn(0, scroll.maxValue)
                     if (target != scroll.value) {
                         if (!motion) scroll.scrollTo(target)
@@ -969,11 +941,10 @@ internal fun Timeline(
                 if (!autoScroll || request.date !in days) return@LaunchedEffect
                 request.start()
                 try {
-                    val target = focusTarget(eventsOn(request.date), request.date, zone)
-                    val minute = if (target != null && !target.isTimelineBanner())
-                        (startMinuteOn(target, request.date, zone) - 30).coerceAtLeast(0) else 0
+                    val target = if (request.date == today) activeTimedEvent(eventsOn(request.date), System.currentTimeMillis())
+                        else focusTarget(eventsOn(request.date), request.date, zone)
                     if (awaitScrollable(scroll)) {
-                        val y = axis.minuteToY(minute).roundToInt().coerceIn(0, scroll.maxValue)
+                        val y = focusScroll(request.date, axis).roundToInt().coerceIn(0, scroll.maxValue)
                         scroll.scrollTo(y)
                         // Completed focus owns this position, including a concurrent axis change.
                         pendingAnchor = null
@@ -991,26 +962,14 @@ internal fun Timeline(
                         Row(Modifier.weight(1f).testTag("calendar_timeline_headers").then(dayArea)) {
                             days.forEach { day ->
                                 TimelineDayHeader(day, day == selected, day == today, eventsOn(day).size, f, Modifier.width(column),
-                                    todayTint = gridColors.today, onClick = onSelectDay?.let { select -> { select(day) } })
+                                    onClick = onSelectDay?.let { select -> { select(day) } })
                             }
                         }
                     }
                 }
-                if (!readableLabels && shortEvents.any { it.isNotEmpty() }) {
-                    Row(Modifier.fillMaxWidth().height(48.dp).testTag("calendar_timeline_short_events")) {
-                        if (days.size > 1) Spacer(Modifier.width(gutter))
-                        Row(Modifier.weight(1f).then(dayArea)) {
-                            days.forEachIndexed { i, day ->
-                                Box(if (days.size > 1) Modifier.width(column) else Modifier.fillMaxWidth()) {
-                                    if (shortEvents[i].isNotEmpty()) TimelineShortEventButton(shortEvents[i].size, days.size == 1) {
-                                        onOverflow(day, shortEvents[i])
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                // Only real all-day and multi-day banners use this band. With none, the band and its divider are gone.
                 if (allDay.any { it.isNotEmpty() }) {
+                    HorizontalDivider(color = p.line)
                     Row(Modifier.fillMaxWidth().heightIn(max = allDayHeight).testTag("calendar_timeline_all_day").verticalScroll(rememberScrollState()).padding(vertical = 2.dp)) {
                         Text(
                             allDayLabel.substringBeforeLast(' ') + "\n" + allDayLabel.substringAfterLast(' '),
@@ -1019,10 +978,15 @@ internal fun Timeline(
                             textAlign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) TextAlign.Left else TextAlign.Right,
                             maxLines = 3, overflow = TextOverflow.Ellipsis,
                         )
-                        Row(Modifier.weight(1f).then(dayArea)) {
+                        // Every day is as tall as the fullest one, and its last banner fills what is left, so a short
+                        // title never leaves an empty strip beside a longer one.
+                        Row(Modifier.weight(1f).height(IntrinsicSize.Min).then(dayArea)) {
                             days.forEachIndexed { i, day ->
-                                Column(Modifier.width(column).padding(horizontal = 1.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    allDay[i].forEach { e -> AllDayChip(e, day, f, highlighted == e.key(), motion, allDayHeight) { onOpen(e) } }
+                                Column(Modifier.width(column).fillMaxHeight().padding(horizontal = TIMELINE_CELL_INSET), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    allDay[i].forEachIndexed { n, e ->
+                                        AllDayChip(e, day, f, highlighted == e.key(), motion, allDayHeight,
+                                            if (n == allDay[i].lastIndex) Modifier.weight(1f) else Modifier) { onOpen(e) }
+                                    }
                                 }
                             }
                         }
@@ -1031,6 +995,9 @@ internal fun Timeline(
                 HorizontalDivider(color = p.line)
                 val todayIndex = days.indexOf(today)
                 val tintIndex = if (tintToday) todayIndex else -1
+                // Columns and their tiles use the same whole-pixel width, so a tile never drifts out from under a card.
+                val columnPx = with(density) { column.roundToPx() }
+                val gridWidth = with(density) { (columnPx * days.size).toDp() }
                 Row(
                     Modifier.weight(1f).fillMaxWidth().testTag("calendar_timeline")
                         .then(if (onZoomChange == null || days.size <= 1) Modifier else Modifier.timelinePinch(
@@ -1053,8 +1020,8 @@ internal fun Timeline(
                     }
                     Box(Modifier.weight(1f).height(timelineHeight).then(dayArea)) {
                         Row(
-                            Modifier.width(column * days.size).fillMaxHeight().drawBehind {
-                                val col = column.toPx()
+                            Modifier.width(gridWidth).fillMaxHeight().drawBehind {
+                                val col = columnPx.toFloat()
                                 drawTimelineGrid(axis, col, days.size, gridColors, tintIndex)
                                 // Under the events: the time stays readable and never strikes through a title.
                                 if (todayIndex >= 0) drawNowLine(axis, currentMinute, col, days.size, todayIndex, gridColors)
@@ -1063,7 +1030,7 @@ internal fun Timeline(
                             days.forEachIndexed { index, day ->
                                 DayColumn(
                                     day, timed[index], zone, minMinutes, hour, minBlockWidth, f, compact, titleStyle,
-                                    highlighted, motion, Modifier.width(column).fillMaxHeight(), onOpen, onNew, onOverflow,
+                                    highlighted, motion, Modifier.width(with(density) { columnPx.toDp() }).fillMaxHeight(), onOpen, onNew, onOverflow,
                                     axis = axis,
                                     readableLabels = readableLabels, minLabelHeight = minBlock,
                                 )
@@ -1071,7 +1038,7 @@ internal fun Timeline(
                         }
                         axis.gaps.forEach { gap ->
                             Box(
-                                Modifier.offset(y = with(density) { gap.y.toDp() }).width(column * days.size)
+                                Modifier.offset(y = with(density) { gap.y.toDp() }).width(gridWidth)
                                     .height(with(density) { gap.height.toDp() }),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -1079,7 +1046,6 @@ internal fun Timeline(
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
-                        if (todayIndex >= 0) NowMarker(column, todayIndex, currentMinute, Modifier.width(column * days.size).fillMaxHeight(), axis, gridColors)
                     }
                 }
             }
@@ -1090,24 +1056,34 @@ internal fun Timeline(
 /** Mirrors an x distance measured from the start edge, so lines follow the Row's order in right-to-left layouts. */
 private fun DrawScope.startX(fromStart: Float): Float = if (layoutDirection == LayoutDirection.Rtl) size.width - fromStart else fromStart
 
-/** Colors of the tiled hour grid and the current time. Today's tint is separate from the selected date's filled circle. */
+/** Colors of the tiled hour grid and the current time. Only the actual today's column gets [today]. */
 @Immutable
-internal class TimelineGridColors(val tile: Color, val today: Color, val now: Color, val halo: Color)
+internal class TimelineGridColors(val tile: Color, val today: Color, val now: Color)
 
-internal fun timelineGridColors(p: SunlithPalette): TimelineGridColors {
-    val tile = lerp(p.background, p.line, if (p.dark) 0.55f else 0.6f)
+/** The user's background tint in percent (see [timelineTileFraction]). */
+internal val LocalTimelineTint = compositionLocalOf { SettingsStore.DEFAULT_TIMELINE_TINT }
+
+/**
+ * How far an empty hour tile moves from the background toward the text color. Mixing toward the text color keeps the
+ * same visible step on every palette: a bright wallpaper outline no longer turns dark tiles into a light grey, and a
+ * neutral or light theme keeps its usual soft tiles. Dark themes reach a little further so the step stays visible.
+ */
+internal fun timelineTileFraction(tint: Int, dark: Boolean): Float = tint.coerceIn(0, 100) / 100f * (if (dark) 0.2f else 0.18f)
+
+internal fun timelineGridColors(p: SunlithPalette, tint: Int = SettingsStore.DEFAULT_TIMELINE_TINT): TimelineGridColors {
+    val tile = lerp(p.background, p.ink, timelineTileFraction(tint, p.dark))
     return TimelineGridColors(
         tile = tile,
-        today = lerp(tile, p.accent, if (p.dark) 0.14f else 0.09f),
+        today = lerp(tile, p.accent, if (p.dark) 0.16f else 0.1f),
         now = p.accent,
-        halo = p.background,
     )
 }
 
 @Composable
 internal fun rememberTimelineGridColors(): TimelineGridColors {
     val p = LocalPalette.current
-    return remember(p) { timelineGridColors(p) }
+    val tint = LocalTimelineTint.current
+    return remember(p, tint) { timelineGridColors(p, tint) }
 }
 
 /** Hours that get their own tile: every hour not inside a grouped empty band. */
@@ -1119,8 +1095,8 @@ internal fun timelineTileHours(axis: TimelineAxis): List<Int> =
  * lines; a grouped empty band is one softer tile per day.
  */
 internal fun DrawScope.drawTimelineGrid(axis: TimelineAxis, columnWidthPx: Float, dayCount: Int, colors: TimelineGridColors, todayIndex: Int = -1) {
-    val inset = 1.dp.toPx()
-    val corner = 6.dp.toPx()
+    val inset = TIMELINE_CELL_INSET.roundToPx().toFloat()
+    val corner = TIMELINE_CELL_CORNER.toPx()
     val width = columnWidthPx - inset * 2
     if (width <= 0f) return
     val hours = timelineTileHours(axis)
@@ -1142,7 +1118,7 @@ internal fun DrawScope.drawNowLine(axis: TimelineAxis, minute: Int, columnWidthP
     if (todayIndex !in 0 until dayCount) return
     val y = axis.minuteToY(minute)
     val from = columnWidthPx * todayIndex
-    drawLine(colors.now, Offset(startX(from), y), Offset(startX(from + columnWidthPx), y), strokeWidth = 2.dp.toPx())
+    drawLine(colors.now, Offset(startX(from), y), Offset(startX(from + columnWidthPx), y), strokeWidth = 1.5.dp.toPx())
 }
 
 /** Waits for measurement, including a measured area that already fits without scrolling. */
@@ -1186,12 +1162,13 @@ internal fun HourRail(
 
 /**
  * A date above a timeline column. It uses the same type as the Month and Day pickers (the [WeekdayLabels] style
- * above a [dayCircle]-sized date), shrunk only when the column is narrower than the circle.
+ * above a [dayCircle]-sized date), shrunk only when the column is narrower than the circle. Only the actual today is
+ * marked, on its number; the selected date is stated to accessibility services without a second visual mark.
  */
 @Composable
 internal fun TimelineDayHeader(
     day: LocalDate, isSelected: Boolean, isToday: Boolean, count: Int, f: Formats, modifier: Modifier,
-    todayTint: Color? = null, onClick: (() -> Unit)?,
+    onClick: (() -> Unit)?,
 ) {
     val p = LocalPalette.current
     val context = LocalContext.current
@@ -1204,10 +1181,7 @@ internal fun TimelineDayHeader(
     val keyboardFocused by interaction.collectIsFocusedAsState()
     Column(
         modifier.heightIn(min = 48.dp).padding(horizontal = 1.dp)
-            .then(if (isToday && todayTint != null) Modifier.background(todayTint, shape) else Modifier)
-            // The focused date keeps its filled circle whether or not taps may change it. No ripple: the circle answers
-            // a tap at once, and a ripple over the whole column would flash like a second selection. Keyboard focus
-            // still gets an outline.
+            // No ripple: a ripple over the whole column would flash like a selection. Keyboard focus gets an outline.
             .then(if (onClick == null) Modifier.clearAndSetSemantics { contentDescription = description; selected = isSelected }
                 else Modifier.clip(shape).then(if (keyboardFocused) Modifier.border(2.dp, p.ink, shape) else Modifier)
                     .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
@@ -1217,18 +1191,17 @@ internal fun TimelineDayHeader(
     ) {
         Text(
             if (narrow) f.weekdayNarrow(day.dayOfWeek) else f.weekdayShort(day.dayOfWeek),
-            color = if (isToday || isSelected) p.ink else p.muted, style = MaterialTheme.typography.labelSmall,
+            color = if (isToday) p.ink else p.muted, style = MaterialTheme.typography.labelSmall,
             textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Clip,
         )
         Box(
             Modifier.padding(horizontal = 2.dp, vertical = 2.dp).widthIn(max = circle).fillMaxWidth().aspectRatio(1f).clip(CircleShape)
-                .background(if (isSelected) p.accent else Color.Transparent)
-                .then(if (isToday && !isSelected) Modifier.border(1.5.dp, p.ink, CircleShape) else Modifier),
+                .background(if (isToday) p.accent else Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                day.dayOfMonth.toString(), color = if (isSelected) p.onAccent else p.ink, style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (isToday || isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                day.dayOfMonth.toString(), color = if (isToday) p.onAccent else p.ink, style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (isToday) FontWeight.SemiBold else FontWeight.Normal,
                 textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
             )
         }
@@ -1236,7 +1209,10 @@ internal fun TimelineDayHeader(
 }
 
 @Composable
-internal fun AllDayChip(event: CalendarEvent, day: LocalDate, f: Formats, highlight: Boolean, motion: Boolean, viewportHeight: Dp, onClick: () -> Unit) {
+internal fun AllDayChip(
+    event: CalendarEvent, day: LocalDate, f: Formats, highlight: Boolean, motion: Boolean, viewportHeight: Dp,
+    modifier: Modifier = Modifier, onClick: () -> Unit,
+) {
     val context = LocalContext.current
     val plainTitle = event.displayTitle().ifBlank { stringResource(R.string.untitled) }
     val title = if (event.todo) "\u2610 $plainTitle" else plainTitle
@@ -1252,8 +1228,8 @@ internal fun AllDayChip(event: CalendarEvent, day: LocalDate, f: Formats, highli
     val lineHeight = remember(style, density) { measurer.measure("Ag", style, maxLines = 1).size.height.coerceAtLeast(1) }
     val maxLines = with(density) { ((viewportHeight - 12.dp).toPx() / lineHeight).toInt().coerceIn(1, 4) }
     Box(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(shape).background(colors.container)
-            .then(colors.border?.let { Modifier.border(2.dp, it, shape) } ?: Modifier)
+        modifier.fillMaxWidth().heightIn(min = 48.dp).clip(shape).background(colors.container)
+            .eventHatch(event, hatchColor(colors.content))
             .focusRing(highlight, colors.content, shape, motion)
             .testTag("timeline_event_${event.id}")
             .clickable(role = Role.Button, onClick = onClick)
@@ -1373,9 +1349,9 @@ internal fun timelineCardTime(choices: List<String>, width: Int, lineWidth: (Str
  * One rounded card at the event's exact start, inset so neighbouring cards never touch. The label is centered
  * vertically, and also horizontally when [centered] (see [timelineCentersLabel]). Titles wrap only between words; a word wider than the card keeps its start and an ellipsis instead of
  * breaking into a column of fragments. Secondary fields appear only when they fit in full, and room codes never
- * break. Missed periods get a bar on the start edge. A card with [more] events stands for a group (an overlap with
- * no room for readable lanes in Week, or a Day compact group): it shows one title, a "+N" count and a rail with one
- * color mark per event at its real time, and opens the group's list. A [keepCount] card (a Day group) puts the count
+ * break. Missed minutes are striped (see [hatchRanges]). A card with [more] events stands for a group (an overlap with
+ * no room for readable lanes, or events too close for their own titles): it shows one title, a "+N" count and a rail with one
+ * color mark per event at its real time, and opens the group's list. A [keepCount] card (a compact group) puts the count
  * on the title's first line when that leaves a readable title, and also when there is no height for a line of its
  * own, so it never drops its count. Otherwise the count is a small badge under the title. A [wholeTimes] card (Week)
  * shows its time on one unbroken line, or its start alone, or no time. The card starts at [originMillis]. The spoken
@@ -1415,14 +1391,16 @@ private fun EventBlock(
     val shape = TIMELINE_CARD_SHAPE
     val origin = maxOf(originMillis, day.atStartOfDay(zone).toInstant().toEpochMilli())
     fun fraction(millis: Long) = ((millis - origin) / (shownMinutes.coerceAtLeast(1) * 60_000f)).coerceIn(0f, 1f)
+    // Stripes mark the whole card for a full absence or a cancellation, and only the missed minutes of a partial one.
     val missed = remember(event, origin, shownMinutes) {
-        event.partialAbsences().map { (start, end) -> fraction(start) to fraction(end) }.filter { it.second > it.first }
+        if (event.wholeCardHatched()) listOf(0f to 1f)
+        else event.partialAbsences().map { (start, end) -> fraction(start) to fraction(end) }.filter { it.second > it.first }
     }
+    val stripe = hatchColor(colors.content)
     // Each event of a stack sits on a rail at the end edge, at its real time inside the card.
     val marks = remember(railEvents, origin, shownMinutes) {
         railEvents.map { fraction(it.startMillis) to fraction(maxOf(it.endMillis, it.startMillis)) }
     }
-    val bar = 4.dp
     val rail = 3.dp
     val measurer = rememberTextMeasurer()
     val configuration = LocalViewConfiguration.current
@@ -1435,14 +1413,9 @@ private fun EventBlock(
     CompositionLocalProvider(LocalViewConfiguration provides cardConfiguration) {
         BoxWithConstraints(
             modifier.padding(horizontal = TIMELINE_CARD_SIDE_INSET, vertical = TIMELINE_BLOCK_INSET).clip(shape).background(colors.container)
-                .then(colors.border?.let { Modifier.border(2.dp, it, shape) } ?: Modifier)
                 .then(if (missed.isEmpty() && marks.isEmpty()) Modifier else Modifier.drawBehind {
                     val rtl = layoutDirection == LayoutDirection.Rtl
-                    val barWidth = bar.toPx()
-                    missed.forEach { (from, to) ->
-                        drawRect(colors.content, Offset(if (rtl) size.width - barWidth else 0f, from * size.height),
-                            Size(barWidth, (to - from) * size.height))
-                    }
+                    missed.forEach { (from, to) -> drawHatch(stripe, from, to) }
                     if (marks.isNotEmpty()) {
                         val railWidth = rail.toPx()
                         val gap = 1.dp.toPx()
@@ -1480,7 +1453,7 @@ private fun EventBlock(
                 maxWidth < 160.dp -> 8.dp
                 else -> 12.dp
             }
-            val padStart = padH + if (missed.isEmpty()) 0.dp else bar
+            val padStart = padH
             val padEnd = if (marks.isEmpty()) padH else rail + 1.dp + padH.coerceAtMost(4.dp)
             // Match Modifier.padding, which rounds each inset before subtracting it from the pixel constraints.
             val innerWidth = with(density) { (maxWidth.roundToPx() - padStart.roundToPx() - padEnd.roundToPx()).coerceAtLeast(1) }
@@ -1595,26 +1568,6 @@ private fun OverflowBlock(count: Int, single: String?, modifier: Modifier, singl
     }
 }
 
-/**
- * A small dot at the start of today's column marks the current time above the events. Its halo stays inside the
- * narrowest title inset on either side of the edge (1dp block padding plus 2dp text padding), so even a narrow
- * seven-day lane keeps its title clear; the line itself is drawn under the events by [drawNowLine].
- */
-@Composable
-internal fun NowMarker(
-    column: Dp, todayIndex: Int, minute: Int, modifier: Modifier,
-    axis: TimelineAxis, colors: TimelineGridColors,
-) {
-    Spacer(
-        modifier.clearAndSetSemantics { }.drawBehind {
-            val y = axis.minuteToY(minute)
-            val x = startX(column.toPx() * todayIndex)
-            drawCircle(colors.halo, radius = 3.dp.toPx(), center = Offset(x, y))
-            drawCircle(colors.now, radius = 2.dp.toPx(), center = Offset(x, y))
-        },
-    )
-}
-
 /** Minutes since local midnight, refreshed every 30 seconds. */
 @Composable
 internal fun rememberCurrentMinute(): State<Int> = produceState(LocalTime.now().let { it.hour * 60 + it.minute }) {
@@ -1624,24 +1577,6 @@ internal fun rememberCurrentMinute(): State<Int> = produceState(LocalTime.now().
     }
 }
 
-
-internal fun shortTimelineEvents(events: List<CalendarEvent>, day: LocalDate, zone: ZoneId, minMinutes: Int): List<CalendarEvent> =
-    packTimeline(events.filter { !it.isTimelineBanner() }, day, zone, 1).flatMap { it.blocks }
-        .filter { it.end - it.start < minMinutes }.map { it.event }
-
-@Composable
-internal fun TimelineShortEventButton(count: Int, fullLabel: Boolean = false, onClick: () -> Unit) {
-    val label = LocalContext.current.resources.getQuantityString(R.plurals.timeline_short_event_count, count, count)
-    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth().height(48.dp).testTag("timeline_short_events")
-        .clearAndSetSemantics {
-            contentDescription = label
-            role = Role.Button
-            onClick { onClick(); true }
-        }) {
-        Text(if (fullLabel) label else "\u22ef $count", color = LocalPalette.current.ink,
-            style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
 
 /**
  * The list behind a group card, a stack or "+N": one outlined row per event with its color, every field a card can
@@ -1697,7 +1632,8 @@ private fun TimelineEventChoice(event: CalendarEvent, f: Formats, openLabel: Str
     val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).height(IntrinsicSize.Min).clip(shape)
-            .background(p.ink.copy(alpha = if (p.dark) 0.05f else 0.03f)).border(1.dp, p.line, shape)
+            .background(p.ink.copy(alpha = if (p.dark) 0.05f else 0.03f)).eventHatch(event, hatchColor(p.ink), horizontal = true)
+            .border(1.dp, p.line, shape)
             .testTag("timeline_event_choice_${event.id}")
             .clickable(role = Role.Button, onClickLabel = openLabel, onClick = onClick)
             .clearAndSetSemantics {

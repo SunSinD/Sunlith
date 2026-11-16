@@ -53,10 +53,16 @@ class DeviceLinkToolsTest {
     private val operationNamespace = "test-${UUID.randomUUID()}-"
     private val allowed get() = setOf(allowedId, readOnlyId)
 
+    /** The private device-link files before the test, restored byte for byte afterwards. Null when the folder was absent. */
+    private var savedLinkFiles: Map<String, ByteArray>? = null
+
     @Before
     fun setUp() {
         requireEmulator()
         context = InstrumentationRegistry.getInstrumentation().targetContext
+        val linkDir = File(context.noBackupFilesDir, "device-link")
+        savedLinkFiles = if (!linkDir.exists()) null
+            else linkDir.walkTopDown().filter { it.isFile }.associate { it.relativeTo(linkDir).path to it.readBytes() }
         repository = CalendarRepository(context)
         tools = DeviceLinkTools(context, repository)
         allowedId = calendar(Calendars.CAL_ACCESS_OWNER)
@@ -71,6 +77,22 @@ class DeviceLinkToolsTest {
         owned.reversed().forEach { (id, account) -> context.contentResolver.delete(localCalendarUri(id, account), null, null) }
         DeviceLinkStore.clear(context)
         DeviceLink.clearHistory(context)
+        restoreLinkFiles()
+    }
+
+    /** Puts back the pairing, journal and history that existed before the test, and removes anything the test created. */
+    private fun restoreLinkFiles() {
+        val linkDir = File(context.noBackupFilesDir, "device-link")
+        val saved = savedLinkFiles
+        if (linkDir.exists()) linkDir.walkBottomUp().forEach { file ->
+            val relative = file.relativeTo(linkDir).path
+            if (file.isFile && (saved == null || relative !in saved)) file.delete()
+            else if (file.isDirectory && file != linkDir && file.listFiles().isNullOrEmpty()) file.delete()
+        }
+        if (saved == null) linkDir.delete()
+        else saved.forEach { (relative, bytes) -> File(linkDir, relative).apply { parentFile?.mkdirs() }.writeBytes(bytes) }
+        DeviceLinkStore.dropCache()
+        DeviceLinkHistory.dropCache()
     }
 
     @Test

@@ -34,8 +34,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -43,6 +48,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
 import io.github.sunsind.sunlith.data.SchoolAbsenceCoverage
@@ -55,9 +61,15 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 
-/** Fill and text colors for an event block. [border] marks a full teacher absence or a verified college cancellation. */
+/**
+ * Fill and text colors for an event block. [hatch] is the stripe color drawn over the whole card for a full teacher
+ * absence or a verified college cancellation; a partial absence stripes only its own interval (see [hatchRanges]).
+ */
 @Immutable
-internal data class EventColors(val container: Color, val content: Color, val border: Color? = null)
+internal data class EventColors(val container: Color, val content: Color, val hatch: Color? = null)
+
+/** Stripes stay subtle in the card's own text color, so the title, status and time keep their contrast. */
+internal fun hatchColor(content: Color): Color = content.copy(alpha = 0.16f)
 
 /**
  * Course fills. Light themes use deep tones under white text, dark themes light tones under near-black text. Every
@@ -121,15 +133,59 @@ internal fun rememberCourseColors(eventsByDay: Map<LocalDate, List<CalendarEvent
 
 /**
  * School classes take their saved course color; personal events use a stable title color. A college cancellation or
- * full teacher absence is drawn outlined, with explicit text so color is never the only signal.
+ * full teacher absence keeps that color under diagonal stripes, with explicit text so color is never the only signal.
+ * Only the school's own status marks a card; its color or title never does.
  */
 internal fun eventColors(event: CalendarEvent, palette: SunlithPalette, courses: CourseColors, dimmed: Boolean = false): EventColors {
     if (dimmed) return eventColors(event.color, palette, dimmed = true)
     val base = event.courseKeyOrNull()?.let { courseColors(courses.slot(it), palette.dark) }
         ?: courseColors(preferredCourseSlot("event:${event.title.trim().lowercase(Locale.ROOT)}"), palette.dark)
-    if (event.school?.absenceCoverage != SchoolAbsenceCoverage.FULL && event.school?.lift == null) return base
-    val border = if (base.container == palette.raised) palette.ink else base.container
-    return EventColors(palette.surface, palette.ink, border)
+    return if (event.wholeCardHatched()) base.copy(hatch = hatchColor(base.content)) else base
+}
+
+/** A verified college cancellation or a teacher absent for every period of the class. */
+internal fun CalendarEvent.wholeCardHatched(): Boolean =
+    school?.absenceCoverage == SchoolAbsenceCoverage.FULL || school?.lift != null
+
+/**
+ * The parts of the card to stripe, as fractions of the event from 0 to 1: all of it for [wholeCardHatched], each
+ * merged absence interval for a partial absence, and nothing otherwise. A partial absence never stripes the whole card.
+ */
+internal fun CalendarEvent.hatchRanges(): List<Pair<Float, Float>> {
+    if (wholeCardHatched()) return listOf(0f to 1f)
+    val length = (endMillis - startMillis).toFloat()
+    if (length <= 0f) return emptyList()
+    return partialAbsences().map { (from, to) -> ((from - startMillis) / length).coerceIn(0f, 1f) to ((to - startMillis) / length).coerceIn(0f, 1f) }
+        .filter { it.second > it.first }
+}
+
+/**
+ * Diagonal stripes over [from]..[to] of the drawing area: its height, or its width when [horizontal]. Stripes are
+ * placed from the area's own corner, so the stripes of separate intervals of one card line up.
+ */
+internal fun DrawScope.drawHatch(color: Color, from: Float = 0f, to: Float = 1f, horizontal: Boolean = false, area: Size = size) {
+    val mirrored = horizontal && layoutDirection == LayoutDirection.Rtl
+    val left = if (horizontal) area.width * (if (mirrored) 1f - to else from) else 0f
+    val right = if (horizontal) area.width * (if (mirrored) 1f - from else to) else area.width
+    val top = if (horizontal) 0f else area.height * from
+    val bottom = if (horizontal) area.height else area.height * to
+    if (right <= left || bottom <= top) return
+    val step = 9.dp.toPx()
+    val stroke = 3.5.dp.toPx()
+    clipRect(left, top, right, bottom) {
+        var x = -area.height
+        while (x < area.width + area.height) {
+            drawLine(color, Offset(x, area.height), Offset(x + area.height, 0f), strokeWidth = stroke)
+            x += step
+        }
+    }
+}
+
+/** Stripes for every [hatchRanges] interval of [event], above the card's fill and below its text. */
+internal fun Modifier.eventHatch(event: CalendarEvent, color: Color, horizontal: Boolean = false): Modifier {
+    val ranges = event.hatchRanges()
+    if (ranges.isEmpty()) return this
+    return drawBehind { ranges.forEach { (from, to) -> drawHatch(color, from, to, horizontal) } }
 }
 
 @Composable
@@ -142,7 +198,7 @@ internal fun eventColors(event: CalendarEvent, dimmed: Boolean = false): EventCo
 @ReadOnlyComposable
 internal fun eventAccent(event: CalendarEvent): Color {
     val p = LocalPalette.current
-    return eventColors(event, p, LocalCourseColors.current).let { it.border ?: it.container }
+    return eventColors(event, p, LocalCourseColors.current).container
 }
 
 /** Keep a verified college cancellation in even the smallest Month chip. Teacher absence has its own status line. */
@@ -312,13 +368,33 @@ internal class TimelineFocus(val date: LocalDate, val request: Int = 0, private 
 }
 
 /**
- * The first timed event on the chosen day, including today. All-day-only dates use their first banner.
+ * The first timed event on the chosen day. All-day-only dates use their first banner. When [nowMillis] falls on
+ * [day], the day is today: the event in progress comes first, then the next one that has not ended, so a list never
+ * points back at the morning's classes.
  */
-internal fun focusTarget(events: List<CalendarEvent>, day: LocalDate, zone: ZoneId): CalendarEvent? {
+internal fun focusTarget(events: List<CalendarEvent>, day: LocalDate, zone: ZoneId, nowMillis: Long? = null): CalendarEvent? {
     val timed = events.filter { !it.isTimelineBanner() }.sortedWith(compareBy<CalendarEvent> { it.startMillis }.thenBy { it.endMillis })
+    if (nowMillis != null && Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate() == day) {
+        (activeTimedEvent(timed, nowMillis) ?: timed.firstOrNull { it.endMillis > nowMillis })?.let { return it }
+    }
     if (timed.isEmpty()) return events.firstOrNull { it.isTimelineBanner() }
     return timed.firstOrNull { Instant.ofEpochMilli(it.startMillis).atZone(zone).toLocalDate() == day } ?: timed.first()
 }
+
+/**
+ * The timed event in progress at [nowMillis] (start <= now < end), or null. Among overlapping events the earliest
+ * start wins, then the earliest end, so the choice never depends on load order.
+ */
+internal fun activeTimedEvent(events: List<CalendarEvent>, nowMillis: Long): CalendarEvent? =
+    events.filter { !it.isTimelineBanner() && it.startMillis <= nowMillis && nowMillis < it.endMillis }
+        .minWithOrNull(compareBy<CalendarEvent> { it.startMillis }.thenBy { it.endMillis }.thenBy { it.id })
+
+/**
+ * The minute today's timeline opens at, both when it first appears and when Today is tapped: the start of the event
+ * in progress, otherwise the usual hour before now. A later event is never a reason to jump ahead.
+ */
+internal fun timelineTodayMinute(events: List<CalendarEvent>, today: LocalDate, zone: ZoneId, nowMillis: Long, currentMinute: Int): Int =
+    activeTimedEvent(events, nowMillis)?.let { startMinuteOn(it, today, zone) } ?: timelineTodayMinute(currentMinute)
 
 /** Minutes from midnight on [day] where [event] starts, or 0 when it began on an earlier day. */
 internal fun startMinuteOn(event: CalendarEvent, day: LocalDate, zone: ZoneId): Int {
@@ -348,11 +424,19 @@ internal fun absenceStatus(event: CalendarEvent, f: Formats, compact: CompactTim
             val ranges = event.partialAbsences()
             if (ranges.isEmpty()) return cancellation
             val zone = ZoneId.systemDefault()
-            val text = ranges.joinToString(", ") { (start, end) ->
-                if (compact == null) f.timeRange(start, end)
-                else compact.range(Instant.ofEpochMilli(start).atZone(zone).toLocalTime(), Instant.ofEpochMilli(end).atZone(zone).toLocalTime())
+            fun local(millis: Long) = Instant.ofEpochMilli(millis).atZone(zone).toLocalTime()
+            val single = ranges.singleOrNull()
+            when {
+                compact == null -> stringResource(R.string.calendar_teacher_absent_range,
+                    ranges.joinToString(", ") { (start, end) -> f.timeRange(start, end) })
+                // A card already shows the class start or range, so an absence that shares one edge names only the other.
+                single != null && single.first == event.startMillis && single.second < event.endMillis ->
+                    stringResource(R.string.calendar_absent_until, compact.time(local(single.second)))
+                single != null && single.second == event.endMillis && single.first > event.startMillis ->
+                    stringResource(R.string.calendar_absent_from, compact.time(local(single.first)))
+                else -> stringResource(R.string.calendar_absent_short_range,
+                    ranges.joinToString(", ") { (start, end) -> compact.range(local(start), local(end)) })
             }
-            stringResource(if (compact != null) R.string.calendar_absent_short_range else R.string.calendar_teacher_absent_range, text)
         }
     }
     return listOfNotNull(cancellation, teacher).takeIf { it.isNotEmpty() }?.joinToString("\n")
@@ -376,7 +460,8 @@ internal fun CalendarEventCard(event: CalendarEvent, day: LocalDate, f: Formats,
     val typography = MaterialTheme.typography
     Row(
         modifier.fillMaxWidth().height(IntrinsicSize.Min).heightIn(min = 52.dp).clip(shape).background(colors.container)
-            .then(colors.border?.let { Modifier.border(2.dp, it, shape) } ?: Modifier)
+            // A list card runs left to right, so a partial absence stripes its share of the class along the width.
+            .eventHatch(event, hatchColor(colors.content), horizontal = true)
             .clickable(role = Role.Button, onClick = onClick).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

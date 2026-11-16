@@ -20,7 +20,6 @@
     <string name="school_admin_show_day">Voir la journée</string>
     <string name="school_admin_superseded">Remplace un avis précédent pour cette journée.</string>
     <string name="school_admin_title_only">Seul le titre a pu être lu. Ouvrez Col.NET pour le texte complet.</string>
-    <string name="school_admin_suggestions">Dates trouvées dans les avis</string>
     <string name="school_admin_suggestions_note">Pas ajoutées automatiquement. Vérifiez l\'avis avant de les ajouter.</string>
     <string name="school_admin_suggestion_add">Ajouter au calendrier</string>
     <string name="school_admin_list">Tous les messages de l\'administration</string>

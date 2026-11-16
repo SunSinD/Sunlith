@@ -38,6 +38,7 @@ class NotificationPermissionRecoveryTest {
         requireEmulator()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
+        val preferenceSnapshot = SharedPreferencesSnapshot(context)
         val device = UiDevice.getInstance(instrumentation)
         assertEquals("Revoke POST_NOTIFICATIONS before starting this instrumentation process.", PackageManager.PERMISSION_DENIED, context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS))
         val settings = SettingsStore(context)
@@ -82,6 +83,7 @@ class NotificationPermissionRecoveryTest {
             settings.selectedCalendarIds = oldCalendars
             prefs.edit().apply { if (oldAsked == null) remove("notify_asked") else putBoolean("notify_asked", oldAsked) }.commit()
             prefs.edit().apply { if (oldAiIntro == null) remove("ai_intro_done") else putBoolean("ai_intro_done", oldAiIntro) }.commit()
+            preferenceSnapshot.restore()
         }
     }
 }

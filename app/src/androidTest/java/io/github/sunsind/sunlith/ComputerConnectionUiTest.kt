@@ -23,6 +23,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import io.github.sunsind.sunlith.device.DeviceLink
+import io.github.sunsind.sunlith.device.DeviceLinkHistory
 import io.github.sunsind.sunlith.device.DeviceLinkStore
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.ui.Screen
@@ -269,10 +270,14 @@ internal class ComputerConnectionHarness {
     private val snapshots = mutableMapOf<String, Map<String, *>>()
     private var oldLocales: LocaleList? = null
     private var ownsPairing = false
+    private var savedLinkFiles: Map<String, ByteArray>? = null
 
     fun prepare() {
         requireEmulator()
         assumeFalse("An existing computer pairing must not be overwritten by tests.", DeviceLink.isPaired(context) || DeviceLink.state.value.running)
+        val linkDir = File(context.noBackupFilesDir, "device-link")
+        savedLinkFiles = if (!linkDir.exists()) null
+            else linkDir.walkTopDown().filter { it.isFile }.associate { it.relativeTo(linkDir).path to it.readBytes() }
         ownsPairing = true
         listOf("sunlith", "sunlith_ui").forEach { name -> snapshots[name] = context.getSharedPreferences(name, Context.MODE_PRIVATE).all.toMap() }
         if (Build.VERSION.SDK_INT >= 33) {
@@ -335,6 +340,21 @@ internal class ComputerConnectionHarness {
             listOf(displayCalendarId, linkedCalendarId).filter { it != 0L }.forEach { context.contentResolver.delete(localCalendarUri(it, account), null, null) }
             snapshots.forEach { (name, values) -> restoreTestPreferences(context.getSharedPreferences(name, Context.MODE_PRIVATE), values) }
             if (Build.VERSION.SDK_INT >= 33) oldLocales?.let { context.getSystemService(LocaleManager::class.java).applicationLocales = it }
+            restoreLinkFiles()
         }
+    }
+
+    private fun restoreLinkFiles() {
+        val linkDir = File(context.noBackupFilesDir, "device-link")
+        val saved = savedLinkFiles
+        if (linkDir.exists()) linkDir.walkBottomUp().forEach { file ->
+            val relative = file.relativeTo(linkDir).path
+            if (file.isFile && (saved == null || relative !in saved)) file.delete()
+            else if (file.isDirectory && file != linkDir && file.listFiles().isNullOrEmpty()) file.delete()
+        }
+        if (saved == null) linkDir.delete()
+        else saved.forEach { (relative, bytes) -> File(linkDir, relative).apply { parentFile?.mkdirs() }.writeBytes(bytes) }
+        DeviceLinkStore.dropCache()
+        DeviceLinkHistory.dropCache()
     }
 }

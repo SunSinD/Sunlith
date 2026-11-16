@@ -93,7 +93,8 @@ class AiOnboardingTest {
         val settings = SettingsStore(context)
         assertEquals("sunlith", settings.layoutPreset)
         assertEquals("split", settings.monthLayout)
-        assertEquals("list", settings.weekLayout)
+        assertEquals("A stock preset keeps the new continuous Week default", "continuous", settings.weekLayout)
+        assertEquals(5, settings.visibleWeekDays)
         assertEquals("cards", settings.dayLayout)
         assertTrue(uiPrefs().getBoolean("layout_setup_done", false))
         assertFalse(uiPrefs().getBoolean("computer_setup_requested", false))
@@ -123,7 +124,7 @@ class AiOnboardingTest {
         val settings = SettingsStore(context)
         assertEquals("planner", settings.layoutPreset)
         assertEquals("full", settings.monthLayout)
-        assertEquals("list", settings.weekLayout)
+        assertEquals("continuous", settings.weekLayout)
         assertEquals("cards", settings.dayLayout)
     }
 

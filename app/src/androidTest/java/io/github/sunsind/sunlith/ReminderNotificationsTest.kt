@@ -50,6 +50,7 @@ class ReminderNotificationsTest {
     private lateinit var repository: CalendarRepository
     private lateinit var settings: SettingsStore
     private lateinit var manager: NotificationManager
+    private lateinit var preferenceSnapshot: SharedPreferencesSnapshot
     private var calendarId = 0L
     private val account = "Sunlith notification test ${UUID.randomUUID()}"
     private var oldCalendars = emptySet<Long>()
@@ -60,6 +61,7 @@ class ReminderNotificationsTest {
     fun setUp() {
         requireEmulator()
         context = InstrumentationRegistry.getInstrumentation().targetContext
+        preferenceSnapshot = SharedPreferencesSnapshot(context)
         repository = CalendarRepository(context)
         settings = SettingsStore(context)
         oldCalendars = settings.selectedCalendarIds
@@ -82,6 +84,7 @@ class ReminderNotificationsTest {
         settings.hasChosenCalendars = oldChosen
         settings.remindersEnabled = oldReminders
         ReminderScheduler.reschedule(context)
+        preferenceSnapshot.restore()
     }
 
     @Test

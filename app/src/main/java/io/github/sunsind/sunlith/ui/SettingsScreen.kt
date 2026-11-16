@@ -94,6 +94,7 @@ import androidx.core.graphics.drawable.toBitmap
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.DeviceCalendar
 import io.github.sunsind.sunlith.system.LauncherIcons
+import io.github.sunsind.sunlith.system.SettingsStore
 import java.time.LocalDate
 
 const val SOURCE_URL = "https://github.com/SunSinD/Sunlith"
@@ -179,24 +180,20 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                         }
                         DropdownRow(
                             stringResource(R.string.view_week),
-                            if (vm.weekLayout == "timeline") "timeline${vm.visibleWeekDays}" else vm.weekLayout,
+                            vm.weekLayout,
                             listOf(
                                 "list" to stringResource(R.string.settings_week_list),
-                                "timeline3" to stringResource(R.string.settings_week_timeline3),
-                                "timeline5" to stringResource(R.string.settings_week_timeline5),
-                                "timeline7" to stringResource(R.string.settings_week_timeline7),
                                 "continuous" to stringResource(R.string.settings_week_continuous),
                             ),
-                        ) { choice ->
-                            if (choice == "list" || choice == "continuous") vm.changeWeekLayout(choice)
-                            else {
-                                val days = when (choice) { "timeline3" -> 3; "timeline5" -> 5; else -> 7 }
-                                if (vm.visibleWeekDays != days) vm.changeVisibleWeekDays(days)
-                                if (vm.weekLayout != "timeline") vm.changeWeekLayout("timeline")
-                            }
-                        }
-                        if (vm.weekLayout == "timeline" && vm.visibleWeekDays == 5) {
-                            ToggleRow(stringResource(R.string.settings_rolling_five_days), stringResource(R.string.settings_rolling_five_days_short), vm.rollingFiveDays, vm::changeRollingFiveDays)
+                            vm::changeWeekLayout,
+                        )
+                        if (vm.weekLayout == "continuous") {
+                            DropdownRow(
+                                stringResource(R.string.settings_visible_days),
+                                vm.visibleWeekDays,
+                                SettingsStore.VISIBLE_DAY_CHOICES.map { it to pluralStringResource(R.plurals.visible_days_count, it, it) },
+                                vm::changeVisibleWeekDays,
+                            )
                         }
                         ToggleRow(stringResource(R.string.settings_week_header_selection), stringResource(R.string.settings_week_header_selection_short), vm.weekHeaderSelection, vm::changeWeekHeaderSelection)
                         if (vm.weekLayout != "list") TimelineZoomRow(stringResource(R.string.settings_week_zoom), vm.weekTimelineZoom, vm::changeWeekTimelineZoom)
@@ -227,6 +224,7 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                             vm.materialYou,
                             vm::changeMaterialYou,
                         )
+                        TimelineTintRow(vm.timelineTint, vm::changeTimelineTint)
                         LauncherIconSection(vm)
                     }
                     "general" -> {
@@ -333,6 +331,7 @@ fun SettingsScreen(vm: SunlithViewModel, initialPage: String = "root") {
                     }
                     "about" -> {
                         ValueRow(stringResource(R.string.settings_version), version)
+                        AppUpdateSection()
                         ClickRow(stringResource(R.string.about_source), null) { context.openUrl(SOURCE_URL, vm) }
                     }
                 }
@@ -656,6 +655,40 @@ private fun Messages(messages: List<String>) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         messages.take(8).forEach { Text(it, color = p.muted, style = MaterialTheme.typography.bodySmall) }
         if (messages.size > 8) Text(pluralStringResource(R.plurals.more_messages, messages.size - 8, messages.size - 8), color = p.muted, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/**
+ * Strength of the empty hour tiles. The value is shown and spoken in percent, the slider moves in 5% steps and saves
+ * when released, and Reset returns to the default.
+ */
+@Composable
+private fun TimelineTintRow(value: Int, onChange: (Int) -> Unit) {
+    val p = LocalPalette.current
+    val title = stringResource(R.string.settings_timeline_tint)
+    var shown by remember(value) { mutableStateOf(value.toFloat()) }
+    val percent = "${Math.round(shown)}%"
+    val default = SettingsStore.DEFAULT_TIMELINE_TINT
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("settings_timeline_tint")) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, color = p.ink)
+                Text(percent, style = MaterialTheme.typography.bodyMedium, color = p.muted)
+            }
+            val resetLabel = stringResource(R.string.settings_timeline_tint_reset_label)
+            TextButton(
+                onClick = { shown = default.toFloat(); onChange(default) }, enabled = Math.round(shown) != default,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("settings_timeline_tint_reset").semantics { contentDescription = resetLabel },
+            ) { Text(stringResource(R.string.settings_timeline_tint_reset)) }
+        }
+        Slider(
+            value = shown, onValueChange = { shown = (Math.round(it / 5f) * 5).toFloat() },
+            onValueChangeFinished = { onChange(Math.round(shown)) },
+            valueRange = 0f..100f, steps = 19,
+            modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp).testTag("settings_timeline_tint_slider")
+                .semantics { contentDescription = title; stateDescription = percent },
+            colors = sliderColors(),
+        )
     }
 }
 

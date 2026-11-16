@@ -1,5 +1,4 @@
 <resources>
-    <string name="settings_rolling_five_days">Commencer au jour sélectionné</string>
     <string name="settings_week_header_selection">Toucher une date pour la sélectionner</string>
     <string name="calendar_layout_chooser_title">Disposition : %1$s</string>
     <string name="calendar_layout_chooser_action">Choisir la disposition</string>
@@ -8,8 +7,6 @@
     <string name="connection_tailscale_detected">Adresse VPN détectée</string>
     <string name="connection_tailscale_missing">Non détecté</string>
     <string name="connection_tailscale_checking">Vérification…</string>
-    <string name="calendar_prev_five_days">5 jours précédents</string>
-    <string name="calendar_next_five_days">5 jours suivants</string>
     <string name="calendar_teacher_absent">Enseignant absent</string>
     <string name="calendar_teacher_absent_range">Enseignant absent %1$s</string>
     <string name="calendar_absent_short">Absent</string>
@@ -22,8 +19,4 @@
     <string name="timeline_empty_hours">Aucun événement</string>
     <string name="timeline_loading_day">Chargement des événements</string>
     <string name="timeline_event_open">Ouvrir l’événement</string>
-    <plurals name="timeline_short_event_count">
-        <item quantity="one">%1$d événement court</item>
-        <item quantity="other">%1$d événements courts</item>
-    </plurals>
 </resources>

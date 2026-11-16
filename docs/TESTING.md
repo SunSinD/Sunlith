@@ -2,6 +2,95 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.7.0 calendar, updater and school verification, 2026-11-16
+
+The tested distribution APK is version 0.7.0/code 22, nondebuggable and
+R8 minified, with the existing signing certificate. Candidate R34 freezes 232
+source, test and configuration files. Every live file and source ZIP entry
+matched before the final runtime checks. Only this verification document changes
+afterward. Packaging uses the exact tested APK, unchanged since R24.
+
+| Artifact | SHA256 |
+| --- | --- |
+| Distribution APK | `0e8bf7636258ac0a1e0e2e69901b0492e76ac3472e737d062d26282cfe570b66` |
+| Test APK | `98fcbcedc0ffde424b847ab84cccb8b47dcffa54ee4d4f6afa1d43a2c53083d6` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+| Frozen source fingerprint | `e19aa925f9665a10a4291607c6358199b0f265dd6d27627a2c8b0487bd871ff3` |
+| Frozen source ZIP | `067780fc917ddfbec2b9d4b46c440a71fac3181cc99d6904c2f94344ed338b90` |
+| Final named outcome proof | `f4bba2b9e104da577d87084203999e00f6baa6bbbb082984e90c6b4d981d8aed` |
+| Final UI manifest | `93de52fa9b14422b1eba1a3e5b1e50202ce88ef8b9714ce0d265623b93ecc03b` |
+
+| Check | API 30 / Android 11 | API 36 / Android 16 |
+| --- | --- | --- |
+| Eligible named instrumentation methods | 406 | 409 |
+| Passed | 400 | 402 |
+| Explicit assumption skips | 6 | 7 |
+| Failures | 0 | 0 |
+| Actual display profiles | 2 | 5 |
+
+These totals are a disjoint union of completed methods across focused,
+remaining and isolated campaigns. They are not one uninterrupted suite run.
+Compatible earlier outcomes carry only where the relevant source and production
+APK were checked. Not every method ran on the final test APK. Every eligible
+method is accounted for exactly once, with no missing, duplicate or unexpected
+named outcome. Skips are never counted as passes.
+
+Both APIs skip three optional synthetic display fixtures, the external desktop
+client fixture and the private live portal fixture. API 30 also skips the
+Material You test because it needs API 31. API 36 also skips two notification
+permission recovery fixtures that require an explicit opt in and a previously
+revoked permission. Those permission round trips remain unverified here.
+
+All 232 JVM tests passed. Lint reported zero errors, 155 warnings and 10 hints.
+APK signatures and the generated distribution test API rules passed their
+checks. The companion passed 44 tests with one optional external fixture
+skipped, its syntax checks passed and its production dependency audit found
+zero vulnerabilities. Its 19 verification inputs are unchanged from R18.
+Build reports predate runtime verification. The final named outcome proof
+supplies the device results above.
+
+Coverage includes preference migration, continuous Week columns and snapping,
+repeated swipes, Today positioning after delayed loads and retries, Schedule
+cache extension, details during held provider reads, absence intervals,
+college message navigation and the manual updater. Updater checks include
+release and download validation, cancellation, saved downloads, package signing,
+the installed APK, installer intents and activity recreation. School fixtures
+verify one cancellable retry, quiet brief connection failures, a lasting warning
+only once per failure streak and an error reason that survives a restart.
+
+Seven actual profiles supplied 79 reviewed PNG/XML pairs on the exact production
+APK. Another 89 app pairs cover controlled calendar fixtures, and 42 reviewed
+college message app pairs cover both APIs, English and French text, and normal
+and large text. Launcher captures provide zero app UI coverage. Two historical
+English fixtures force RTL in Compose and are labelled accordingly, rather than
+claimed as actual device locale proof. College message captures are synthetic
+light theme fixtures and do not establish actual locale, dark theme or system
+bar contrast. The final manifest preserves these limits. The reviewed screens
+keep the published 0.6.10 style, and Theme.kt is unchanged.
+
+A real API 36 process death and restoration passed in the same task, preserving
+a date other than today, All hours and event placement. The process proof hash
+is `606e2f850572f2b135be656254769001e3dd265ad242ef31b45d4ad19189ec1c`.
+No new motion recordings were made, so still images do not prove smoothness or
+every frame during a drag. Physical devices, API 28 execution and a real portal
+outage remain unverified. The original reported connection failure could not
+be identified from the phone evidence.
+
+Earlier failed campaigns remain failed, with all 25 STOP records preserved.
+Final continuations corrected host skip bookkeeping, duplicate evidence folder
+creation and Android binary XML reading without changing or rebuilding the app.
+Completed tests were carried with their raw outcomes and cleanup proofs instead
+of replayed. The final proof is stored locally at
+`.toolchain/v070/r37-final-named-proof/named-union.json`, and the corrected UI
+manifest is `.toolchain/v070/r37-final-ui-review/manifest.json`.
+
+Both private emulators returned to their exact original expanded baselines,
+with three stable samples, and were shut down. Originally absent preferences
+were removed only after preserving their bytes. App files stayed unchanged,
+owned widget records and grants were absent, and the original AVD metadata
+matched. The cleanup handback hash is
+`ef7853ad94cedf0e2893edc8248457a74673cc60815549ed769fe3a9accd375e`.
+
 ## 0.6.10 calendar and college notice verification, 2026-11-14
 
 The tested distribution APK is version 0.6.10/code 21, nondebuggable and

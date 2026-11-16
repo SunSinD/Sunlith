@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -83,6 +84,26 @@ internal class PeriodSwipeState(private val scope: CoroutineScope) {
     private var job: Job? = null
     private var queuedSteps = 0
 
+    /** The target offset and direction of a running slide that ends in a commit. */
+    private var committing: Pair<Float, Int>? = null
+    private var settlingSteps by mutableIntStateOf(0)
+
+    /** The pager page whose period is committed, or -1 without a pager. Kept by [PagedPeriod]. */
+    var acceptedPage by mutableIntStateOf(-1)
+
+    /** Set when a new drag committed a running slide early, so the new period keeps the offset already on screen. */
+    var keepOffsetOnCommit = false
+
+    /**
+     * Periods a running slide or pager scroll is heading to before its commit, 0 at rest. Lets the Today arrow point
+     * from where the calendar will land instead of waiting for the slide to settle.
+     */
+    val previewSteps: Int by derivedStateOf {
+        val pages = pager
+        if (pages != null && acceptedPage >= 0) (if (pages.isScrollInProgress) pages.targetPage else pages.settledPage) - acceptedPage
+        else settlingSteps
+    }
+
     /** -1 or 1 while the previous or next period is partly visible, 0 at rest. */
     val peek: Int by derivedStateOf {
         val v = offset
@@ -93,13 +114,31 @@ internal class PeriodSwipeState(private val scope: CoroutineScope) {
         }
     }
 
-    fun start() {
+    /** Stops a running slide or step without committing it. */
+    fun stop() {
         job?.cancel()
         job = null
         queuedSteps = 0
+        committing = null
+        settlingSteps = 0
     }
 
-    fun cancel() { start(); offset = 0f }
+    /**
+     * A new drag. A slide that was already committing to the next period commits now, and the offset is measured
+     * from that period, so the content stays exactly where it is under the finger. Before, the new drag cancelled the
+     * commit and kept dragging the old period, which stopped at the edge halfway through a quick second swipe.
+     */
+    fun start() {
+        val pending = committing
+        stop()
+        if (pending != null) {
+            offset -= pending.first
+            keepOffsetOnCommit = true
+            onCommit(pending.second)
+        }
+    }
+
+    fun cancel() { stop(); offset = 0f; keepOffsetOnCommit = false }
 
     fun cancelDrag() { settle(0f, 0) }
 
@@ -146,7 +185,7 @@ internal class PeriodSwipeState(private val scope: CoroutineScope) {
         }
         val w = width.toFloat()
         if (!motion || w <= 0f) {
-            start()
+            stop()
             offset = 0f
             onCommit(dir)
             return
@@ -156,13 +195,18 @@ internal class PeriodSwipeState(private val scope: CoroutineScope) {
 
     private fun settle(target: Float, dir: Int) {
         job?.cancel()
+        committing = if (dir != 0) target to dir else null
+        settlingSteps = dir
         job = scope.launch {
             if (motion && offset != target) {
                 animate(offset, target, animationSpec = spring(stiffness = Spring.StiffnessMedium,
                     dampingRatio = Spring.DampingRatioNoBouncy, visibilityThreshold = 1f)) { value, _ -> offset = value }
             }
+            committing = null
             if (dir != 0) onCommit(dir)
+            settlingSteps = 0
             offset = 0f
+            keepOffsetOnCommit = false
             job = null
             val next = queuedSteps.compareTo(0)
             queuedSteps -= next
@@ -190,23 +234,11 @@ internal fun rememberPeriodSwipe(enabled: Boolean, motion: Boolean, onCommit: (I
  * Once vertical scrolling wins, the rest of that gesture stays with the child, even if the thumb curves sideways.
  * When swiping is off, sideways drags are still consumed so they never count as a tap on an event or date.
  */
-internal fun Modifier.periodSwipe(state: PeriodSwipeState, allowChildHorizontalScroll: Boolean = false): Modifier = pointerInput(state, allowChildHorizontalScroll) {
+internal fun Modifier.periodSwipe(state: PeriodSwipeState): Modifier = pointerInput(state) {
     val slop = viewConfiguration.touchSlop
     val flingVelocity = 400.dp.toPx()
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-        if (!state.enabled && allowChildHorizontalScroll) {
-            var moved = Offset.Zero
-            while (true) {
-                // Skip the down already seen on Initial; clickable may consume it on Main.
-                awaitPointerEvent(PointerEventPass.Initial)
-                val change = awaitPointerEvent(PointerEventPass.Final).changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed || change.isConsumed) break
-                moved += change.positionChange()
-                if (abs(moved.x) > slop && abs(moved.x) > abs(moved.y) * 1.4f) change.consume()
-            }
-            return@awaitEachGesture
-        }
         if (state.pager != null && state.enabled) return@awaitEachGesture
         val tracker = VelocityTracker()
         tracker.addPosition(down.uptimeMillis, down.position)
@@ -267,7 +299,9 @@ internal fun SlidingPeriod(
     SideEffect {
         if (previousPeriod[0] != period) {
             previousPeriod[0] = period
-            if (state.offset != 0f) state.cancel()
+            // A drag that committed the previous slide keeps its offset; any other change of period starts at rest.
+            if (state.keepOffsetOnCommit) state.keepOffsetOnCommit = false
+            else if (state.offset != 0f) state.cancel()
         }
     }
     LaunchedEffect(period, state.enabled) {
@@ -315,14 +349,15 @@ internal fun PagedPeriod(
     val firstSync = remember(pager) { booleanArrayOf(true) }
     DisposableEffect(state, pager) {
         state.pager = pager
-        onDispose { if (state.pager === pager) state.pager = null }
+        onDispose { if (state.pager === pager) { state.pager = null; state.acceptedPage = -1 } }
     }
     SideEffect {
         if (firstSync[0] || expected != accepted[0]) {
             firstSync[0] = false
             syncing[0] = true
             accepted[0] = expected
-            state.start()
+            state.acceptedPage = expected
+            state.stop()
             // A tapped date and its page must land in the same measure pass. A launched scroll can
             // leave the previous page under the newly selected date for the first rendered frame.
             pager.requestScrollToPage(expected)
@@ -335,6 +370,7 @@ internal fun PagedPeriod(
             } else {
                 val delta = settled - accepted[0]
                 accepted[0] = settled
+                state.acceptedPage = settled
                 if (delta != 0) state.onCommit(delta)
             }
         }

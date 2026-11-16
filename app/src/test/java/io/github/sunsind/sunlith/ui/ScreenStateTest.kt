@@ -34,9 +34,9 @@ class ScreenStateTest {
     }
 
     @Test
-    fun monthGridDrilldownDefaultsToAllHoursAndOnlyKeepsKnownLayouts() {
-        assertEquals("timeline", drilldownLayoutOrDefault(null))
-        assertEquals("timeline", drilldownLayoutOrDefault("schedule"))
+    fun monthGridDrilldownDefaultsToTheListAndKeepsAnExplicitChoice() {
+        assertEquals("cards", drilldownLayoutOrDefault(null))
+        assertEquals("cards", drilldownLayoutOrDefault("schedule"))
         assertEquals("cards", drilldownLayoutOrDefault("cards"))
         assertEquals("timeline", drilldownLayoutOrDefault("timeline"))
     }

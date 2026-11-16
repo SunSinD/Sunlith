@@ -8,9 +8,11 @@ Plan with the calendars already on your phone. You can also ask your computer to
 
 Choose month, week or day views, with lists and timelines. Hold a view tab to change its layout. Pinch a Week timeline to zoom.
 
-Timelines show every hour by default. Group empty hours in Week is optional in Appearance. Opening a date from the Month grid shows that date alone, with a toolbar button to switch between List and All hours.
+Timelines show every hour by default. Group empty hours in Week is optional in Appearance. Opening a date from the Month grid shows that date alone as a list, with a toolbar button to switch to All hours.
 
-Five day timelines show Monday to Friday by default. Rolling days and selectable week headers are optional. Seven day timelines fit the week at normal text size. Events at the same time sit side by side in separate rounded cards when there is room. When they would be too narrow to read, they are grouped into one card with a count, and tapping it shows them. In Day, very short events too close together for their titles share one compact card with a count, and tapping it lists each event with its times.
+Week is one continuous timeline that you scroll day by day. Choose 3, 5 or 7 days, and every swipe settles on whole days. At normal text sizes the chosen days fit the screen. Selectable week headers are optional. Events at the same time sit side by side in separate rounded cards when there is room. When they would be too narrow to read, they are grouped into one card with a count, and tapping it shows them. Short events too close together for their titles share one compact card with a count, and tapping it lists each event with its times.
+
+Absent and cancelled classes get soft diagonal stripes. A partial absence stripes only the missed time. Background tint in Appearance sets how strong the empty hour tiles look.
 
 Use wallpaper colors, light or dark themes, English or French, repeating events, reminders, search and calendar import or export. Mark events as tasks and check them off when they start. Add the agenda widget to your home screen.
 
@@ -39,6 +41,8 @@ Enable Administration messages in School schedule alerts for new messages and co
 ## Build and checks
 
 Requires Android 8.0 or newer. No ads or analytics.
+
+Open Settings > About > Check for updates to get the latest GitHub release from the app. Android asks you to confirm installation. Sunlith only checks for app updates when you press the button.
 
 ```sh
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug

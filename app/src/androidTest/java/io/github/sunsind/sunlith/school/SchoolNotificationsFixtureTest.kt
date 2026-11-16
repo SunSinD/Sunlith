@@ -31,6 +31,7 @@ import io.github.sunsind.sunlith.insertLocalCalendar
 import io.github.sunsind.sunlith.localCalendarUri
 import io.github.sunsind.sunlith.requireEmulator
 import io.github.sunsind.sunlith.restoreTestPreferences
+import io.github.sunsind.sunlith.system.AppRefresh
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.ui.Screen
 import io.github.sunsind.sunlith.ui.SunlithViewModel
@@ -47,8 +48,14 @@ import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.HttpsURLConnection
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
@@ -157,8 +164,12 @@ class SchoolNotificationsFixtureTest {
             }
             if (calendar != 0L) context.contentResolver.delete(localCalendarUri(calendar, fixtureId), null, null)
             if (::base.isInitialized) {
+                AppRefresh.executor.submit {}.get(TIMEOUT, TimeUnit.MILLISECONDS)
                 snapshots.forEach { (name, values) -> restoreTestPreferences(base.getSharedPreferences(name, Context.MODE_PRIVATE), values) }
-                preferenceNames.forEach { base.deleteSharedPreferences(it) }
+                synchronized(preferenceNames) { preferenceNames.toList() }.forEach { name ->
+                    check(base.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit())
+                    check(base.deleteSharedPreferences(name))
+                }
             }
             if (::directory.isInitialized) directory.deleteRecursively()
         }
@@ -335,7 +346,7 @@ class SchoolNotificationsFixtureTest {
 
     @Test fun successfulRefreshClearsOnlyTheFailureAndARepeatFailureDoesNotRepost() = fixtureTest {
         val portal = PortalFixture()
-        val current = connect(portal)
+        val current = connect(portal, clock = staleClock)
         current.setNotificationsEnabled(true)
         portal.room = "B200"
         current.refresh()
@@ -361,7 +372,7 @@ class SchoolNotificationsFixtureTest {
 
     @Test fun signInFailureAfterNetworkFailureUpdatesTheActionableNotification() = fixtureTest {
         val portal = PortalFixture()
-        val current = connect(portal)
+        val current = connect(portal, clock = staleClock)
         current.setNotificationsEnabled(true)
         portal.offline = true
         current.refresh()
@@ -376,9 +387,120 @@ class SchoolNotificationsFixtureTest {
         assertUnrelatedPreserved()
     }
 
-    @Test fun interruptedDisconnectRecoveryClearsOnlySchoolNotifications() = fixtureTest {
+    @Test fun briefNetworkFailureStaysQuietAndKeepsItsReasonAfterRestart() = fixtureTest {
         val portal = PortalFixture()
         val current = connect(portal)
+        current.setNotificationsEnabled(true)
+        val before = SchoolStore(context).load()!!
+        portal.offline = true
+        current.refresh()
+        assertEquals(SchoolError.NETWORK, current.state.value.error)
+        assertEquals(SchoolError.NETWORK.name, SchoolStore(context).load()!!.lastFailure)
+        assertEquals(before.baseline, SchoolStore(context).load()!!.baseline)
+        assertEquals(before.lastSuccess, current.state.value.lastSuccessMillis)
+        assertSchoolQuiet()
+
+        current.onBackground()
+        val restarted = SchoolScheduleManager(context) { address, language -> SchoolPortalClient(address, language, portal::open) }
+        manager = restarted
+        val shown = withTimeout(TIMEOUT) { restarted.state.first { it.connected } }
+        assertEquals("A new process must show the saved failure reason", SchoolError.NETWORK, shown.error)
+        assertEquals(before.lastSuccess, shown.lastSuccessMillis)
+
+        portal.offline = false
+        restarted.refresh()
+        assertNull(restarted.state.value.error)
+        assertNull(SchoolStore(context).load()!!.lastFailure)
+        assertSchoolQuiet()
+    }
+
+    @Test fun lastingNetworkFailureAlertsOnceAndADismissedAlertStaysDismissed() = fixtureTest {
+        val portal = PortalFixture()
+        var offset = 0L
+        val current = connect(portal, clock = { System.currentTimeMillis() + offset })
+        current.setNotificationsEnabled(true)
+        portal.offline = true
+        current.refresh()
+        assertSchoolQuiet()
+
+        offset = STALE_OFFSET
+        current.refresh()
+        val failure = posted("school-connection")
+        assertEquals(base.getString(R.string.school_sync_connection_notification), text(failure.notification))
+        SystemClock.sleep(25)
+        current.refresh()
+        assertEquals("The same outage must not alert again", failure.postTime, posted("school-connection").postTime)
+        notifications.cancel("school-connection", 0)
+        await("The dismissed failure must clear") { schoolNotifications().none { it.tag == "school-connection" } }
+        current.refresh()
+        assertSchoolQuiet()
+        assertEquals(SchoolError.NETWORK, current.state.value.error)
+
+        portal.offline = false
+        current.refresh()
+        assertNull(current.state.value.error)
+        portal.offline = true
+        current.refresh()
+        posted("school-connection")
+        assertUnrelatedPreserved()
+    }
+
+    @Test fun backgroundSyncRetriesABriefOutageOnceAndNeverRetriesSignIn() = fixtureTest {
+        val portal = PortalFixture()
+        val current = connect(portal)
+        current.setNotifications(SchoolNotificationPreferences(true, setOf(SchoolAlert.CONNECTION_PROBLEMS)))
+        val before = SchoolStore(context).load()!!
+        portal.room = "B200"
+        portal.failNext.set(1)
+
+        current.refreshForJob(retryDelay = 50)
+
+        val recovered = SchoolStore(context).load()!!
+        assertNull(current.state.value.error)
+        assertNull(recovered.lastFailure)
+        assertEquals(listOf("B200"), recovered.baseline.single().rooms)
+        assertTrue(recovered.lastSuccess!! >= before.lastSuccess!!)
+        assertSchoolQuiet()
+
+        portal.offline = true
+        val outageStart = portal.opened.get()
+        current.refreshForJob(retryDelay = 50)
+        assertEquals("A lasting outage gets exactly one retry per job", 2, portal.opened.get() - outageStart)
+        assertEquals(SchoolError.NETWORK, current.state.value.error)
+        assertEquals(recovered.baseline, SchoolStore(context).load()!!.baseline)
+        assertSchoolQuiet()
+
+        portal.offline = false
+        portal.signInFailure = true
+        val signInStart = portal.opened.get()
+        current.refreshForJob(retryDelay = 50)
+        assertEquals(SchoolError.SIGN_IN, current.state.value.error)
+        assertEquals("A sign-in failure must not be retried", 2, portal.opened.get() - signInStart)
+        assertEquals(base.getString(R.string.school_sync_sign_in_notification), text(posted("school-connection").notification))
+        assertUnrelatedPreserved()
+    }
+
+    @Test fun cancellingTheJobDuringItsRetryWaitStopsWithoutAnotherAttempt() = fixtureTest {
+        val portal = PortalFixture()
+        val current = connect(portal)
+        portal.offline = true
+        val start = portal.opened.get()
+        coroutineScope {
+            val job = launch(Dispatchers.IO) { current.refreshForJob(retryDelay = 60_000) }
+            withTimeout(TIMEOUT) { current.state.first { !it.busy && it.error == SchoolError.NETWORK } }
+            job.cancelAndJoin()
+            assertTrue(job.isCancelled)
+        }
+        assertEquals(1, portal.opened.get() - start)
+        assertFalse(current.state.value.busy)
+        portal.offline = false
+        current.refresh()
+        assertNull(current.state.value.error)
+    }
+
+    @Test fun interruptedDisconnectRecoveryClearsOnlySchoolNotifications() = fixtureTest {
+        val portal = PortalFixture()
+        val current = connect(portal, clock = staleClock)
         current.setNotificationsEnabled(true)
         portal.room = "B200"
         current.refresh()
@@ -398,7 +520,7 @@ class SchoolNotificationsFixtureTest {
 
     @Test fun masterDisableAndDisconnectClearBothSchoolTagsOnly() = fixtureTest {
         val portal = PortalFixture()
-        val current = connect(portal)
+        val current = connect(portal, clock = staleClock)
         current.setNotificationsEnabled(true)
         portal.room = "B200"
         current.refresh()
@@ -648,8 +770,10 @@ class SchoolNotificationsFixtureTest {
 
     private fun fixtureTest(block: suspend () -> Unit) = runBlocking { withTimeout(30_000) { block() } }
 
-    private suspend fun connect(portal: PortalFixture): SchoolScheduleManager {
-        val current = SchoolScheduleManager(context) { address, language -> SchoolPortalClient(address, language, portal::open) }
+    private val staleClock: () -> Long = { System.currentTimeMillis() + STALE_OFFSET }
+
+    private suspend fun connect(portal: PortalFixture, clock: () -> Long = System::currentTimeMillis): SchoolScheduleManager {
+        val current = SchoolScheduleManager(context, clock = clock) { address, language -> SchoolPortalClient(address, language, portal::open) }
         manager = current
         current.connect(PORTAL, USERNAME, PASSWORD, zone.id, calendar)
         assertNull(current.state.value.error)
@@ -739,9 +863,13 @@ class SchoolNotificationsFixtureTest {
         @Volatile var absent = false
         @Volatile var notice = ""
         @Volatile var empty = false
+        val failNext = AtomicInteger()
+        val opened = AtomicInteger()
 
         fun open(uri: URI): HttpsURLConnection {
+            opened.incrementAndGet()
             if (offline) throw IOException("Synthetic offline response")
+            if (failNext.getAndUpdate { maxOf(0, it - 1) } > 0) throw IOException("Synthetic brief outage")
             if (signInFailure) return FakeConnection(uri, "{}", 401)
             val body = when {
                 uri.path.endsWith("token") -> JSONObject().put("access_token", TOKEN).put("expires_in", 2592000).toString()
@@ -791,6 +919,8 @@ class SchoolNotificationsFixtureTest {
 
     private companion object {
         const val TIMEOUT = 10_000L
+        /** Past the 24 hour window after which a network failure counts as lasting. */
+        const val STALE_OFFSET = 25L * 60 * 60 * 1000
         const val CHANGES = "school_schedule_changes"
         const val PROBLEMS = "school_connection_problems"
         const val MESSAGES = "school_administration_messages"

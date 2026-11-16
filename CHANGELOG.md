@@ -1,5 +1,25 @@
 # Changes
 
+## 0.7.0
+
+Settings > About now has a manual update check. It finds the latest GitHub release, verifies the download and opens Android to confirm installation. Updates are only checked when you ask.
+
+Week now opens as one continuous timeline that you scroll day by day. Choose 3, 5 or 7 days in Appearance or by holding the Week tab, and every swipe settles on whole days. At normal text sizes the chosen days fit the screen, and large text keeps readable columns that scroll sideways. Saved 3, 5 and 7 day timelines move to the continuous Week with the same number of days, and a saved List stays a List. The rolling and Monday to Friday options are gone with the old paged timelines.
+
+Appearance has a Background tint slider for the empty hour tiles, with a reset button. Tiles are darker by default with wallpaper colors, and today's column stays easy to spot. Week headers only mark today's date number. The current time is a thin line without a dot, and event cards line up exactly with the hour tiles beside them.
+
+Absent and cancelled classes use soft diagonal stripes instead of an outline. A partial absence stripes only the missed time, so it never looks like the whole class was cancelled, and its card no longer repeats the start time.
+
+Short events stay at their real time as readable cards. Events too close together for their titles share one card with a count, and the shortcut above All day is gone. The All day band only appears when there are all day events, has a divider above it, and lets shorter banners fill the space beside longer ones.
+
+Opening today or tapping Today starts at the beginning of a class in progress, or near the current time otherwise. A date opened from the Month grid now starts in List, and a choice you already saved is kept.
+
+Event details show everything already known right away, including reminders, while editing waits for the calendar check. College messages has a small section control at the top right. Messages shows college notices first, then administration messages, and dates found in notices have their own section. Opening a message and going back keeps your place.
+
+The calendar keeps its view and date when Android closes it in the background. Quick repeated swipes in Month and Week no longer stop halfway, and the Today arrow updates while a swipe is still moving.
+
+Brief school connection failures stay quiet and get one retry during a background refresh. A connection warning appears if the schedule has gone a full day without a successful refresh. Problems that need your attention still alert right away, and School schedule keeps the saved error reason after an app restart.
+
 ## 0.6.10
 
 Event details keep school status visible while data refreshes. Screen transitions keep their backgrounds covered, and Search and To do no longer briefly show a loading line under the toolbar. Appearance descriptions are shorter.

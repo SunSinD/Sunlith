@@ -31,6 +31,8 @@ data class CalendarEvent(
     val color: Int = 0,
     val calendarName: String = "",
     val school: SchoolEventInfo? = null,
+    /** Alert reminders read with the calendar load, or null when they were not read. */
+    val reminderMinutes: List<Int>? = null,
 ) {
     val todo: Boolean = TodoMarker.has(description)
 }

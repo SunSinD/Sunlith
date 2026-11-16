@@ -366,25 +366,25 @@ class CalendarTodoTest {
             vm.closeEditor(); vm.openCalendar()
             vm.changeKeepSelectedDate(true)
             vm.changeGroupEmptyHours(false)
-            vm.changeWeekLayout("timeline"); vm.changeVisibleWeekDays(5); vm.changeRollingFiveDays(true)
+            vm.changeWeekLayout("continuous"); vm.changeVisibleWeekDays(5)
             vm.changeViewMode(ViewMode.Week); vm.select(friday); vm.reload()
         }
-        awaitState("The rolling five-day timeline must load the seeded Friday") { !vm.loadingEvents && vm.events.any { it.id == weekIds[4L] } }
+        awaitState("The continuous five-day Week must load the seeded Friday") { !vm.loadingEvents && vm.events.any { it.id == weekIds[4L] } }
         revealTimelineEvent(requireNotNull(weekIds[4L]))
         assertTrue(device.hasObject(header(friday)))
-        captureFinal("five-day-rolling")
+        captureFinal("five-day-continuous")
         onMain { vm.open(Screen.Settings) }
         node(By.pkg(context.packageName).text(localized().getString(R.string.beta_settings_appearance))).click()
-        val toggle = By.pkg(context.packageName).text(localized().getString(R.string.settings_rolling_five_days))
-        scrollTo(toggle)
-        node(toggle).click()
-        awaitState("Turning rolling days off must enable the Monday-Friday workweek") { !vm.rollingFiveDays }
-        captureFinal("workweek-setting")
+        val daysShown = By.pkg(context.packageName).text(localized().getString(R.string.settings_visible_days))
+        scrollTo(daysShown)
+        node(daysShown).click()
+        node(By.pkg(context.packageName).res("settings_choice_7")).click()
+        awaitState("Choosing seven columns must save them") { vm.visibleWeekDays == 7 }
+        captureFinal("visible-days-setting")
         onMain { vm.back() }
-        awaitState("Returning from Settings must retain the selected Friday") { vm.stack.isEmpty() && vm.selectedDate == friday && vm.workweekTimeline() }
+        awaitState("Returning from Settings must retain the selected Friday") { vm.stack.isEmpty() && vm.selectedDate == friday }
         revealTimelineEvent(requireNotNull(weekIds[4L]))
-        assertFalse("The workweek must not compose a weekend header", device.hasObject(header(friday.plusDays(1))))
-        captureFinal("five-day-workweek")
+        captureFinal("seven-day-continuous")
         onMain {
             vm.changeDayLayout("timeline"); vm.changeDayTimelineZoom(100)
             vm.changeViewMode(ViewMode.Day); vm.selectAndFocus(friday)

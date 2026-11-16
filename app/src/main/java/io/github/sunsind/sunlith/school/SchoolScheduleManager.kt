@@ -39,6 +39,7 @@ class SchoolScheduleManager internal constructor(
     private val context: Context,
     private val writer: SchoolCalendarWriter = SchoolCalendarWriter(context),
     private val notices: SchoolNoticeProvider? = null,
+    private val clock: () -> Long = System::currentTimeMillis,
     private val clientFactory: (String, String) -> SchoolPortalClient = { address, language ->
         SchoolPortalClient.routed(address, language, SchoolPortalNetwork.routes(context))
     },
@@ -123,7 +124,13 @@ class SchoolScheduleManager internal constructor(
         val stamp = generation.get()
         scope.async { refreshInternal(false, stamp) }.await()
     }
-    internal suspend fun refreshForJob() { notices?.refreshForJob(); refreshInternal(false, waitForLock = true) }
+    /** A brief network or portal outage gets one later attempt in the same job. Other failures wait for the next sync. */
+    internal suspend fun refreshForJob(retryDelay: Long = JOB_RETRY_DELAY) {
+        notices?.refreshForJob()
+        if (refreshInternal(false, waitForLock = true) !in TRANSIENT) return
+        delay(retryDelay)
+        refreshInternal(false, waitForLock = true)
+    }
     /** Called by the messages reader after college notices changed, so notice events update without waiting for the next periodic sync. */
     internal fun syncNotices() { scope.launch { syncCachedNotices() } }
     internal suspend fun syncCachedNotices() {
@@ -159,15 +166,15 @@ class SchoolScheduleManager internal constructor(
             }
         }
     }
-    private suspend fun refreshInternal(throttled: Boolean, stamp: Long = generation.get(), waitForLock: Boolean = false) {
+    private suspend fun refreshInternal(throttled: Boolean, stamp: Long = generation.get(), waitForLock: Boolean = false): SchoolError? {
         ready.await()
-        withContext(Dispatchers.IO) {
-            if (waitForLock) mutex.lock() else if (!mutex.tryLock()) return@withContext
+        return withContext(Dispatchers.IO) {
+            if (waitForLock) mutex.lock() else if (!mutex.tryLock()) return@withContext null
             try {
-                if (record == null) return@withContext
-                if (disconnectRequested) return@withContext
-                if (generation.get() != stamp) return@withContext
-                if (throttled && SystemClock.elapsedRealtime() - lastAttempt < THROTTLE) return@withContext
+                if (record == null) return@withContext null
+                if (disconnectRequested) return@withContext null
+                if (generation.get() != stamp) return@withContext null
+                if (throttled && SystemClock.elapsedRealtime() - lastAttempt < THROTTLE) return@withContext null
                 lastAttempt = SystemClock.elapsedRealtime()
                 operation {
                     recover()
@@ -395,30 +402,39 @@ class SchoolScheduleManager internal constructor(
         store.save(next); record = next
         if (adopted != null) { if (journal.complete) notifier.clearReview(); AppRefresh.refresh(context) }
     }
-    private suspend fun operation(block: suspend () -> Unit) {
+    private suspend fun operation(block: suspend () -> Unit): SchoolError? {
         activeRequest = currentCoroutineContext()[Job]
         stage = Stage.START
         mutableState.value = mutableState.value.copy(busy = true, error = null)
+        var failure: SchoolError? = null
         try { block() }
-        catch (e: CancellationException) { if (e is TimeoutCancellationException) failed(SchoolError.NETWORK.also { diagnose(it, e) }) else throw e }
-        catch (e: Exception) { failed(error(e).also { diagnose(it, e) }) }
+        catch (e: CancellationException) { if (e is TimeoutCancellationException) failure = SchoolError.NETWORK.also { diagnose(it, e); failed(it) } else throw e }
+        catch (e: Exception) { failure = error(e).also { diagnose(it, e); failed(it) } }
         finally {
             activeRequest = null
-            mutableState.value = mutableState.value.copy(busy = false)
+            // An operation that stops without publishing keeps showing the saved reason, as the failure notification promises.
+            mutableState.value = mutableState.value.copy(busy = false, error = mutableState.value.error ?: savedFailure(record))
         }
+        return failure
     }
     private fun failed(reason: SchoolError) {
         val current = record
-        if (current != null && current.lastFailure != reason.name && current.journal == null && current.disconnecting == null) {
-            val next = current.copy(lastFailure = reason.name)
+        if (current != null && current.journal == null && current.disconnecting == null) {
+            val signIn = reason == SchoolError.SIGN_IN || reason == SchoolError.MFA_REQUIRED
+            // A brief outage alerts only once the schedule has gone as long without a refresh as the screen's stale warning.
+            val lasting = reason !in TRANSIENT || current.lastSuccess.let { it == null || clock() - it >= LASTING_FAILURE }
+            val streak = current.lastFailure != null
+            val alert = lasting && (!streak || !current.failureNotified || (signIn && current.lastFailure != reason.name))
+            val next = current.copy(lastFailure = reason.name, failureNotified = (streak && current.failureNotified) || alert)
             try {
-                store.save(next); record = next
-                if (current.lastFailure == null || reason == SchoolError.SIGN_IN || reason == SchoolError.MFA_REQUIRED) notifier.failure(next, reason)
+                if (next != current) { store.save(next); record = next }
+                if (alert) notifier.failure(next, reason)
             } catch (_: Exception) { }
         }
         publish()
         mutableState.value = mutableState.value.copy(error = reason)
     }
+    private fun savedFailure(current: SchoolRecord?): SchoolError? = current?.lastFailure?.let { name -> SchoolError.entries.firstOrNull { it.name == name } }
     private fun publish() {
         val current = record
         if (current != null) {
@@ -428,7 +444,7 @@ class SchoolScheduleManager internal constructor(
         val choices = calendarChoices
         mutableState.value = if (current == null) SchoolScheduleState(availableCalendars = choices, calendarId = defaultCalendar, calendarsLoaded = calendarsLoaded, busy = mutableState.value.busy)
         else SchoolScheduleState(connected = true, busy = mutableState.value.busy, portalAddress = current.portal, accountName = current.username,
-            termName = current.term, timeZone = current.zone, lastSuccessMillis = current.lastSuccess, calendarId = current.calendarId,
+            termName = current.term, timeZone = current.zone, lastSuccessMillis = current.lastSuccess, error = savedFailure(current), calendarId = current.calendarId,
             availableCalendars = choices, calendarsLoaded = calendarsLoaded, eventCount = current.ledger.size, notifications = current.notifications,
             pendingChanges = if (pending != null) mutableState.value.pendingChanges else null)
     }
@@ -454,6 +470,10 @@ class SchoolScheduleManager internal constructor(
     }
     companion object {
         private const val THROTTLE = 5 * 60_000L
+        private const val JOB_RETRY_DELAY = 45_000L
+        /** Matches the School schedule screen's stale warning. */
+        private const val LASTING_FAILURE = 24L * 60 * 60 * 1000
+        private val TRANSIENT = setOf(SchoolError.NETWORK, SchoolError.UNAVAILABLE)
         /** College notices and class liftings older than this many days are left as they were. */
         internal const val NOTICE_DAYS = 14L
         private val LOCAL_STAGES = setOf(Stage.RECOVER, Stage.PRUNE, Stage.PLAN, Stage.CALENDAR)

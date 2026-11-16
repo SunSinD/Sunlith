@@ -158,13 +158,53 @@ class SchoolMessagesUiTest {
         assertEquals(listOf(affectedDay, affectedDay), openedDates)
         device.pressBack()
         node(tag("school_admin_list"))
-        scrollTo(tag("school_suggestion_add_${suggestion.id}"), "school_admin_list").click()
+        openDates()
+        scrollTo(tag("school_suggestion_add_${suggestion.id}"), "school_suggestion_list").click()
         await { suggestions.size == 1 }
         assertEquals("A suggestion must forward the exact date and source text for review.", listOf(suggestion), suggestions)
         assertEquals("Adding a suggestion must not itself rewrite the administration state.", adminState(confirmed = true), controller.state.value)
         assertTrue(openedUrls.isEmpty())
         device.pressBack()
         await { backedOut == 1 }
+    }
+
+    @Test
+    fun messagesComeFirstDatesHaveTheirOwnSectionAndBackKeepsTheSectionAndScroll() = checked {
+        show(adminState(confirmed = true), widthDp = 320f, fontScaleOverride = 2f)
+        val picker = node(tag("school_messages_section"))
+        val sectionName = text(R.string.school_messages_section_main)
+        assertTrue("The control names the shown section",
+            picker.contentDescription.orEmpty().contains(sectionName) || picker.hasObject(By.descContains(sectionName)))
+        assertFalse("Dates found in notices are not mixed into the messages", device.hasObject(tag("school_suggestion_add_${suggestion.id}")))
+        val source = controller.state.value.admin.first()
+        val row = scrollTo(tag("school_admin_${source.id}"), "school_admin_list")
+        val top = row.visibleBounds.top
+        row.click()
+        node(tag("school_admin_detail"))
+        device.pressBack()
+        node(tag("school_admin_list"))
+        idle()
+        assertEquals("Back must return to the same place in the list", top, node(tag("school_admin_${source.id}")).visibleBounds.top)
+        openDates()
+        node(tag("school_messages_section")).click()
+        assertTrue("The menu marks the shown section", node(tag("school_messages_section_dates")).let {
+            it.isSelected || it.isChecked || it.hasObject(By.selected(true)) || it.hasObject(By.checked(true))
+        })
+        device.pressBack()
+        idle()
+        node(tag("school_suggestion_list"))
+        node(By.text(suggestion.detail))
+        node(tag("school_messages_section")).click()
+        node(tag("school_messages_section_main")).click()
+        node(tag("school_admin_list"))
+        assertEquals("Switching sections keeps the messages scroll", top, node(tag("school_admin_${source.id}")).visibleBounds.top)
+        assertTrue(openedUrls.isEmpty() && suggestions.isEmpty())
+    }
+
+    private fun openDates() {
+        node(tag("school_messages_section")).click()
+        node(tag("school_messages_section_dates")).click()
+        node(tag("school_suggestion_list"))
     }
 
     @Test
@@ -268,7 +308,11 @@ class SchoolMessagesUiTest {
                 await { openedDates.size == openedDateCount + 1 }
                 assertEquals(affectedDay, openedDates.last())
                 val suggestionCount = suggestions.size
-                scrollTo(tag("school_suggestion_add_${suggestion.id}"), "school_admin_list").click()
+                val picker = node(tag("school_messages_section"))
+                assertTrue("The section control must fit a narrow screen at this text size", picker.visibleBounds.right <= device.displayWidth &&
+                    picker.visibleBounds.height() >= 48 * context.resources.displayMetrics.density - 1)
+                openDates()
+                scrollTo(tag("school_suggestion_add_${suggestion.id}"), "school_suggestion_list").click()
                 await { suggestions.size == suggestionCount + 1 }
                 assertEquals(suggestion, suggestions.last())
                 capture("$language-${(scale * 100).toInt()}-suggestion")

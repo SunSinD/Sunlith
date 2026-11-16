@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -187,8 +188,8 @@ private fun FullMonthCell(
                     labels.forEachIndexed { index, (event, colors, text) ->
                         val y = chipTop + index * chip.toPx()
                         drawRoundRect(colors.container, Offset(inset, y), Size(available, chipHeight), CornerRadius(4.dp.toPx()))
-                        colors.border?.let { border ->
-                            drawRoundRect(border, Offset(inset, y), Size(available, chipHeight), CornerRadius(4.dp.toPx()), style = Stroke(1.dp.toPx()))
+                        colors.hatch?.let { stripe ->
+                            translate(inset, y) { drawHatch(stripe, area = Size(available, chipHeight)) }
                         }
                         val todoWidth = if (event.todo) 10.dp.toPx() else 0f
                         if (event.todo) {

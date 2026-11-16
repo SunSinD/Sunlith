@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_update_check">Check for updates</string>
+    <string name="app_update_checking">Checking for updates</string>
+    <string name="app_update_up_to_date">Sunlith is up to date</string>
+    <string name="app_update_available">Version %1$s is available</string>
+    <string name="app_update_action_update">Update</string>
+    <string name="app_update_downloading">Downloading version %1$s</string>
+    <string name="app_update_percent">%1$d%%</string>
+    <string name="app_update_progress">Download progress</string>
+    <string name="app_update_preparing">Getting the update ready</string>
+    <string name="app_update_permission">Allow Sunlith to install updates</string>
+    <string name="app_update_permission_detail">Android asks for this before it installs the update.</string>
+    <string name="app_update_action_allow">Allow</string>
+    <string name="app_update_ready">Version %1$s is ready to install</string>
+    <string name="app_update_action_install">Install</string>
+    <string name="app_update_installing">Installing version %1$s</string>
+    <string name="app_update_installing_detail">Confirm in the Android window.</string>
+    <string name="app_update_error_network">Couldn\'t reach GitHub. Check your connection.</string>
+    <string name="app_update_error_busy">GitHub is busy right now. Try again later.</string>
+    <string name="app_update_error_not_found">No update is ready yet. Try again later.</string>
+    <string name="app_update_error_not_verified">The update couldn\'t be verified, so it wasn\'t installed.</string>
+    <string name="app_update_error_storage">There isn\'t enough space for the update.</string>
+    <string name="app_update_error_installer">This phone couldn\'t open the installer.</string>
+</resources>

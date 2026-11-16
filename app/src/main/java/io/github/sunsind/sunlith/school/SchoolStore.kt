@@ -51,6 +51,8 @@ internal data class SchoolRecord(
     val termKey: String = "",
     val pendingReview: String? = null,
     val termSource: SchoolTerm? = null,
+    /** Whether the current failure streak already reached the connection notification step. Only meaningful while [lastFailure] is set. */
+    val failureNotified: Boolean = false,
 ) {
     fun json(): JSONObject = JSONObject().put("version", 1).put("portal", portal).put("username", username).put("password", password)
         .put("zone", zone).put("calendar", calendarId).put("account", account).put("connection", connection).put("token", token).put("expires", expiresAt)
@@ -63,6 +65,7 @@ internal data class SchoolRecord(
         .put("termKey", termKey)
         .put("pendingReview", pendingReview ?: JSONObject.NULL)
         .put("termSource", termSource?.let { JSONObject().put("code", it.code).put("name", it.name).put("start", it.start.toString()).put("end", it.end.toString()) } ?: JSONObject.NULL)
+        .put("failureNotified", failureNotified)
     companion object {
         fun read(j: JSONObject): SchoolRecord {
             schoolRequire(j.getInt("version") == 1)
@@ -77,7 +80,9 @@ internal data class SchoolRecord(
                 j.getJSONObject("calendarIdentity").let { r -> r.keys().asSequence().associateWith { if (r.isNull(it)) null else r.getString(it) } },
                 if (j.isNull("disconnecting")) null else j.getString("disconnecting"), j.optString("termKey", ""),
                 if (j.isNull("pendingReview")) null else j.getString("pendingReview"),
-                j.optJSONObject("termSource")?.let { SchoolTerm(it.getString("code"), it.getString("name"), java.time.LocalDate.parse(it.getString("start")), java.time.LocalDate.parse(it.getString("end"))) })
+                j.optJSONObject("termSource")?.let { SchoolTerm(it.getString("code"), it.getString("name"), java.time.LocalDate.parse(it.getString("start")), java.time.LocalDate.parse(it.getString("end"))) },
+                // Earlier versions alerted on the first failure of every streak.
+                j.optBoolean("failureNotified", true))
         }
     }
 }

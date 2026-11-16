@@ -62,14 +62,14 @@ class SettingsPreferencesTest {
         assertTrue(settings.swipeNavigation)
         assertEquals("continuous", settings.agendaRange)
         assertEquals("split", settings.monthLayout)
-        assertEquals("list", settings.weekLayout)
+        assertEquals("A new setup opens Week as the continuous timeline", "continuous", settings.weekLayout)
         assertEquals("cards", settings.dayLayout)
         assertEquals(100, settings.dayTimelineZoom)
         assertEquals(100, settings.weekTimelineZoom)
         assertFalse(settings.groupEmptyHours)
-        assertFalse(settings.rollingFiveDays)
         assertFalse(settings.weekHeaderSelection)
-        assertEquals(7, settings.visibleWeekDays)
+        assertEquals("Five columns by default", 5, settings.visibleWeekDays)
+        assertEquals(SettingsStore.DEFAULT_TIMELINE_TINT, settings.timelineTint)
         assertEquals("sunlith", settings.layoutPreset)
     }
 
@@ -91,7 +91,7 @@ class SettingsPreferencesTest {
             val previous = prefs.all.filterKeys { it != "day_layout" }
             assertEquals("cards", SettingsStore(isolated).dayLayout)
             assertTrue(prefs.getBoolean("list_defaults_v2", false))
-            assertEquals(previous, prefs.all.filterKeys { it !in setOf("day_layout", "list_defaults_v2") })
+            assertEquals(previous, prefs.all.filterKeys { it !in setOf("day_layout", "list_defaults_v2", "continuous_week_v3") })
             assertEquals("cards", SettingsStore(isolated).dayLayout)
         }
     }
@@ -136,7 +136,7 @@ class SettingsPreferencesTest {
                     val afterMigration = prefs.all.toMap()
                     repeat(3) {
                         val restored = SettingsStore(isolated)
-                        assertEquals(week, restored.weekLayout)
+                        assertEquals(if (week == "timeline") "continuous" else week, restored.weekLayout)
                         assertEquals(days, restored.visibleWeekDays)
                         assertEquals(preset, restored.layoutPreset)
                         assertEquals(afterMigration, prefs.all)
@@ -163,7 +163,7 @@ class SettingsPreferencesTest {
         SettingsStore(isolated).weekTimelineZoom = 50
         assertEquals(200, SettingsStore(isolated).dayTimelineZoom)
         assertEquals("cards", settings.dayLayout)
-        assertEquals("list", settings.weekLayout)
+        assertEquals("continuous", settings.weekLayout)
     }
 
     @Test
@@ -217,7 +217,7 @@ class SettingsPreferencesTest {
             swipeNavigation = false
             agendaRange = "week"
             monthLayout = "full"
-            weekLayout = "timeline"
+            weekLayout = "list"
             dayLayout = "schedule"
             visibleWeekDays = 3
             layoutPreset = "custom"
@@ -237,7 +237,7 @@ class SettingsPreferencesTest {
         assertFalse(restored.swipeNavigation)
         assertEquals("week", restored.agendaRange)
         assertEquals("full", restored.monthLayout)
-        assertEquals("timeline", restored.weekLayout)
+        assertEquals("list", restored.weekLayout)
         assertEquals("schedule", restored.dayLayout)
         assertEquals(3, restored.visibleWeekDays)
         assertEquals("custom", restored.layoutPreset)
@@ -254,48 +254,47 @@ class SettingsPreferencesTest {
     }
 
     @Test
-    fun fiveDayWorkweekIsDefaultAndRollingOptInPreservesListDefaults() {
+    fun backgroundTintPersistsWithinItsRangeWithoutTouchingOtherSettings() {
         val settings = SettingsStore(isolated)
-        assertFalse(settings.rollingFiveDays)
-        settings.rollingFiveDays = true
-        val restored = SettingsStore(isolated)
-        assertTrue(restored.rollingFiveDays)
-        assertEquals("list", restored.weekLayout)
-        assertEquals("cards", restored.dayLayout)
-        assertEquals(7, restored.visibleWeekDays)
-        restored.rollingFiveDays = false
-        assertFalse(SettingsStore(isolated).rollingFiveDays)
-    }
-
-    @Test
-    fun workweekMigrationPreservesExplicitLegacyChoicesAndUsesTheNewDefaultWhenUnset() {
-        val prefs = isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
-        listOf(null to false, true to false, false to true).forEach { (legacy, rolling) ->
-            prefs.edit().clear().putBoolean("list_defaults_v2", true)
-                .putString("day_layout", "timeline").putString("week_layout", "list")
-                .putInt("visible_week_days", 5).putInt("day_timeline_zoom", 150)
-                .putBoolean("monday", false).apply {
-                    if (legacy != null) putBoolean("five_day_workweek", legacy)
-                }.commit()
-            val unrelated = prefs.all.filterKeys { it != "five_day_workweek" }
-            val restored = SettingsStore(isolated)
-            assertEquals("Legacy workweek=$legacy must preserve an explicit choice or take the new default.", rolling, restored.rollingFiveDays)
-            assertFalse("The opposite legacy switch must not be migrated again.", prefs.contains("five_day_workweek"))
-            assertEquals(unrelated, prefs.all.filterKeys { it != "rolling_five_days" })
-            assertEquals(rolling, SettingsStore(isolated).rollingFiveDays)
-            assertFalse(restored.weekHeaderSelection)
+        listOf(-5 to 0, 0 to 0, 35 to 35, 100 to 100, 140 to 100).forEach { (requested, expected) ->
+            settings.timelineTint = requested
+            repeat(2) { assertEquals(expected, SettingsStore(isolated).timelineTint) }
         }
+        isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE).edit().putInt("timeline_tint", 900).commit()
+        assertEquals(100, SettingsStore(isolated).timelineTint)
+        assertEquals("continuous", SettingsStore(isolated).weekLayout)
+        assertEquals("system", SettingsStore(isolated).themeMode)
     }
 
     @Test
-    fun existingRollingPreferenceWinsOverALeftoverLegacySwitch() {
+    fun pagedTimelinesMigrateOnceToContinuousAndOtherChoicesStay() {
         val prefs = isolated.getSharedPreferences("sunlith", Context.MODE_PRIVATE)
-        listOf(false, true).forEach { rolling ->
-            listOf(false, true).forEach { legacy ->
-                prefs.edit().clear().putBoolean("list_defaults_v2", true)
-                    .putBoolean("rolling_five_days", rolling).putBoolean("five_day_workweek", legacy).commit()
-                assertEquals(rolling, SettingsStore(isolated).rollingFiveDays)
-                assertFalse(prefs.contains("five_day_workweek"))
+        data class Case(val week: String?, val days: Int?, val expectedWeek: String, val expectedDays: Int)
+        listOf(
+            Case("timeline", 3, "continuous", 3), Case("timeline", 5, "continuous", 5), Case("timeline", null, "continuous", 7),
+            Case("continuous", null, "continuous", 7), Case("continuous", 3, "continuous", 3),
+            Case("list", 7, "list", 7), Case("list", null, "list", 5), Case(null, null, "continuous", 5),
+        ).forEach { case ->
+            prefs.edit().clear().putBoolean("list_defaults_v2", true).putString("day_layout", "timeline")
+                .putInt("day_timeline_zoom", 150).putBoolean("monday", false)
+                .putBoolean("rolling_five_days", true).putBoolean("five_day_workweek", false).apply {
+                    case.week?.let { putString("week_layout", it) }
+                    case.days?.let { putInt("visible_week_days", it) }
+                }.commit()
+            val unrelated = prefs.all.filterKeys { it !in setOf("week_layout", "visible_week_days") }
+            val migrated = SettingsStore(isolated)
+            assertEquals("$case", case.expectedWeek, migrated.weekLayout)
+            assertEquals("$case", case.expectedDays, migrated.visibleWeekDays)
+            assertTrue("The retired rolling switch is kept as stored", prefs.getBoolean("rolling_five_days", false))
+            assertFalse("The retired workweek switch is kept as stored", prefs.getBoolean("five_day_workweek", true))
+            assertEquals("$case must not reset other settings, including the retired switches", unrelated,
+                prefs.all.filterKeys { it !in setOf("week_layout", "visible_week_days", "continuous_week_v3") })
+            // A later explicit choice is never migrated again.
+            migrated.weekLayout = "list"
+            migrated.visibleWeekDays = 3
+            repeat(2) {
+                assertEquals("list", SettingsStore(isolated).weekLayout)
+                assertEquals(3, SettingsStore(isolated).visibleWeekDays)
             }
         }
     }
@@ -305,16 +304,13 @@ class SettingsPreferencesTest {
         val settings = SettingsStore(isolated)
         assertFalse(settings.weekHeaderSelection)
         settings.weekHeaderSelection = true
-        settings.rollingFiveDays = true
         val restored = SettingsStore(isolated)
         assertTrue(restored.weekHeaderSelection)
-        assertTrue(restored.rollingFiveDays)
         restored.weekHeaderSelection = false
         assertFalse(SettingsStore(isolated).weekHeaderSelection)
-        assertTrue(SettingsStore(isolated).rollingFiveDays)
-        assertEquals("list", restored.weekLayout)
+        assertEquals("continuous", restored.weekLayout)
         assertEquals("cards", restored.dayLayout)
-        assertEquals(7, restored.visibleWeekDays)
+        assertEquals(5, restored.visibleWeekDays)
     }
 
     @Test
@@ -332,10 +328,10 @@ class SettingsPreferencesTest {
         val settings = SettingsStore(isolated)
         assertEquals("continuous", settings.agendaRange)
         assertEquals("split", settings.monthLayout)
-        assertEquals("list", settings.weekLayout)
+        assertEquals("continuous", settings.weekLayout)
         assertEquals("cards", settings.dayLayout)
         assertEquals("sunlith", settings.layoutPreset)
-        assertEquals(7, settings.visibleWeekDays)
+        assertEquals(5, settings.visibleWeekDays)
         assertEquals("dark", settings.themeMode)
         assertEquals(14, settings.widgetDays)
     }
@@ -362,7 +358,7 @@ class SettingsPreferencesTest {
         val settings = SettingsStore(isolated).apply {
             agendaRange = "day"
             monthLayout = "full"
-            weekLayout = "timeline"
+            weekLayout = "list"
             dayLayout = "schedule"
             visibleWeekDays = 3
             layoutPreset = "planner"
@@ -370,13 +366,14 @@ class SettingsPreferencesTest {
         assertThrows(IllegalArgumentException::class.java) { settings.agendaRange = "invalid" }
         assertThrows(IllegalArgumentException::class.java) { settings.monthLayout = "invalid" }
         assertThrows(IllegalArgumentException::class.java) { settings.weekLayout = "invalid" }
+        assertThrows("The retired paged timeline cannot be saved again", IllegalArgumentException::class.java) { settings.weekLayout = "timeline" }
         assertThrows(IllegalArgumentException::class.java) { settings.dayLayout = "invalid" }
         assertThrows(IllegalArgumentException::class.java) { settings.visibleWeekDays = 4 }
         assertThrows(IllegalArgumentException::class.java) { settings.layoutPreset = "invalid" }
         val restored = SettingsStore(isolated)
         assertEquals("day", restored.agendaRange)
         assertEquals("full", restored.monthLayout)
-        assertEquals("timeline", restored.weekLayout)
+        assertEquals("list", restored.weekLayout)
         assertEquals("schedule", restored.dayLayout)
         assertEquals(3, restored.visibleWeekDays)
         assertEquals("planner", restored.layoutPreset)

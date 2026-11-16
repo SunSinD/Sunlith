@@ -1,6 +1,7 @@
 package io.github.sunsind.sunlith
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Build
@@ -13,6 +14,7 @@ import io.github.sunsind.sunlith.data.CalendarDates
 import io.github.sunsind.sunlith.data.CalendarRepository
 import io.github.sunsind.sunlith.data.EventDraft
 import io.github.sunsind.sunlith.system.SettingsStore
+import java.io.File
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -29,8 +31,23 @@ class DemoFixtureTest {
         if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
     }.toTypedArray())
 
+    /**
+     * Seeds and launches, then puts the app's preferences back exactly as they were before the test. A screenshot run
+     * that needs the demo settings to stay passes the instrumentation argument keepDemoState=true.
+     */
     @Test
     fun seedDemoCalendarAndLaunch() {
+        requireEmulator()
+        if (InstrumentationRegistry.getArguments().getString("keepDemoState") == "true") {
+            seedAndLaunch()
+            return
+        }
+        val preferences = SharedPreferencesSnapshot(InstrumentationRegistry.getInstrumentation().targetContext)
+        try { seedAndLaunch() } finally { preferences.restore() }
+    }
+
+    /** Seeds the demo calendar and its settings and launches the app. The caller restores the preferences. */
+    fun seedAndLaunch() {
         requireEmulator()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -91,5 +108,42 @@ class DemoFixtureTest {
             putString("demoDate", today.toString())
             putString("demoData", "Synthetic sample events, created only by instrumentation on an emulator.")
         })
+    }
+}
+
+/**
+ * Every shared preferences file of the app as it was when created: its exact bytes and values, or its absence. [restore]
+ * puts each file back byte for byte, refreshes the in-memory copy the app reads, and removes files the test created.
+ */
+internal class SharedPreferencesSnapshot(private val context: Context) {
+    private val dir = File(context.applicationInfo.dataDir, "shared_prefs")
+    private val saved: Map<String, Pair<ByteArray, Map<String, *>>> = names().associateWith { name ->
+        File(dir, "$name.xml").readBytes() to context.getSharedPreferences(name, Context.MODE_PRIVATE).all.toMap()
+    }
+
+    private fun names(): List<String> = dir.listFiles { file -> file.isFile && file.name.endsWith(".xml") }
+        ?.map { it.name.removeSuffix(".xml") }.orEmpty()
+
+    fun restore() {
+        (names() - saved.keys).forEach { name ->
+            context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
+            context.deleteSharedPreferences(name)
+        }
+        saved.forEach { (name, state) ->
+            val (bytes, values) = state
+            val edit = context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear()
+            values.forEach { (key, value) ->
+                when (value) {
+                    is Boolean -> edit.putBoolean(key, value)
+                    is Int -> edit.putInt(key, value)
+                    is Long -> edit.putLong(key, value)
+                    is Float -> edit.putFloat(key, value)
+                    is String -> edit.putString(key, value)
+                    is Set<*> -> edit.putStringSet(key, value.filterIsInstance<String>().toSet())
+                }
+            }
+            edit.commit()
+            File(dir, "$name.xml").writeBytes(bytes)
+        }
     }
 }

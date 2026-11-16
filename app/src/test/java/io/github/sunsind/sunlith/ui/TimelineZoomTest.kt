@@ -2,6 +2,7 @@ package io.github.sunsind.sunlith.ui
 
 import androidx.compose.animation.core.TargetBasedAnimation
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import kotlin.math.abs
@@ -108,12 +109,30 @@ class TimelineZoomTest {
 
     @Test
     fun todayTintIsStrongerThanTheGridAndDistinctFromTheSelectionAccent() {
-        for (palette in listOf(DarkPalette, LightPalette)) {
-            val colors = timelineGridColors(palette)
-            assertTrue(colors.today != colors.tile)
+        for (palette in listOf(DarkPalette, LightPalette)) for (tint in listOf(0, 40, 100)) {
+            val colors = timelineGridColors(palette, tint)
+            assertTrue("Today stays distinguishable at $tint", colors.today != colors.tile)
             assertTrue(colors.today != palette.accent)
             assertEquals(palette.accent, colors.now)
         }
+    }
+
+    @Test
+    fun backgroundTintIsBoundedDarkerOnWallpaperDarkPalettesAndStillVisibleOnLightOnes() {
+        assertEquals(0f, timelineTileFraction(-20, true), 0f)
+        assertEquals(timelineTileFraction(100, true), timelineTileFraction(400, true), 0f)
+        assertTrue(timelineTileFraction(100, true) <= 0.2f && timelineTileFraction(100, false) <= 0.2f)
+        // A wallpaper dark palette with a bright outline: the old mix toward the outline turned tiles light grey.
+        val wallpaper = DarkPalette.copy(background = androidx.compose.ui.graphics.Color(0xFF141218),
+            line = androidx.compose.ui.graphics.Color(0xFF8E7F7A), ink = androidx.compose.ui.graphics.Color(0xFFE6E0E9))
+        val oldTile = androidx.compose.ui.graphics.lerp(wallpaper.background, wallpaper.line, 0.55f)
+        val tile = timelineGridColors(wallpaper).tile
+        assertTrue("The default wallpaper tile is visibly darker than before", tile.luminance() < oldTile.luminance() * 0.6f)
+        assertTrue("It still stands out from the background", tile.luminance() > wallpaper.background.luminance())
+        val light = timelineGridColors(LightPalette).tile
+        assertTrue("Light tiles stay darker than the background", light.luminance() < LightPalette.background.luminance())
+        assertTrue("A stronger tint is a stronger step", timelineGridColors(LightPalette, 100).tile.luminance() < light.luminance())
+        assertEquals("No tint leaves the plain background", DarkPalette.background.luminance(), timelineGridColors(DarkPalette, 0).tile.luminance(), 0.002f)
     }
 
     /** Every value the release glide shows between [from] and its settled zoom, sampled each 60 Hz frame. */

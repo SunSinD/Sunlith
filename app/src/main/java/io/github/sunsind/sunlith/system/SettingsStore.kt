@@ -21,11 +21,14 @@ class SettingsStore(context: Context) {
                 prefs.getString("day_layout", "cards") == "timeline") migration.putString("day_layout", "cards")
             migration.apply()
         }
-        if (prefs.contains(LEGACY_WORKWEEK)) {
-            // v0.6.8 stored the opposite toggle. Only an explicit "off" meant the user chose rolling days.
-            val legacy = prefs.getBoolean(LEGACY_WORKWEEK, false)
-            val edit = prefs.edit().remove(LEGACY_WORKWEEK)
-            if (!prefs.contains(ROLLING_FIVE_DAYS)) edit.putBoolean(ROLLING_FIVE_DAYS, rollingFiveDaysFromLegacy(legacy))
+        if (!prefs.getBoolean(CONTINUOUS_WEEK_V3, false)) {
+            val saved = prefs.getString(WEEK_LAYOUT, null)
+            val days = if (prefs.contains(VISIBLE_DAYS)) prefs.getInt(VISIBLE_DAYS, 7) else null
+            val migrated = migrateWeekLayout(saved, days)
+            // The retired rolling and workweek switches stay stored as they were. Nothing reads them any more.
+            val edit = prefs.edit().putBoolean(CONTINUOUS_WEEK_V3, true)
+            migrated.layout?.let { edit.putString(WEEK_LAYOUT, it) }
+            migrated.days?.let { edit.putInt(VISIBLE_DAYS, it) }
             edit.apply()
         }
     }
@@ -107,8 +110,8 @@ class SettingsStore(context: Context) {
         set(value) { saveChoice("month_layout", value, setOf("split", "full")) }
 
     var weekLayout: String
-        get() = choice("week_layout", "list", setOf("list", "timeline", "continuous"))
-        set(value) { saveChoice("week_layout", value, setOf("list", "timeline", "continuous")) }
+        get() = choice(WEEK_LAYOUT, DEFAULT_WEEK_LAYOUT, WEEK_LAYOUTS)
+        set(value) { saveChoice(WEEK_LAYOUT, value, WEEK_LAYOUTS) }
 
     var groupEmptyHours: Boolean
         get() = prefs.getBoolean("group_empty_hours", false)
@@ -126,19 +129,20 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt("week_timeline_zoom", 100).coerceIn(50, 200)
         set(value) { prefs.edit().putInt("week_timeline_zoom", value.coerceIn(50, 200)).apply() }
 
-    /** The 5-day timeline shows Monday to Friday unless the user opts into five days starting at the selected date. */
-    var rollingFiveDays: Boolean
-        get() = prefs.getBoolean(ROLLING_FIVE_DAYS, false)
-        set(value) { prefs.edit().putBoolean(ROLLING_FIVE_DAYS, value).apply() }
+    /** How strongly the empty hour tiles stand out from the background, in percent. */
+    var timelineTint: Int
+        get() = prefs.getInt(TIMELINE_TINT, DEFAULT_TIMELINE_TINT).coerceIn(0, 100)
+        set(value) { prefs.edit().putInt(TIMELINE_TINT, value.coerceIn(0, 100)).apply() }
 
     /** Tapping a date above a Week timeline selects it only when the user opts in. */
     var weekHeaderSelection: Boolean
         get() = prefs.getBoolean("week_header_selection", false)
         set(value) { prefs.edit().putBoolean("week_header_selection", value).apply() }
 
+    /** Columns the continuous Week shows at once. */
     var visibleWeekDays: Int
-        get() = prefs.getInt("visible_week_days", 7).takeIf { it in setOf(3, 5, 7) } ?: 7
-        set(value) { require(value in setOf(3, 5, 7)); prefs.edit().putInt("visible_week_days", value).apply() }
+        get() = prefs.getInt(VISIBLE_DAYS, DEFAULT_VISIBLE_DAYS).takeIf { it in VISIBLE_DAY_CHOICES } ?: DEFAULT_VISIBLE_DAYS
+        set(value) { require(value in VISIBLE_DAY_CHOICES); prefs.edit().putInt(VISIBLE_DAYS, value).apply() }
 
     var layoutPreset: String
         get() = choice("layout_preset", "sunlith", setOf("sunlith", "schedule", "planner", "custom")).let { if (it == "schedule") "custom" else it }
@@ -152,14 +156,31 @@ class SettingsStore(context: Context) {
         prefs.edit().putString(key, value).apply()
     }
 
-    private companion object {
-        const val LEGACY_WORKWEEK = "five_day_workweek"
-        const val ROLLING_FIVE_DAYS = "rolling_five_days"
+    companion object {
+        const val DEFAULT_WEEK_LAYOUT = "continuous"
+        const val DEFAULT_VISIBLE_DAYS = 5
+        const val DEFAULT_TIMELINE_TINT = 40
+        val WEEK_LAYOUTS = setOf("list", "continuous")
+        val VISIBLE_DAY_CHOICES = listOf(3, 5, 7)
+        private const val WEEK_LAYOUT = "week_layout"
+        private const val VISIBLE_DAYS = "visible_week_days"
+        private const val TIMELINE_TINT = "timeline_tint"
+        private const val CONTINUOUS_WEEK_V3 = "continuous_week_v3"
     }
 }
 
+internal data class WeekLayoutMigration(val layout: String?, val days: Int?)
+
 /**
- * Maps the v0.6.8 "Monday to Friday only" switch to the inverted rolling opt-in. A missing value was the old default
- * (rolling), but it was never a choice, so it takes the new Monday to Friday default. An explicit "off" stays rolling.
+ * The paged 3, 5 and 7 day timelines became column counts of the continuous Week. A saved timeline keeps its count,
+ * and a timeline or continuous Week that never saved one keeps the seven columns it showed before. List and an unset
+ * layout stay as they are, so an unset Week takes the new continuous default with five columns.
  */
-internal fun rollingFiveDaysFromLegacy(legacyWorkweek: Boolean?): Boolean = legacyWorkweek == false
+internal fun migrateWeekLayout(saved: String?, savedDays: Int?): WeekLayoutMigration {
+    val days = savedDays?.takeIf { it in SettingsStore.VISIBLE_DAY_CHOICES }
+    return when (saved) {
+        "timeline" -> WeekLayoutMigration("continuous", days ?: 7)
+        "continuous" -> WeekLayoutMigration(null, if (days == null) 7 else null)
+        else -> WeekLayoutMigration(null, null)
+    }
+}
