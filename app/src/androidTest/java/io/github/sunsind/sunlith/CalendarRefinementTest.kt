@@ -24,6 +24,7 @@ import android.view.FrameMetrics
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.VelocityTracker
+import android.view.ViewConfiguration
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -1375,8 +1376,8 @@ class CalendarRefinementTest {
         val downTime = SystemClock.uptimeMillis()
         val tracker = VelocityTracker.obtain()
         val times = mutableListOf<Long>()
-        fun send(action: Int, fraction: Float) {
-            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action,
+        fun send(action: Int, fraction: Float, offsetMillis: Long) {
+            val event = MotionEvent.obtain(downTime, downTime + offsetMillis, action,
                 start.x + (end.x - start.x) * fraction, start.y + (end.y - start.y) * fraction, 0)
             try {
                 times += event.eventTime - downTime
@@ -1385,15 +1386,20 @@ class CalendarRefinementTest {
                 assertTrue("The fling gesture must reach the app", instrumentation.uiAutomation.injectInputEvent(event, action == MotionEvent.ACTION_UP))
             } finally { event.recycle() }
         }
-        send(MotionEvent.ACTION_DOWN, 0f)
+        send(MotionEvent.ACTION_DOWN, 0f, 0L)
         try {
             repeat(6) { step ->
                 SystemClock.sleep(10)
-                send(MotionEvent.ACTION_MOVE, (step + 1) / 6f)
+                send(MotionEvent.ACTION_MOVE, (step + 1) / 6f, (step + 1) * 10L)
             }
-        } finally { send(MotionEvent.ACTION_UP, 1f) }
+        } finally {
+            SystemClock.sleep(1)
+            send(MotionEvent.ACTION_UP, 1f, times.last() + 1)
+        }
         return try {
             tracker.computeCurrentVelocity(1000)
+            assertTrue("The synthetic gesture must have fling velocity: $times, ${tracker.yVelocity}",
+                abs(tracker.yVelocity) >= ViewConfiguration.get(context).scaledMinimumFlingVelocity)
             "eventsMs=$times velocityY=${tracker.yVelocity} elapsedMs=${SystemClock.uptimeMillis() - downTime}"
         } finally { tracker.recycle() }
     }
