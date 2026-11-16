@@ -31,6 +31,15 @@ jobs:
       - run: chmod +x gradlew
       - run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
       - run: ./gradlew --no-daemon -PtestBuildType=distribution :app:assembleDistribution :app:assembleDistributionAndroidTest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: python tools/package-release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sunlith-ci-package-check
+          path: dist/*
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: sunlith-debug-apk
@@ -51,6 +60,47 @@ jobs:
           path: |
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+
+  android-runtime:
+    needs: android
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [30, 36]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: sunlith-distribution-apk-and-tests
+          path: tested
+      - run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            adb install -r tested/apk/distribution/app-distribution.apk
+            adb install -r tested/apk/androidTest/distribution/app-distribution-androidTest.apk
+            adb shell am instrument -w -r -e class io.github.sunsind.sunlith.CalendarUiTest,io.github.sunsind.sunlith.AiOnboardingTest,io.github.sunsind.sunlith.CalendarExperienceTest,io.github.sunsind.sunlith.CalendarCustomizationTest#continuousSharedClockMovesLineWithoutRereadingEvents,io.github.sunsind.sunlith.CalendarTimelinePolishTest,io.github.sunsind.sunlith.CalendarPerformanceTest,io.github.sunsind.sunlith.ReminderNotificationsTest,io.github.sunsind.sunlith.LauncherIconTest,io.github.sunsind.sunlith.WidgetExperienceTest,io.github.sunsind.sunlith.CalendarReadabilityUiTest,io.github.sunsind.sunlith.SchoolMessagesUiTest io.github.sunsind.sunlith.test/androidx.test.runner.AndroidJUnitRunner > runtime.log
+            python -c "import pathlib,re; t=pathlib.Path('runtime.log').read_text(); print(t); assert re.search(r'^OK \([1-9][0-9]* tests?\)', t, re.M) and 'FAILURES!!!' not in t and 'INSTRUMENTATION_FAILED' not in t"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-runtime-api${{ matrix.api }}
+          path: runtime.log
           if-no-files-found: ignore
 
   mcp:

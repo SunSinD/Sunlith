@@ -283,8 +283,8 @@ class CalendarExperienceTest {
             assertTrue("Every settings page must retain its logical place in the hierarchy.", first.bottom <= next.top)
         }
         captureSettings("root", R.string.beta_settings_about)
-        assertFalse(device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.custom_computer_access_desc))))
-        assertFalse(device.hasObject(By.pkg(context.packageName).text(english.resources.getQuantityString(R.plurals.calendars_shown, 1, 1))))
+        assertFalse(device.hasObject(By.pkg(context.packageName).text("Choose separately which calendars your paired computer can read and change.")))
+        assertFalse(device.hasObject(By.pkg(context.packageName).text("1 calendar shown")))
         assertFalse(device.hasObject(By.pkg(context.packageName).text(english.getString(R.string.settings_import))))
         node(By.pkg(context.packageName).text(english.getString(R.string.title_calendars))).click()
         node(By.pkg(context.packageName).text("Experience calendar"))

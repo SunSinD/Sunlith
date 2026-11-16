@@ -12,14 +12,15 @@ android {
         applicationId = "io.github.sunsind.sunlith"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22
-        versionName = "0.7.0"
+        versionCode = 23
+        versionName = "0.8.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         create("distribution") {

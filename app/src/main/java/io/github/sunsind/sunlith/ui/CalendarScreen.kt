@@ -114,6 +114,9 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -375,10 +378,19 @@ private class CalendarContext(
 fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var clockChange by remember { mutableIntStateOf(0) }
+    // One clock for every timeline page. It moves together with today's date, so a new day never shows yesterday's
+    // last minute. Only today's column and the Today direction read it.
+    val currentMinute = remember { mutableIntStateOf(minuteOfDay(LocalTime.now())) }
+    fun syncClock(): java.time.ZonedDateTime {
+        val now = java.time.ZonedDateTime.now()
+        vm.refreshCurrentDate(now.toLocalDate())
+        currentMinute.intValue = minuteOfDay(now.toLocalTime())
+        return now
+    }
     DisposableEffect(vm, context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                vm.refreshCurrentDate()
+                syncClock()
                 if (intent?.action == Intent.ACTION_TIMEZONE_CHANGED) vm.reload()
                 clockChange++
             }
@@ -391,12 +403,10 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         onDispose { context.unregisterReceiver(receiver) }
     }
-    LaunchedEffect(vm, clockChange) {
-        while (true) {
-            vm.refreshCurrentDate()
-            val now = java.time.ZonedDateTime.now()
-            val midnight = now.toLocalDate().plusDays(1).atStartOfDay(now.zone)
-            delay(java.time.Duration.between(now, midnight).toMillis().coerceAtLeast(1) + 50)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(vm, clockChange, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) delay(millisToNextMinute(syncClock().toLocalTime()) + 50)
         }
     }
     val p = LocalPalette.current
@@ -489,7 +499,8 @@ fun CalendarScreen(vm: SunlithViewModel, modifier: Modifier = Modifier) {
     else if (mode == ViewMode.Day && vm.activeDayLayout == "schedule") measuredDirection
     else periodDirection ?: if (mode != ViewMode.Day) measuredDirection else null
 
-    CompositionLocalProvider(LocalCourseColors provides courseColors, LocalTimelineTint provides vm.timelineTint) {
+    CompositionLocalProvider(LocalCourseColors provides courseColors, LocalTimelineTint provides vm.timelineTint,
+        LocalCurrentMinute provides currentMinute) {
     Scaffold(
         modifier = modifier.semantics { testTagsAsResourceId = true },
         containerColor = p.background,

@@ -51,7 +51,6 @@ class Formats(private val context: Context, val locale: Locale) {
     fun monthYear(m: YearMonth): String = monthYear.format(m.atDay(1)).cap()
     fun weekdayShort(d: DayOfWeek): String = d.getDisplayName(TextStyle.SHORT, locale).trimEnd('.').cap()
     fun weekdayNarrow(d: DayOfWeek): String = d.getDisplayName(TextStyle.NARROW_STANDALONE, locale).cap()
-    fun weekdayLong(d: DayOfWeek): String = d.getDisplayName(TextStyle.FULL, locale).cap()
 
     private fun String.cap() = replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
 

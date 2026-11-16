@@ -2,10 +2,17 @@ package io.github.sunsind.sunlith
 
 import android.Manifest
 import android.app.Activity
+import android.content.ContentProvider
 import android.content.ContentProviderOperation
 import android.content.ContentUris
+import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.content.pm.ProviderInfo
+import android.database.Cursor
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -24,6 +31,7 @@ import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import io.github.sunsind.sunlith.data.CalendarRepository
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.ui.SunlithViewModel
 import io.github.sunsind.sunlith.ui.gridStart
@@ -31,6 +39,9 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONObject
 import org.junit.After
@@ -149,6 +160,8 @@ class CalendarPerformanceTest {
             assertTrue(vm.events.any { it.id == eventIds.getValue(title(360, 0)) })
         }
 
+        delayedSearchRaceRegression()
+
         measure("cold_description_search") {
             onMain { vm.openSearch() }
             node(By.pkg(context.packageName).clazz("android.widget.EditText")).text = "descriptionneedle"
@@ -163,6 +176,81 @@ class CalendarPerformanceTest {
             val expected = (0 until 4).map { eventIds.getValue(title(250, it)) }.toSet()
             awaitReady { !vm.searchLoading && vm.searchResults.map { it.id }.toSet() == expected }
             node(By.pkg(context.packageName).text(title(250, 0)))
+        }
+
+    }
+
+    private fun delayedSearchRaceRegression() {
+        data class Gate(val started: CountDownLatch, val release: CountDownLatch, val fail: Boolean = false)
+
+        val gates = mutableListOf<Gate>()
+        val allGates = mutableListOf<Gate>()
+        val reads = AtomicInteger()
+        fun enqueue(gate: Gate) {
+            synchronized(gates) { gates += gate }
+            allGates += gate
+        }
+        val delegateContext = context
+        val resolver = ContentResolver.wrap(object : ContentProvider() {
+            override fun onCreate() = true
+            override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
+                if (uri.pathSegments.firstOrNull() == "instances") {
+                    reads.incrementAndGet()
+                    val gate = synchronized(gates) { if (gates.isEmpty()) null else gates.removeAt(0) }
+                    if (gate != null) {
+                        gate.started.countDown()
+                        check(gate.release.await(15, TimeUnit.SECONDS)) { "The delayed search provider read was not released." }
+                        if (gate.fail) error("Deliberate stale search read failure")
+                    }
+                }
+                return delegateContext.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)
+            }
+            override fun getType(uri: Uri) = delegateContext.contentResolver.getType(uri)
+            override fun insert(uri: Uri, values: ContentValues?) = delegateContext.contentResolver.insert(uri, values)
+            override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = delegateContext.contentResolver.delete(uri, selection, selectionArgs)
+            override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = delegateContext.contentResolver.update(uri, values, selection, selectionArgs)
+        }.apply {
+            attachInfo(delegateContext, ProviderInfo().apply { authority = "com.android.calendar" })
+        })
+        val delayedContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getContentResolver() = resolver
+        }
+        val repositoryField = SunlithViewModel::class.java.getDeclaredField("repo").apply { isAccessible = true }
+        val originalRepository = repositoryField.get(vm)
+        repositoryField.set(vm, CalendarRepository(delayedContext))
+        try {
+            val first = Gate(CountDownLatch(1), CountDownLatch(1))
+            enqueue(first)
+            onMain { vm.openSearch() }
+            assertTrue("The initial search provider read did not start.", first.started.await(5, TimeUnit.SECONDS))
+            onMain {
+                vm.updateSearch("Performance day 2")
+                vm.updateSearch("Performance day 250")
+                assertTrue(vm.searchLoading)
+            }
+            assertEquals("Consecutive query updates must reuse one uncached provider read.", 1, reads.get())
+            first.release.countDown()
+            val expected = (0 until 4).map { eventIds.getValue(title(250, it)) }.toSet()
+            awaitReady { !vm.searchLoading && vm.searchResults.map { it.id }.toSet() == expected }
+
+            val stale = Gate(CountDownLatch(1), CountDownLatch(1), fail = true)
+            val latest = Gate(CountDownLatch(1), CountDownLatch(1))
+            enqueue(stale)
+            enqueue(latest)
+            onMain { vm.openSearch() }
+            assertTrue("The force refresh provider read did not start.", stale.started.await(5, TimeUnit.SECONDS))
+            onMain { vm.openSearch() }
+            assertTrue("The replacement force refresh provider read did not start.", latest.started.await(5, TimeUnit.SECONDS))
+            assertEquals(3, reads.get())
+            stale.release.countDown()
+            SystemClock.sleep(100)
+            onMain { assertTrue("A stale refresh must not clear the latest loading state.", vm.searchLoading) }
+            latest.release.countDown()
+            awaitReady { !vm.searchLoading && vm.searchResults.map { it.id }.toSet() == expected }
+        } finally {
+            allGates.forEach { it.release.countDown() }
+            repositoryField.set(vm, originalRepository)
         }
     }
 

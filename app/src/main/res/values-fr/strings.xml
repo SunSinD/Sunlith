@@ -12,7 +12,6 @@
     <string name="repeating">Événement répété</string>
     <string name="unknown_calendar">Agenda inconnu</string>
     <string name="no_events">Aucun événement</string>
-    <string name="no_events_tap">Aucun événement, touchez pour en ajouter</string>
     <string name="no_calendars_on_phone">Il n\'y a encore aucun agenda sur ce téléphone. Ajoutez un compte avec la synchronisation d\'agenda dans les paramètres Android, ou créez un agenda qui reste sur cet appareil.</string>
     <string name="no_calendars_selected">Aucun agenda n\'est affiché dans Sunlith pour l\'instant.</string>
 
@@ -39,7 +38,6 @@
     <string name="action_search">Rechercher</string>
     <string name="action_clear">Effacer la recherche</string>
     <string name="action_today">Aller à aujourd\'hui</string>
-    <string name="action_more">Plus d\'options</string>
     <string name="action_new_event">Nouvel événement</string>
     <string name="action_add_event">Ajouter un événement</string>
     <string name="action_jump_to_date">Choisir une date</string>
@@ -169,39 +167,20 @@
     <string name="search_none">Aucun événement trouvé.</string>
     <string name="search_past">Passés</string>
 
-    <string name="settings_appearance">Apparence</string>
     <string name="theme_dark">Sombre</string>
     <string name="theme_light">Clair</string>
     <string name="theme_system">Comme le système</string>
     <string name="settings_monday">La semaine commence le lundi</string>
-    <string name="settings_choose_calendars">Agendas affichés dans Sunlith</string>
-    <plurals name="calendars_shown">
-        <item quantity="one">%d agenda affiché</item>
-        <item quantity="many">%d agendas affichés</item>
-        <item quantity="other">%d agendas affichés</item>
-    </plurals>
     <string name="settings_local_sub">Reste sur ce téléphone et ne se synchronise avec aucun compte.</string>
-    <string name="settings_reminders">Rappels</string>
     <string name="settings_reminders_toggle">Notifications de rappel</string>
-    <string name="settings_reminders_sub">Sunlith vous avertit quand le rappel d\'un événement arrive.</string>
     <string name="settings_reminders_blocked">Les notifications sont bloquées pour Sunlith. Activez cette option pour les autoriser.</string>
-    <string name="settings_widget">Widget</string>
     <string name="settings_widget_opacity">Opacité du fond</string>
-    <string name="settings_widget_sub">Ajoutez le widget agenda depuis la liste des widgets de l\'écran d\'accueil. Faites un appui long dessus pour le redimensionner.</string>
-    <string name="settings_transfer">Importer et exporter</string>
     <string name="settings_import">Importer un fichier .ics</string>
-    <string name="settings_import_sub">Aperçu du fichier, puis choix de l\'agenda qui reçoit les événements.</string>
     <string name="settings_export">Exporter un fichier .ics</string>
-    <string name="settings_export_sub">Enregistre les agendas choisis dans un fichier.</string>
     <string name="settings_exporting">Exportation…</string>
-    <string name="settings_help">Aide</string>
-    <string name="settings_about">À propos</string>
-    <string name="about_version">Sunlith %1$s</string>
-    <string name="about_sub">Agenda Android libre et gratuit.</string>
     <string name="about_source">Code source</string>
 
     <string name="help_migration_title">Passer d\'une autre app d\'agenda</string>
-    <string name="help_migration_sub">Utilisez les agendas déjà sur votre téléphone</string>
     <string name="help_migration_body">Sunlith lit le stockage d’agenda partagé d’Android. Vos agendas existants peuvent donc apparaître sans import.\n\n1. Ouvrez Agendas dans Sunlith et sélectionnez ceux que vous utilisez.\n2. Vérifiez quelques événements avec une heure, sur une journée entière et répétés.\n3. Si un compte manque, ajoutez-le dans les paramètres Android et activez la synchronisation.\n\nUtilisez l’import .ics pour copier des événements vers un autre agenda. Sauvegardez-les avant et évitez les doublons.\n\nChoisissez une seule app pour les rappels si plusieurs apps vous avertissent pour les mêmes événements.</string>
 
     <string name="export_title">Agendas à exporter</string>

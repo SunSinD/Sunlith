@@ -75,15 +75,16 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
@@ -760,20 +761,19 @@ internal fun Timeline(
     val commitZoom by rememberUpdatedState(onZoomChange)
     val pinchScope = rememberCoroutineScope()
     val reportDirection by rememberUpdatedState(onDirectionChanged)
-    // One clock for the line, the Today direction and where Today opens.
-    val currentMinute by rememberCurrentMinute()
+    // One clock for the line, the Today direction and where Today opens. It is read only where today is shown, and
+    // never during composition, so a minute tick redraws today's column instead of recomposing every page.
+    val clock = rememberCurrentMinute()
     val todayIndexInDays = days.indexOf(today)
     val todayEvents = if (todayIndexInDays >= 0) timed[todayIndexInDays] else emptyList()
-    val todayMinute = remember(todayEvents, today, zone, currentMinute) {
-        timelineTodayMinute(todayEvents, today, zone, System.currentTimeMillis(), currentMinute)
-    }
-    LaunchedEffect(scroll, autoScroll, days, today, axis, currentMinute, topPx, onDirectionChanged) {
+    fun todayMinute(): Int = timelineTodayMinute(todayEvents, today, zone, System.currentTimeMillis(), clock.value)
+    LaunchedEffect(scroll, autoScroll, days, today, axis, clock, topPx, onDirectionChanged) {
         if (!autoScroll) return@LaunchedEffect
         if (today !in days) {
             reportDirection(null)
             return@LaunchedEffect
         }
-        snapshotFlow { timelineTodayDirection(axis, currentMinute, scroll.value, scroll.viewportSize, topPx) }
+        snapshotFlow { timelineTodayDirection(axis, clock.value, scroll.value, scroll.viewportSize, topPx) }
             .distinctUntilChanged().collect { reportDirection(it) }
     }
     var previousAxis by remember(scroll) { mutableStateOf(axis) }
@@ -820,11 +820,10 @@ internal fun Timeline(
     // instead of drawing midnight and animating through unrelated events on the way to it.
     // An explicit date keeps its first event in view. Today instead opens where Today would: the class in progress or
     // the hour before now, never a later event.
-    fun focusScroll(date: LocalDate, a: TimelineAxis): Float = if (date == today) timelineTodayScroll(a, todayMinute, topPx) else {
+    fun focusScroll(date: LocalDate, a: TimelineAxis): Float = if (date == today) timelineTodayScroll(a, todayMinute(), topPx) else {
         val target = focusTarget(eventsOn(date), date, zone)
         a.minuteToY(if (target != null && !target.isTimelineBanner()) (startMinuteOn(target, date, zone) - 30).coerceAtLeast(0) else 0)
     }
-    val focusY = if (!focusPending) null else focusScroll(requireNotNull(focus).date, axis)
     val sideways = rememberScrollState()
     var highlighted by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(highlighted) {
@@ -868,11 +867,11 @@ internal fun Timeline(
                 positionedAsActive = autoScroll
                 when {
                     zoom.live != null || zoom.pinching -> null
-                    focusY != null -> {
+                    focusPending -> {
                         sharedPositioned = true
                         initialPositioned = true
                         pendingAnchor = null
-                        focusY
+                        focusScroll(requireNotNull(focus).date, axis)
                     }
                     sharedMinute != null && (!sharedPositioned || !autoScroll || becameActive) -> {
                         sharedPositioned = true
@@ -885,7 +884,7 @@ internal fun Timeline(
                         initialPositioned = true
                         if (autoScroll && focus == null && scroll.value == 0 && !scroll.isScrollInProgress) {
                             // Same spot a Today tap reaches, so tapping Today right after opening never nudges the grid.
-                            if (today in days) timelineTodayScroll(axis, todayMinute, topPx)
+                            if (today in days) timelineTodayScroll(axis, todayMinute(), topPx)
                             else axis.minuteToY(DEFAULT_START_HOUR * 60)
                         } else null
                     }
@@ -911,7 +910,7 @@ internal fun Timeline(
                     if (!awaitScrollable(scroll)) return@LaunchedEffect
                     withFrameNanos { }
                     scroll.stopScroll()
-                    val target = timelineTodayScroll(axis, todayMinute, topPx).roundToInt()
+                    val target = timelineTodayScroll(axis, todayMinute(), topPx).roundToInt()
                         .coerceIn(0, scroll.maxValue)
                     if (target != scroll.value) {
                         if (!motion) scroll.scrollTo(target)
@@ -1020,11 +1019,11 @@ internal fun Timeline(
                     }
                     Box(Modifier.weight(1f).height(timelineHeight).then(dayArea)) {
                         Row(
-                            Modifier.width(gridWidth).fillMaxHeight().drawBehind {
+                            Modifier.width(gridWidth).fillMaxHeight().drawWithContent {
                                 val col = columnPx.toFloat()
                                 drawTimelineGrid(axis, col, days.size, gridColors, tintIndex)
-                                // Under the events: the time stays readable and never strikes through a title.
-                                if (todayIndex >= 0) drawNowLine(axis, currentMinute, col, days.size, todayIndex, gridColors)
+                                drawContent()
+                                if (todayIndex >= 0) drawNowLine(axis, clock.value, col, days.size, todayIndex, gridColors)
                             },
                         ) {
                             days.forEachIndexed { index, day ->
@@ -1113,7 +1112,7 @@ internal fun DrawScope.drawTimelineGrid(axis: TimelineAxis, columnWidthPx: Float
     }
 }
 
-/** The current time under the events, confined to today's column. */
+/** The current time over the events, confined to today's column. */
 internal fun DrawScope.drawNowLine(axis: TimelineAxis, minute: Int, columnWidthPx: Float, dayCount: Int, todayIndex: Int, colors: TimelineGridColors) {
     if (todayIndex !in 0 until dayCount) return
     val y = axis.minuteToY(minute)
@@ -1568,12 +1567,20 @@ private fun OverflowBlock(count: Int, single: String?, modifier: Modifier, singl
     }
 }
 
-/** Minutes since local midnight, refreshed every 30 seconds. */
+internal fun minuteOfDay(time: LocalTime): Int = time.hour * 60 + time.minute
+
+/** Milliseconds from [time] until the next whole minute, between 1 and 60 000. */
+internal fun millisToNextMinute(time: LocalTime): Long = 60_000L - (time.second * 1_000L + time.nano / 1_000_000)
+
+/** Minutes since local midnight. [CalendarScreen] provides one clock that it ticks together with today's date. */
+internal val LocalCurrentMinute = staticCompositionLocalOf<State<Int>?> { null }
+
+/** The shared clock, or a page's own minute-aligned one when no screen provides it. */
 @Composable
-internal fun rememberCurrentMinute(): State<Int> = produceState(LocalTime.now().let { it.hour * 60 + it.minute }) {
+internal fun rememberCurrentMinute(): State<Int> = LocalCurrentMinute.current ?: produceState(minuteOfDay(LocalTime.now())) {
     while (true) {
-        delay(30_000)
-        value = LocalTime.now().let { it.hour * 60 + it.minute }
+        delay(millisToNextMinute(LocalTime.now()) + 50)
+        value = minuteOfDay(LocalTime.now())
     }
 }
 

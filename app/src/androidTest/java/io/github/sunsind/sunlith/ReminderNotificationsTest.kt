@@ -4,8 +4,14 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.ContentUris
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.ContentProvider
+import android.content.pm.ProviderInfo
+import android.database.Cursor
+import android.net.Uri
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
@@ -27,6 +33,7 @@ import io.github.sunsind.sunlith.system.ReminderScheduler
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.system.CalendarReminderReceiver
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -183,6 +190,80 @@ class ReminderNotificationsTest {
             assertEquals("The app must leave the shared provider alert state untouched.", before, alertState())
         } finally {
             context.contentResolver.delete(alertUri, null, null)
+        }
+    }
+
+    @Test
+    fun providerBroadcastSharesBoundedInstanceReadAcrossSameWindowAlerts() {
+        val now = System.currentTimeMillis()
+        val starts = listOf(now + 600_000, now + 1_200_000, now + 1_800_000, now + 90L * 86_400_000)
+        val events = starts.mapIndexed { index, start ->
+            val id = repository.saveEvent(EventDraft(
+                calendarId = calendarId,
+                title = "Batched provider reminder $index",
+                location = "Laval",
+                startMillis = start,
+                endMillis = start + 3_600_000,
+                reminderMinutes = emptyList(),
+            ))
+            id to start
+        }
+        val excludedCalendarId = insertLocalCalendar(context, "sunlith-notification-excluded", "Excluded reminder calendar", account)
+        val excludedEventId = repository.saveEvent(EventDraft(
+            calendarId = excludedCalendarId, title = "Unselected calendar reminder",
+            startMillis = starts.first(), endMillis = starts.first() + 3_600_000,
+            reminderMinutes = emptyList(),
+        ))
+        val alertUris = (events + (excludedEventId to starts.first())).flatMap { (id, start) ->
+            listOf(5, 15).map { minutes ->
+                requireNotNull(context.contentResolver.insert(CalendarAlerts.CONTENT_URI, ContentValues().apply {
+                    put(CalendarAlerts.EVENT_ID, id)
+                    put(CalendarAlerts.BEGIN, start)
+                    put(CalendarAlerts.END, start + 3_600_000)
+                    put(CalendarAlerts.ALARM_TIME, now - 1_000)
+                    put(CalendarAlerts.CREATION_TIME, now)
+                    put(CalendarAlerts.RECEIVED_TIME, 0)
+                    put(CalendarAlerts.NOTIFY_TIME, 0)
+                    put(CalendarAlerts.MINUTES, minutes)
+                    put(CalendarAlerts.STATE, CalendarAlerts.STATE_SCHEDULED)
+                }))
+            }
+        }
+        val instanceQueries = AtomicInteger()
+        val delegateContext = context
+        val resolver = ContentResolver.wrap(object : ContentProvider() {
+            override fun onCreate() = true
+            override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
+                if (uri.pathSegments.firstOrNull() == "instances") instanceQueries.incrementAndGet()
+                return delegateContext.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)
+            }
+            override fun getType(uri: Uri) = delegateContext.contentResolver.getType(uri)
+            override fun insert(uri: Uri, values: ContentValues?) = delegateContext.contentResolver.insert(uri, values)
+            override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = delegateContext.contentResolver.delete(uri, selection, selectionArgs)
+            override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = delegateContext.contentResolver.update(uri, values, selection, selectionArgs)
+        }.apply {
+            attachInfo(delegateContext, ProviderInfo().apply {
+                authority = CalendarContract.AUTHORITY
+                exported = false
+            })
+        })
+        val countingContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getContentResolver() = resolver
+        }
+        try {
+            ReminderNotifications.postProviderAlerts(countingContext)
+            events.forEachIndexed { index, _ -> waitForNotification("Batched provider reminder $index") }
+            assertEquals("Same-window alerts should share one read while the distant range uses another bounded query.", 2, instanceQueries.get())
+            assertFalse("Unselected calendars must not post reminders", manager.activeNotifications.any {
+                it.notification.extras.getString(Notification.EXTRA_TITLE) == "Unselected calendar reminder"
+            })
+            assertEquals("Each event's two reminder minutes must produce its own notification.", 8, manager.activeNotifications.count {
+                it.notification.extras.getString(Notification.EXTRA_TITLE)?.startsWith("Batched provider reminder") == true
+            })
+        } finally {
+            alertUris.forEach { context.contentResolver.delete(it, null, null) }
+            context.contentResolver.delete(localCalendarUri(excludedCalendarId, account), null, null)
         }
     }
 

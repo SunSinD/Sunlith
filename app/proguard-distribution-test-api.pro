@@ -458,7 +458,6 @@
     int widget_event;
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.R$plurals {
-    int calendars_shown;
     int event_count;
     int school_admin_new_messages;
     int school_disconnect_remove;
@@ -517,7 +516,6 @@
     int connection_setup_share_again;
     int connection_tailscale;
     int connection_tailscale_missing;
-    int custom_computer_access_desc;
     int custom_schedule;
     int delete_event_title;
     int details_school_periods;
@@ -550,7 +548,6 @@
     int layout_continue;
     int layout_preset_agenda;
     int layout_preset_grid;
-    int layout_preset_schedule;
     int layout_setup_title;
     int no_events;
     int ongoing;
@@ -1353,6 +1350,7 @@
     io.github.sunsind.sunlith.system.ReminderNotifications INSTANCE;
     boolean allowed(android.content.Context);
     boolean post$default(io.github.sunsind.sunlith.system.ReminderNotifications,android.content.Context,io.github.sunsind.sunlith.data.CalendarEvent,int,boolean,int,java.lang.Object);
+    void postProviderAlerts$app_distribution(android.content.Context);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.system.ReminderScheduler {
     io.github.sunsind.sunlith.system.ReminderScheduler INSTANCE;
@@ -1478,6 +1476,7 @@
     void Timeline(java.util.List,kotlin.jvm.functions.Function1,java.time.LocalDate,java.time.LocalDate,io.github.sunsind.sunlith.ui.Formats,boolean,androidx.compose.foundation.ScrollState,boolean,int,boolean,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function2,androidx.compose.ui.Modifier,io.github.sunsind.sunlith.ui.TimelineFocus,kotlin.jvm.functions.Function1,boolean,boolean,boolean,int,androidx.compose.runtime.MutableFloatState,androidx.compose.runtime.MutableIntState,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function2,androidx.compose.runtime.Composer,int,int,int,int);
     void TimelineEventList(java.util.List,io.github.sunsind.sunlith.ui.Formats,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function0,androidx.compose.runtime.Composer,int);
     java.lang.Object awaitScrollable(androidx.compose.foundation.ScrollState,kotlin.coroutines.Continuation);
+    androidx.compose.runtime.ProvidableCompositionLocal getLocalCurrentMinute();
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.ContinuousTimelineKt {
     void ContinuousTimeline(io.github.sunsind.sunlith.ui.SunlithViewModel,io.github.sunsind.sunlith.ui.Formats,java.time.LocalDate,boolean,androidx.compose.foundation.ScrollState,androidx.compose.ui.Modifier,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int,int);

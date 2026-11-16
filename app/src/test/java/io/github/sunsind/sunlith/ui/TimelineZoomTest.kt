@@ -5,6 +5,7 @@ import androidx.compose.animation.core.VectorConverter
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
+import java.time.LocalTime
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
@@ -260,5 +261,18 @@ class TimelineZoomTest {
         val pastMidnight = grid + 30f
         assertEquals("A one line card at 23:59 that runs past midnight counts only once",
             pastMidnight + 104f, timelineContentHeight(grid, pastMidnight, 11f, 104f), 0.001f)
+    }
+
+    @Test
+    fun clockWakesJustAfterTheNextMinuteNeverASkippedOne() {
+        val samples = listOf(LocalTime.of(9, 15), LocalTime.of(9, 15, 0, 999_999), LocalTime.of(9, 15, 30, 250_000_000),
+            LocalTime.of(12, 59, 59, 999_000_000), LocalTime.of(23, 59, 59, 999_999_999), LocalTime.MIDNIGHT)
+        for (time in samples) {
+            val wait = millisToNextMinute(time)
+            assertTrue("$time waits $wait ms", wait in 1L..60_000L)
+            val woke = time.plusNanos(wait * 1_000_000)
+            assertEquals("$time must wake in the next minute", (minuteOfDay(time) + 1) % (24 * 60), minuteOfDay(woke))
+            assertTrue("$time must wake within a millisecond of the boundary", woke.second == 0 && woke.nano < 1_000_000)
+        }
     }
 }

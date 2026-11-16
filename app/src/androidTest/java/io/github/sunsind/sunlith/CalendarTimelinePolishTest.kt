@@ -8,12 +8,15 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -26,6 +29,8 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import io.github.sunsind.sunlith.data.CalendarEvent
 import io.github.sunsind.sunlith.ui.Formats
+import io.github.sunsind.sunlith.ui.LightPalette
+import io.github.sunsind.sunlith.ui.LocalCurrentMinute
 import io.github.sunsind.sunlith.ui.SunlithTheme
 import io.github.sunsind.sunlith.ui.Timeline
 import io.github.sunsind.sunlith.ui.TimelineEventList
@@ -34,6 +39,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Collections
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -126,6 +132,41 @@ class CalendarTimelinePolishTest {
         val result = ready()
         if (!result) captureFailure()
         assertTrue(detail, result)
+    }
+
+    @Test
+    fun sharedClockMovesTheLineWithoutRecomposingTheTimeline() {
+        val today = LocalDate.now()
+        val start = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val event = CalendarEvent(-900, 1, "Clock fixture", "", "", start, start + 4 * 3_600_000L, false, zone.id)
+        val minute = mutableIntStateOf(60)
+        val reads = AtomicInteger()
+        val scroll = ScrollState(0)
+        show {
+            CompositionLocalProvider(LocalCurrentMinute provides minute) {
+                Timeline(listOf(today), { reads.incrementAndGet(); listOf(event) }, today, today,
+                    Formats(context, Locale.ENGLISH), false, scroll, autoScroll = false,
+                    todayRequest = 0, motion = false, onSelectDay = null, onOpen = {}, onNew = {},
+                    onOverflow = { _, _ -> }, fallback = {})
+            }
+        }
+        fun paintedLineY(): Int {
+            val card = node(tag("timeline_event_${event.id}")).visibleBounds
+            val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+            try {
+                val from = card.left + card.width() / 5
+                val to = card.right - card.width() / 5
+                return (card.top + 4 until card.bottom - 4).firstOrNull { y ->
+                    (from until to).count { x -> screenshot.getPixel(x, y) == LightPalette.accent.toArgb() } >= (to - from) * 9 / 10
+                } ?: -1
+            } finally { screenshot.recycle() }
+        }
+        val before = paintedLineY()
+        assertTrue("The initial current-time line must be visible over the card", before >= 0)
+        val composedReads = reads.get()
+        instrumentation.runOnMainSync { minute.intValue = 90 }
+        awaitUi("A shared clock tick must move the painted line") { paintedLineY() > before }
+        assertEquals("A clock tick must not rebuild the event lists", composedReads, reads.get())
     }
 
     @Test

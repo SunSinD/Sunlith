@@ -326,6 +326,7 @@ class SunlithViewModel(app: Application, private val savedState: SavedStateHandl
     private var loadGeneration = 0L
     private var changeJob: Job? = null
     private var searchJob: Job? = null
+    private var searchGeneration = 0L
     private var pendingLink: (() -> Unit)? = null
 
     init {
@@ -372,6 +373,7 @@ class SunlithViewModel(app: Application, private val savedState: SavedStateHandl
             loadedFrom = null; loadedTo = null
             gridLoadedFrom = null; gridLoadedTo = null
             agendaEvents = emptyList(); gridEvents = emptyList(); targetWindow = null
+            clearSearch()
             stack.clear(); editor = null
             return
         }
@@ -431,7 +433,7 @@ class SunlithViewModel(app: Application, private val savedState: SavedStateHandl
     }
 
     private fun invalidateSearch() {
-        if (Screen.Search in stack) loadSearchPool() else searchPool = null
+        if (Screen.Search in stack && hasPermission) loadSearchPool(force = true) else clearSearch()
     }
 
     // endregion
@@ -805,7 +807,7 @@ class SunlithViewModel(app: Application, private val savedState: SavedStateHandl
 
     fun openSearch() {
         open(Screen.Search)
-        loadSearchPool()
+        loadSearchPool(force = true)
     }
 
     fun handleLink(eventId: Long, begin: Long, create: Boolean, createDate: LocalDate? = null) {
@@ -1006,7 +1008,7 @@ class SunlithViewModel(app: Application, private val savedState: SavedStateHandl
         settings.selectedCalendarIds = next
         settings.hasChosenCalendars = true
         activeIds = next
-        searchPool = null
+        invalidateSearch()
         refreshApp()
         reload()
     }
@@ -1245,8 +1247,22 @@ class SunlithViewModel(app: Application, private val savedState: SavedStateHandl
 
     // region search
 
-    private fun loadSearchPool() {
-        if (!hasPermission) return
+    private fun clearSearch() {
+        searchGeneration++
+        searchJob?.cancel()
+        searchJob = null
+        searchPool = null
+        searchResults = emptyList()
+        searchLoading = false
+    }
+
+    private fun loadSearchPool(force: Boolean) {
+        if (!hasPermission) {
+            clearSearch()
+            return
+        }
+        if (!force && searchJob?.isActive == true) return
+        val generation = ++searchGeneration
         searchJob?.cancel()
         searchLoading = true
         searchJob = viewModelScope.launch {
@@ -1258,22 +1274,23 @@ class SunlithViewModel(app: Application, private val savedState: SavedStateHandl
                     projectSchoolEvents(repo.events(today.minusDays(365).atStartOfDay(zone).toInstant().toEpochMilli(),
                         today.plusDays(730).atStartOfDay(zone).toInstant().toEpochMilli(), ids, school = true), zone)
                 }
+                if (generation != searchGeneration) return@launch
                 rememberCourseSlots(pool)
                 searchPool = pool
                 filterSearch()
             } catch (c: CancellationException) {
                 throw c
             } catch (e: Exception) {
-                message(e.userMessage())
+                if (generation == searchGeneration) message(e.userMessage())
             } finally {
-                searchLoading = false
+                if (generation == searchGeneration) searchLoading = false
             }
         }
     }
 
     fun updateSearch(query: String) {
         searchQuery = query
-        if (searchPool == null) loadSearchPool() else filterSearch()
+        if (searchPool == null) loadSearchPool(force = false) else filterSearch()
     }
 
     private fun filterSearch() {
@@ -1324,7 +1341,7 @@ class SunlithViewModel(app: Application, private val savedState: SavedStateHandl
                     stream.use { transfer.import(it, calendarId) }
                 }
                 importUi = importUi?.copy(busy = false, report = report)
-                searchPool = null
+                invalidateSearch()
                 refreshApp()
                 reload()
             } catch (c: CancellationException) {

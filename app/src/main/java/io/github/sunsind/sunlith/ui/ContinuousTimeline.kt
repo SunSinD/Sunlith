@@ -1,7 +1,6 @@
 package io.github.sunsind.sunlith.ui
 
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.gestures.snapping.SnapPosition
@@ -20,7 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -139,17 +138,17 @@ internal fun ContinuousTimeline(
     val latestAxis by rememberUpdatedState(axis)
     val latestTop by rememberUpdatedState(topPx)
     val reportDirection by rememberUpdatedState(onDirectionChanged)
-    // One clock for the line, the Today direction and where Today opens.
-    val currentMinute by rememberCurrentMinute()
-    val todayEvents = events[today].orEmpty()
-    val todayMinute = remember(todayEvents, today, zone, currentMinute, vm.loadError, vm.loadingEvents) {
-        if (vm.loadError != null && !vm.loadingEvents) timelineTodayMinute(currentMinute)
-        else timelineTodayMinute(todayEvents.filter { !it.isTimelineBanner() }, today, zone, System.currentTimeMillis(), currentMinute)
+    // One clock for the line, the Today direction and where Today opens. It is read only where today is used, and
+    // never during composition, so a minute tick redraws today's column instead of recomposing the strip.
+    val clock = rememberCurrentMinute()
+    val todayMinute by rememberUpdatedState {
+        val minute = clock.value
+        if (vm.loadError != null && !vm.loadingEvents) timelineTodayMinute(minute)
+        else timelineTodayMinute(vm.eventsByDay[today].orEmpty().filter { !it.isTimelineBanner() }, today, zone, System.currentTimeMillis(), minute)
     }
-    val latestTodayMinute by rememberUpdatedState(todayMinute)
-    LaunchedEffect(axis, visibleFirst, visibleLast, currentMinute, topPx, onDirectionChanged) {
+    LaunchedEffect(axis, visibleFirst, visibleLast, today, clock, topPx, onDirectionChanged) {
         snapshotFlow {
-            if (today in visibleFirst..visibleLast) timelineTodayDirection(axis, currentMinute, scroll.value, scroll.viewportSize, topPx) else null
+            if (today in visibleFirst..visibleLast) timelineTodayDirection(axis, clock.value, scroll.value, scroll.viewportSize, topPx) else null
         }.collect { reportDirection(it) }
     }
     var requestedMinute by remember { mutableStateOf<Int?>(null) }
@@ -218,10 +217,7 @@ internal fun ContinuousTimeline(
                 snapshotFlow {
                     !zoom.pinching && zoom.live == null && !vm.loadingEvents && (vm.loadError != null || vm.coversRange(today, today))
                 }.first { it }
-                val minute = LocalTime.now().let { it.hour * 60 + it.minute }
-                requestedMinute = if (vm.loadError != null && !vm.loadingEvents) timelineTodayMinute(minute)
-                else timelineTodayMinute(vm.eventsByDay[today].orEmpty().filter { !it.isTimelineBanner() },
-                    today, zone, System.currentTimeMillis(), minute)
+                requestedMinute = todayMinute()
             }
             val target = index(vm.selectedDate)
             if (pending && (target != row.firstVisibleItemIndex || row.firstVisibleItemScrollOffset != 0)) {
@@ -231,7 +227,7 @@ internal fun ContinuousTimeline(
             }
             if ((firstPosition && scroll.value == 0) || (pending && vm.selectedDate == today)) {
                 withFrameNanos { }
-                val y = if (vm.selectedDate == today) timelineTodayScroll(latestAxis, requestedMinute ?: latestTodayMinute, latestTop)
+                val y = if (vm.selectedDate == today) timelineTodayScroll(latestAxis, requestedMinute ?: todayMinute(), latestTop)
                     else latestAxis.minuteToY(7 * 60)
                 scroll.scrollTo(y.roundToInt())
                 // Navigation has already positioned the latest grid; an older remap must not undo it.
@@ -262,7 +258,7 @@ internal fun ContinuousTimeline(
                 null
             }
             (firstPosition && scroll.value == 0) || (pending && vm.selectedDate == today) ->
-                if (vm.selectedDate == today) timelineTodayScroll(axis, todayMinute, topPx)
+                if (vm.selectedDate == today) timelineTodayScroll(axis, todayMinute(), topPx)
                 else axis.minuteToY(7 * 60)
             pendingAnchor != null -> (requestedMinute?.let { timelineTodayScroll(axis, it, topPx) } ?: pendingAnchor!!.scrollOn(axis, topPx))
                 .also { pendingAnchor = null }
@@ -367,9 +363,10 @@ internal fun ContinuousTimeline(
                     items(TIMELINE_DAYS, key = { origin + it - TIMELINE_CENTER }, contentType = { "timeline_day" }) { i ->
                         val day = date(i)
                         val isToday = day == today
-                        Box(Modifier.width(column).fillMaxHeight().drawBehind {
+                        Box(Modifier.width(column).fillMaxHeight().drawWithContent {
                             drawTimelineGrid(axis, size.width, 1, gridColors, if (isToday) 0 else -1)
-                            if (isToday) drawNowLine(axis, currentMinute, size.width, 1, 0, gridColors)
+                            drawContent()
+                            if (isToday) drawNowLine(axis, clock.value, size.width, 1, 0, gridColors)
                         }) {
                             if (vm.coversRange(day, day)) {
                                 DayColumn(day, events[day].orEmpty().filter { !it.isTimelineBanner() }, zone, minMinutes, hour, minBlockWidth,

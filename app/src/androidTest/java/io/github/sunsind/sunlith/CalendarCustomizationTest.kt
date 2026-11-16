@@ -78,6 +78,7 @@ import io.github.sunsind.sunlith.ui.Formats
 import io.github.sunsind.sunlith.ui.Screen
 import io.github.sunsind.sunlith.ui.SunlithViewModel
 import io.github.sunsind.sunlith.ui.ViewMode
+import io.github.sunsind.sunlith.ui.LocalCurrentMinute
 import io.github.sunsind.sunlith.ui.ContinuousTimeline
 import io.github.sunsind.sunlith.ui.Timeline
 import io.github.sunsind.sunlith.ui.TimelineAxis
@@ -92,6 +93,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.Locale
 import java.util.UUID
@@ -2236,6 +2238,53 @@ class CalendarCustomizationTest {
     }
 
     @Test
+    fun continuousSharedClockMovesLineWithoutRereadingEvents() {
+        val today = LocalDate.now()
+        val id = addTimed(today, "Continuous clock fixture", 0, 4)
+        val clock = mutableIntStateOf(60)
+        val reads = AtomicInteger()
+        onMain {
+            vm.changeNavigationAnimation(false)
+            vm.changeWeekLayout("continuous")
+            vm.changeVisibleWeekDays(3)
+            vm.changeViewMode(ViewMode.Week)
+            vm.goToday()
+            vm.reload()
+        }
+        awaitUi { !vm.loadingEvents && vm.eventsByDay[today].orEmpty().any { it.id == id } }
+        onMain {
+            val original = vm.eventsByDay.getValue(today)
+            val counted = object : AbstractList<CalendarEvent>() {
+                override val size get() = original.size
+                override fun get(index: Int): CalendarEvent {
+                    reads.incrementAndGet()
+                    return original[index]
+                }
+            }
+            @Suppress("UNCHECKED_CAST")
+            (vm.eventsByDay as MutableMap<LocalDate, List<CalendarEvent>>)[today] = counted
+        }
+        mountContinuousTimelineHost(mutableStateOf(660.dp), clock)
+        fun paintedLineY(): Int {
+            val card = node(By.res("timeline_event_$id")).visibleBounds
+            val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+            try {
+                val from = card.left + card.width() / 5
+                val to = card.right - card.width() / 5
+                return (card.top + 4 until card.bottom - 4).firstOrNull { y ->
+                    (from until to).count { x -> screenshot.getPixel(x, y) == LightPalette.accent.toArgb() } >= (to - from) * 9 / 10
+                } ?: -1
+            } finally { screenshot.recycle() }
+        }
+        val before = paintedLineY()
+        assertTrue("The initial time line must paint over the event", before >= 0)
+        val composedReads = reads.get()
+        onMain { clock.intValue = 90 }
+        awaitUi { paintedLineY() > before }
+        assertEquals("A clock tick must not reread the event lists", composedReads, reads.get())
+    }
+
+    @Test
     fun continuousResizeKeepsTheSnappedDateWhenColumnsBecomeNarrower() {
         val shown = date.plusWeeks(2)
         onMain {
@@ -2328,13 +2377,16 @@ class CalendarCustomizationTest {
         captureFinal("continuous-resize-today-after")
     }
 
-    private fun mountContinuousTimelineHost(width: androidx.compose.runtime.State<androidx.compose.ui.unit.Dp>) {
+    private fun mountContinuousTimelineHost(
+        width: androidx.compose.runtime.State<androidx.compose.ui.unit.Dp>,
+        clock: androidx.compose.runtime.State<Int>? = null,
+    ) {
         val formats = Formats(english, Locale.ENGLISH)
         onMain {
             requireNotNull(activity).setContent {
                 SunlithTheme("light", false) {
                     Box(Modifier.fillMaxSize().background(LightPalette.background).safeDrawingPadding().semantics { testTagsAsResourceId = true }) {
-                        CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                        CompositionLocalProvider(LocalDensity provides Density(1f), LocalCurrentMinute provides clock) {
                             Box(Modifier.width(width.value).height(900.dp)) {
                                 ContinuousTimeline(vm, formats, LocalDate.now(), vm.navigationAnimation, rememberScrollState(), onOpen = {})
                             }

@@ -28,6 +28,8 @@ import java.time.format.FormatStyle
 
 object ReminderNotifications {
     const val CHANNEL = "event_reminders"
+    private const val DAY_MILLIS = 86_400_000L
+    private const val PROVIDER_ALERT_WINDOW_MILLIS = 30L * DAY_MILLIS
     fun allowed(context: Context): Boolean = SettingsStore(context).remindersEnabled &&
         NotificationManagerCompat.from(context).areNotificationsEnabled() &&
         (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
@@ -84,18 +86,56 @@ object ReminderNotifications {
         val settings = SettingsStore(context)
         val repo = CalendarRepository(context)
         val ids = if (settings.hasChosenCalendars) settings.selectedCalendarIds else repo.calendars().filter { it.visible }.map { it.id }.toSet()
-        context.contentResolver.query(CalendarContract.CalendarAlerts.CONTENT_URI,
+        if (ids.isEmpty()) return
+        val alerts = context.contentResolver.query(CalendarContract.CalendarAlerts.CONTENT_URI,
             arrayOf(CalendarContract.CalendarAlerts.EVENT_ID, CalendarContract.CalendarAlerts.BEGIN, CalendarContract.CalendarAlerts.MINUTES),
             "${CalendarContract.CalendarAlerts.ALARM_TIME}<=? AND ${CalendarContract.CalendarAlerts.ALARM_TIME}>=? AND ${CalendarContract.CalendarAlerts.STATE}!=?",
             arrayOf(now.toString(), (now - 300_000L).toString(), CalendarContract.CalendarAlerts.STATE_DISMISSED.toString()), null)?.use { cursor ->
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(0)
-                val begin = cursor.getLong(1)
-                val minutes = cursor.getInt(2)
-                val event = repo.events(begin - 86_400_000L, begin + 86_400_000L, ids).firstOrNull { it.id == id && it.startMillis == begin } ?: continue
-                post(context, event, minutes)
+            buildList {
+                while (cursor.moveToNext()) add(ProviderAlert(cursor.getLong(0), cursor.getLong(1), cursor.getInt(2)))
+            }
+        }.orEmpty()
+        if (alerts.isEmpty()) return
+
+        alerts.sortedBy { it.beginMillis }.chunkedByOccurrenceWindow().forEach { group ->
+            val eventsByKey = repo.events(
+                expandBefore(group.first().beginMillis),
+                expandAfter(group.last().beginMillis),
+                ids,
+            ).associateBy { it.id to it.startMillis }
+            group.forEach { alert ->
+                eventsByKey[alert.eventId to alert.beginMillis]?.let { event ->
+                    post(context, event, alert.minutes)
+                }
             }
         }
+    }
+
+    private data class ProviderAlert(val eventId: Long, val beginMillis: Long, val minutes: Int)
+
+    private fun expandBefore(value: Long): Long =
+        if (value < Long.MIN_VALUE + DAY_MILLIS) Long.MIN_VALUE else value - DAY_MILLIS
+
+    private fun expandAfter(value: Long): Long =
+        if (value > Long.MAX_VALUE - DAY_MILLIS) Long.MAX_VALUE else value + DAY_MILLIS
+
+    private fun List<ProviderAlert>.chunkedByOccurrenceWindow(): List<List<ProviderAlert>> {
+        if (isEmpty()) return emptyList()
+        val groups = mutableListOf<MutableList<ProviderAlert>>()
+        var group = mutableListOf(first())
+        var firstBegin = first().beginMillis
+        for (alert in drop(1)) {
+            val exceedsWindow = firstBegin <= Long.MAX_VALUE - PROVIDER_ALERT_WINDOW_MILLIS &&
+                alert.beginMillis > firstBegin + PROVIDER_ALERT_WINDOW_MILLIS
+            if (exceedsWindow) {
+                groups += group
+                group = mutableListOf()
+                firstBegin = alert.beginMillis
+            }
+            group += alert
+        }
+        groups += group
+        return groups
     }
 }
 

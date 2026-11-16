@@ -18,5 +18,4 @@
     <string name="connection_setup_address_other_vpn">VPN</string>
     <string name="connection_setup_open_calendar">Ouvrir le calendrier</string>
     <string name="connection_setup_paired_body">Votre ordinateur peut utiliser les calendriers ci-dessous quand la connexion est active.</string>
-    <string name="connection_setup_running_short">Gardez la connexion active pendant que votre ordinateur utilise votre calendrier.</string>
 </resources>

@@ -1,5 +1,13 @@
 # Changes
 
+## 0.8.0
+
+The current time line stays visible over events in Day and Week. The timeline clock follows minute changes more closely and refreshes when the phone's date or time changes.
+
+Search keeps its loading state correct when queries or calendar data change. Typing while a search is loading reuses the current read. Multiple due reminders share bounded calendar reads while keeping each event and reminder time separate.
+
+Unused strings and code have been removed. Release builds also remove unused resources, and every CI build checks the release archive and its links.
+
 ## 0.7.0
 
 Settings > About now has a manual update check. It finds the latest GitHub release, verifies the download and opens Android to confirm installation. Updates are only checked when you ask.

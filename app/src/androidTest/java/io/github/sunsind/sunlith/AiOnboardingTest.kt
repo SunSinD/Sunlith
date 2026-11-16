@@ -113,7 +113,7 @@ class AiOnboardingTest {
             instrumentation.uiAutomation.serviceInfo = instrumentation.uiAutomation.serviceInfo
             assertTrue("Selected layout must expose its selected state.", selected(preset(id)))
         }
-        assertFalse("The duplicate Schedule preset must be absent.", device.hasObject(By.pkg(context.packageName).textStartsWith(english.getString(R.string.layout_preset_schedule))))
+        assertFalse("The duplicate Schedule preset must be absent.", device.hasObject(By.pkg(context.packageName).textStartsWith("Schedule")))
         assertFalse(uiPrefs().getBoolean("layout_setup_done", false))
         recreate()
         node(R.string.layout_setup_title)

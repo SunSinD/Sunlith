@@ -12,7 +12,6 @@
     <string name="repeating">Repeating event</string>
     <string name="unknown_calendar">Unknown calendar</string>
     <string name="no_events">No events</string>
-    <string name="no_events_tap">No events, tap to add one</string>
     <string name="no_calendars_on_phone">There are no calendars on this phone yet. Add an account with calendar sync in Android settings, or create a calendar that stays on this device.</string>
     <string name="no_calendars_selected">No calendars are shown in Sunlith right now.</string>
 
@@ -39,7 +38,6 @@
     <string name="action_search">Search</string>
     <string name="action_clear">Clear search</string>
     <string name="action_today">Go to today</string>
-    <string name="action_more">More options</string>
     <string name="action_new_event">New event</string>
     <string name="action_add_event">Add event</string>
     <string name="action_jump_to_date">Choose a date</string>
@@ -159,38 +157,20 @@
     <string name="search_none">No matching events.</string>
     <string name="search_past">Past</string>
 
-    <string name="settings_appearance">Appearance</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
     <string name="theme_system">Follow system</string>
     <string name="settings_monday">Week starts on Monday</string>
-    <string name="settings_choose_calendars">Calendars shown in Sunlith</string>
-    <plurals name="calendars_shown">
-        <item quantity="one">%d calendar shown</item>
-        <item quantity="other">%d calendars shown</item>
-    </plurals>
     <string name="settings_local_sub">Stays on this phone and does not sync to any account.</string>
-    <string name="settings_reminders">Reminders</string>
     <string name="settings_reminders_toggle">Reminder notifications</string>
-    <string name="settings_reminders_sub">Sunlith notifies you when an event reminder is due.</string>
     <string name="settings_reminders_blocked">Notifications are blocked for Sunlith. Turn this on to allow them.</string>
-    <string name="settings_widget">Widget</string>
     <string name="settings_widget_opacity">Background opacity</string>
-    <string name="settings_widget_sub">Add the agenda widget from your home screen\'s widget list. Resize it by long-pressing it.</string>
-    <string name="settings_transfer">Import and export</string>
     <string name="settings_import">Import .ics file</string>
-    <string name="settings_import_sub">Preview the file, then choose which calendar receives the events.</string>
     <string name="settings_export">Export .ics file</string>
-    <string name="settings_export_sub">Save the calendars you choose as a file.</string>
     <string name="settings_exporting">Exporting…</string>
-    <string name="settings_help">Help</string>
-    <string name="settings_about">About</string>
-    <string name="about_version">Sunlith %1$s</string>
-    <string name="about_sub">Free, open source calendar for Android.</string>
     <string name="about_source">Source code</string>
 
     <string name="help_migration_title">Move from another calendar app</string>
-    <string name="help_migration_sub">Use the calendars already on your phone</string>
     <string name="help_migration_body">Sunlith reads Android\'s shared calendar storage, so existing calendars can appear without an import.\n\n1. Open Calendars in Sunlith and select the calendars you use.\n2. Check a few timed, all-day and repeating events.\n3. If an account is missing, add it in Android settings and turn on calendar sync.\n\nUse .ics import when you need to copy events into another calendar. Back them up first and avoid importing into a calendar that already contains them.\n\nChoose one app to send reminders if several apps notify for the same events.</string>
 
     <string name="export_title">Calendars to export</string>

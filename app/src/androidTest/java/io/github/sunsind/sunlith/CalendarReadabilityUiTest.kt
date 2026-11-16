@@ -58,6 +58,7 @@ import androidx.test.uiautomator.Until
 import io.github.sunsind.sunlith.data.CalendarEvent
 import io.github.sunsind.sunlith.data.CalendarDates
 import io.github.sunsind.sunlith.data.CalendarRepository
+import io.github.sunsind.sunlith.data.EventDraft
 import io.github.sunsind.sunlith.data.SchoolAbsenceCoverage
 import io.github.sunsind.sunlith.school.SchoolCalendarWriter
 import io.github.sunsind.sunlith.school.SchoolFeed
@@ -67,6 +68,7 @@ import io.github.sunsind.sunlith.school.SchoolStore
 import io.github.sunsind.sunlith.school.SchoolTerm
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.ui.Formats
+import io.github.sunsind.sunlith.ui.LightPalette
 import io.github.sunsind.sunlith.ui.Screen
 import io.github.sunsind.sunlith.ui.SunlithApp
 import io.github.sunsind.sunlith.ui.SunlithTheme
@@ -187,6 +189,44 @@ class CalendarReadabilityUiTest {
         }
         synchronized(preferenceNames) { preferenceNames.forEach(base::deleteSharedPreferences) }
         if (::directory.isInitialized) check(directory.deleteRecursively())
+    }
+
+    @Test
+    fun dayCurrentTimeLineIsVisibleOverAnEvent() = checked {
+        assertCurrentTimeLineOverEvent(week = false)
+    }
+
+    @Test
+    fun weekCurrentTimeLineIsVisibleOverAnEvent() = checked {
+        assertCurrentTimeLineOverEvent(week = true)
+    }
+
+    private fun assertCurrentTimeLineOverEvent(week: Boolean) {
+        val now = System.currentTimeMillis()
+        val today = LocalDate.now(zone)
+        val id = CalendarRepository(app).saveEvent(EventDraft(
+            calendarId = calendarId, title = "Current time overlay fixture",
+            startMillis = now - 45 * 60_000L, endMillis = now + 75 * 60_000L,
+            timeZone = zone.id, reminderMinutes = emptyList(),
+        ))
+        onMain { vm.reload(); vm.goToday() }
+        if (week) timeline(today, 3) else showDay(today)
+        await("The current event must load") { vm.eventsByDay[today].orEmpty().any { it.id == id } }
+        onMain { vm.goToday() }
+        val card = stableNode(By.res("timeline_event_$id")).visibleBounds
+        val viewport = node(By.res("calendar_timeline")).visibleBounds
+        assertTrue("The current event must be visible", card.intersect(viewport))
+        val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            val from = card.left + card.width() / 5
+            val to = card.right - card.width() / 5
+            val expected = LightPalette.accent.toArgb()
+            val paintedAcrossCard = (card.top + 4 until card.bottom - 4).any { y ->
+                (from until to).count { x -> screenshot.getPixel(x, y) == expected } >= (to - from) * 9 / 10
+            }
+            assertTrue("The current-time stroke must paint across the event, above its fill", paintedAcrossCard)
+        } finally { screenshot.recycle() }
+        if (arguments.getString("readabilityCapture") != null) capture(if (week) "week-time-overlay" else "day-time-overlay")
     }
 
     @Test
