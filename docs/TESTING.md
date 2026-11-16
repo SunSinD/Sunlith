@@ -2,6 +2,64 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.8.0 optimization verification, 16 November 2026
+
+The distribution APK is version 0.8.0/code 23, nondebuggable and R8 minified,
+with resource shrinking enabled and the existing signing certificate. Both fresh
+emulators installed the exact APK and test APK below. Application and test sources
+match implementation commit `e5b87fc`. Only this verification document changes afterward.
+
+| Artifact | SHA256 |
+| --- | --- |
+| Distribution APK | `c0b7b6ec709997ca056fe9bc363061f42ee06cef0b8816066fa3747dc907b57d` |
+| Test APK | `2c788be092df2af1059f7a580cea4c17eb9bc819072113dca24129cda1e71bd5` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+
+| Final full suite | API 30 / Android 11 | API 36 / Android 16 |
+| --- | --- | --- |
+| Declared tests | 411 | 414 |
+| Passed | 404 | 406 |
+| Explicit assumption skips | 7 | 8 |
+| Failures | 0 | 0 |
+
+Each column is one completed full suite on the final APK pair. Every declared test
+has one named terminal outcome, with no duplicate names. Earlier interrupted runs
+are excluded. Skips are not passes. System animator duration was set to 1 so tests
+that rebuild the timeline during an animation can observe intermediate frames.
+
+Both APIs skip four optional synthetic display campaigns, the external desktop
+client fixture and the private live portal fixture. API 30 also skips Material You
+because it requires API 31. API 36 also skips two notification permission recovery
+fixtures that need a separate opt in and a previously revoked permission.
+Those optional campaigns and permission round trips remain unverified here.
+
+Two additional Day and continuous Week pixel checks passed on each API in French
+with right to left layout. Their screenshots were inspected. The current time
+stroke crosses the event fill and stays confined to today's column. The full
+English suites include the same pixel checks. Controlled shared clock tests pass
+for both timeline implementations without rereading their event lists.
+
+The dense calendar regression verifies that successive uncached search queries
+share one provider read and that a superseded refresh cannot clear the current
+loading state. The reminder regression resolves eight selected reminders with two
+bounded instance queries, preserves distinct reminder minutes, and rejects alerts
+from an unselected calendar.
+
+All 233 JVM tests passed. Lint completed with zero errors, 92 warnings and 10 hints,
+including zero unused resource reports. The companion passed 44 tests with one
+optional external fixture skipped and no dependency audit vulnerabilities.
+
+[GitHub CI](https://github.com/SunSinD/Sunlith/actions/runs/43921940713) passed the
+Android build, unit tests, lint and packaging checks. Companion checks passed on
+Linux, Windows and macOS. Its separate distribution runtime campaigns passed 87 tests
+on API 30 and 88 on API 36, with one optional display fixture skipped on each.
+CI packages use a temporary signing key and are labelled as package checks. The
+official release uses the locally signed APK whose certificate is recorded above.
+
+The APK contains 2,746,543 bytes, compared with 2,988,879 for v0.7.0.
+Archive source equality, relative Markdown links and APK equality are checked by
+`tools/package-release.py`. No physical phone or private live portal was used.
+
 ## 0.7.0 calendar, updater and school verification, 2026-11-16
 
 The tested distribution APK is version 0.7.0/code 22, nondebuggable and
