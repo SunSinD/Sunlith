@@ -106,6 +106,10 @@
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.Applier {
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.runtime.BroadcastFrameClock {
+    <init>(kotlin.jvm.functions.Function0,int,kotlin.jvm.internal.DefaultConstructorMarker);
+    void sendFrame(long);
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.runtime.ComposablesKt {
     long getCurrentCompositeKeyHashCode(androidx.compose.runtime.Composer,int);
     void invalidApplier();
@@ -248,7 +252,9 @@
     androidx.compose.ui.Modifier drawWithContent(androidx.compose.ui.Modifier,kotlin.jvm.functions.Function1);
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.geometry.Rect {
+    float getBottom();
     long getCenter-F1C5BW0();
+    float getTop();
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.graphics.ColorKt {
     int toArgb-8_81llA(long);
@@ -270,6 +276,9 @@
     kotlin.jvm.functions.Function2 getSetMeasurePolicy();
     kotlin.jvm.functions.Function2 getSetModifier();
     kotlin.jvm.functions.Function2 getSetResolvedCompositionLocals();
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.node.RootForTest {
+    androidx.compose.ui.semantics.SemanticsOwner getSemanticsOwner();
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.platform.AbstractComposeView {
     void disposeComposition();
@@ -293,8 +302,28 @@
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.platform.UriHandler {
     void openUri(java.lang.String);
 }
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.platform.ViewRootForTest {
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.semantics.ScrollAxisRange {
+    kotlin.jvm.functions.Function0 getValue();
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.semantics.SemanticsConfigurationKt {
+    java.lang.Object getOrNull(androidx.compose.ui.semantics.SemanticsConfiguration,androidx.compose.ui.semantics.SemanticsPropertyKey);
+}
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.semantics.SemanticsModifierKt {
     androidx.compose.ui.Modifier semantics$default(androidx.compose.ui.Modifier,boolean,kotlin.jvm.functions.Function1,int,java.lang.Object);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.semantics.SemanticsNode {
+    androidx.compose.ui.geometry.Rect getBoundsInRoot();
+    androidx.compose.ui.semantics.SemanticsConfiguration getConfig();
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.semantics.SemanticsOwnerKt {
+    java.util.List getAllSemanticsNodes$default(androidx.compose.ui.semantics.SemanticsOwner,boolean,boolean,int,java.lang.Object);
+}
+-keep,allowoptimization,allowobfuscation class androidx.compose.ui.semantics.SemanticsProperties {
+    androidx.compose.ui.semantics.SemanticsProperties INSTANCE;
+    androidx.compose.ui.semantics.SemanticsPropertyKey getTestTag();
+    androidx.compose.ui.semantics.SemanticsPropertyKey getVerticalScrollAxisRange();
 }
 -keep,allowoptimization,allowobfuscation class androidx.compose.ui.semantics.SemanticsProperties_androidKt {
     void setTestTagsAsResourceId(androidx.compose.ui.semantics.SemanticsPropertyReceiver,boolean);
@@ -491,12 +520,16 @@
     int all_day;
     int app_name;
     int app_update_action_allow;
+    int app_update_action_install;
     int app_update_action_update;
     int app_update_available;
     int app_update_check;
     int app_update_error_network;
     int app_update_installing;
+    int app_update_percent;
     int app_update_permission;
+    int app_update_preparing;
+    int app_update_preparing_detail;
     int app_update_ready;
     int app_update_up_to_date;
     int beta_collapse_calendar;
@@ -1349,6 +1382,7 @@
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.system.ReminderNotifications {
     io.github.sunsind.sunlith.system.ReminderNotifications INSTANCE;
     boolean allowed(android.content.Context);
+    boolean post(android.content.Context,io.github.sunsind.sunlith.data.CalendarEvent,int,boolean);
     boolean post$default(io.github.sunsind.sunlith.system.ReminderNotifications,android.content.Context,io.github.sunsind.sunlith.data.CalendarEvent,int,boolean,int,java.lang.Object);
     void postProviderAlerts$app_distribution(android.content.Context);
 }
@@ -1416,6 +1450,10 @@
     void setWidgetShowCalendarName(boolean);
     void setWidgetShowEmptyDays(boolean);
 }
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.system.SnoozedReminders {
+    io.github.sunsind.sunlith.system.SnoozedReminders INSTANCE;
+    void restore(android.content.Context);
+}
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.system.TodoStore {
     <init>(android.content.Context);
     boolean isCompleted(java.lang.String);
@@ -1438,6 +1476,12 @@
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.system.UpdateVersion$Companion {
     io.github.sunsind.sunlith.system.UpdateVersion parse(java.lang.String);
+}
+-keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.AllDayBandHeight {
+    <init>();
+    float getHeight();
+    boolean getOpen();
+    void request(float,boolean,boolean,kotlinx.coroutines.CoroutineScope);
 }
 -keep,allowoptimization,allowobfuscation class io.github.sunsind.sunlith.ui.AppUpdateSectionKt {
     void AppUpdateSection(androidx.compose.runtime.Composer,int);
@@ -1759,6 +1803,16 @@
 -keep,allowoptimization,allowobfuscation class kotlin.Unit {
     kotlin.Unit INSTANCE;
 }
+-keep,allowoptimization,allowobfuscation class kotlin.collections.AbstractCollection {
+    boolean contains(java.lang.Object);
+}
+-keep,allowoptimization,allowobfuscation class kotlin.collections.AbstractList {
+    <init>();
+    java.lang.Object get(int);
+    int getSize();
+    int indexOf(java.lang.Object);
+    int lastIndexOf(java.lang.Object);
+}
 -keep,allowoptimization,allowobfuscation class kotlin.collections.ArraysKt {
 }
 -keep,allowoptimization,allowobfuscation class kotlin.collections.ArraysKt___ArraysJvmKt {
@@ -1817,6 +1871,7 @@
     java.util.List sorted(java.lang.Iterable);
     java.util.List sortedWith(java.lang.Iterable,java.util.Comparator);
     java.util.List take(java.lang.Iterable,int);
+    java.util.List takeLast(java.util.List,int);
     java.util.List toList(java.lang.Iterable);
     java.util.Set toSet(java.lang.Iterable);
     java.util.List zipWithNext(java.lang.Iterable);
@@ -1868,6 +1923,9 @@
 -keep,allowoptimization,allowobfuscation class kotlin.comparisons.ComparisonsKt___ComparisonsJvmKt {
     java.lang.Comparable maxOf(java.lang.Comparable,java.lang.Comparable);
     java.lang.Comparable minOf(java.lang.Comparable,java.lang.Comparable);
+}
+-keep,allowoptimization,allowobfuscation class kotlin.coroutines.AbstractCoroutineContextElement {
+    kotlin.coroutines.CoroutineContext plus(kotlin.coroutines.CoroutineContext);
 }
 -keep,allowoptimization,allowobfuscation class kotlin.coroutines.Continuation {
     kotlin.coroutines.CoroutineContext getContext();
@@ -1990,6 +2048,9 @@
 }
 -keep,allowoptimization,allowobfuscation class kotlin.jvm.internal.StringCompanionObject {
     kotlin.jvm.internal.StringCompanionObject INSTANCE;
+}
+-keep,allowoptimization,allowobfuscation class kotlin.jvm.internal.TypeIntrinsics {
+    java.util.Map asMutableMap(java.lang.Object);
 }
 -keep,allowoptimization,allowobfuscation class kotlin.math.MathKt {
 }

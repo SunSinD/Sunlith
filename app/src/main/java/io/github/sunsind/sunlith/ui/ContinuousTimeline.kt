@@ -1,5 +1,8 @@
 package io.github.sunsind.sunlith.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.scrollable
@@ -42,6 +45,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -310,6 +314,7 @@ internal fun ContinuousTimeline(
             val day = date(i)
             vm.coversRange(day, day) && events[day].orEmpty().any { it.isTimelineBanner() }
         }
+        val rowPlaced by remember(row) { derivedStateOf { row.layoutInfo.visibleItemsInfo.isNotEmpty() } }
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(headerHeight)) {
                 Spacer(Modifier.width(gutter))
@@ -320,22 +325,26 @@ internal fun ContinuousTimeline(
                         onClick = if (vm.weekHeaderSelection) { { vm.selectTimelineDay(day) } } else null)
                 }
             }
-            // Only real all-day and multi-day banners use this band. With none around the view, it is gone entirely.
-            if (hasBanners) {
-                HorizontalDivider(color = p.line)
-                Row(Modifier.fillMaxWidth().heightIn(max = bannerHeight).testTag("calendar_timeline_all_day").verticalScroll(rememberScrollState())) {
-                    Text(allDayLabel.substringBeforeLast(' ') + "\n" + allDayLabel.substringAfterLast(' '), Modifier.width(gutter).padding(end = 6.dp, top = 4.dp), color = p.muted, style = railStyle,
-                        textAlign = if (rtl) androidx.compose.ui.text.style.TextAlign.Left else androidx.compose.ui.text.style.TextAlign.Right,
-                        maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    ProjectedDays(row, visibleIndices, column, Modifier.weight(1f).then(drag), fitTallest = true) { i ->
-                        val day = date(i)
-                        val banners = if (vm.coversRange(day, day)) events[day].orEmpty().filter { it.isTimelineBanner() } else emptyList()
-                        // Every day is as tall as the fullest one and its last banner fills the rest, so a short title
-                        // never leaves an empty strip beside a longer one. A crowded band scrolls as a whole.
-                        Column(Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            banners.forEachIndexed { n, event ->
-                                AllDayChip(event, day, f, false, motion, bannerHeight,
-                                    if (n == banners.lastIndex) Modifier.weight(1f) else Modifier) { onOpen(event) }
+            // Only real all-day and multi-day banners use this band. It glides open when one comes into view and
+            // closes once none is visible, so the hours below slide instead of jumping. At rest without banners it
+            // takes no room at all.
+            AllDayReveal(hasBanners, motion, rowPlaced) {
+                Column {
+                    HorizontalDivider(color = p.line)
+                    Row(Modifier.fillMaxWidth().heightIn(max = bannerHeight).testTag("calendar_timeline_all_day").verticalScroll(rememberScrollState())) {
+                        Text(allDayLabel.substringBeforeLast(' ') + "\n" + allDayLabel.substringAfterLast(' '), Modifier.width(gutter).padding(end = 6.dp, top = 4.dp), color = p.muted, style = railStyle,
+                            textAlign = if (rtl) androidx.compose.ui.text.style.TextAlign.Left else androidx.compose.ui.text.style.TextAlign.Right,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        ProjectedDays(row, visibleIndices, column, Modifier.weight(1f).then(drag), fitTallest = true) { i ->
+                            val day = date(i)
+                            val banners = if (vm.coversRange(day, day)) events[day].orEmpty().filter { it.isTimelineBanner() } else emptyList()
+                            // Every day is as tall as the fullest one and its last banner fills the rest, so a short title
+                            // never leaves an empty strip beside a longer one. A crowded band scrolls as a whole.
+                            Column(Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                banners.forEachIndexed { n, event ->
+                                    AllDayChip(event, day, f, false, motion, bannerHeight,
+                                        if (n == banners.lastIndex) Modifier.weight(1f) else Modifier) { onOpen(event) }
+                                }
                             }
                         }
                     }
@@ -407,6 +416,56 @@ internal fun ContinuousTimeline(
                     }
                 }
             })
+    }
+}
+
+private val AllDayBandSpring = spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow, visibilityThreshold = 0.5f)
+
+/**
+ * Height of the All day band, in pixels. A glide starts from wherever the band is and keeps its speed, so a quick
+ * swipe back reverses it smoothly instead of restarting it. The first height once the strip is placed, and every
+ * height without motion, apply in the same frame.
+ */
+internal class AllDayBandHeight {
+    private val animated = Animatable(0f, visibilityThreshold = 0.5f)
+    private var requested = 0f
+    private var snapped = true
+    private var started = false
+
+    /** The height to draw now. */
+    val height: Float get() = if (snapped) requested else animated.value.coerceAtLeast(0f)
+
+    /** Whether any of the band still shows. Composition reads it, so it only changes when the band opens or closes. */
+    val open by derivedStateOf { animated.value > 0f }
+
+    fun request(target: Float, motion: Boolean, ready: Boolean, scope: CoroutineScope) {
+        val glide = motion && started
+        if (ready) started = true
+        if (target == requested && snapped != glide) return
+        requested = target
+        snapped = !glide
+        scope.launch { if (glide) animated.animateTo(target, AllDayBandSpring) else animated.snapTo(target) }
+    }
+}
+
+/**
+ * Shows [content] at a height that follows its own natural height while [shown], and 0 otherwise. The content keeps
+ * its full size and is clipped from the bottom, fading only over the first few pixels, so it never squashes and a
+ * change between one and several banners never dims it.
+ */
+@Composable
+private fun AllDayReveal(shown: Boolean, motion: Boolean, ready: Boolean, content: @Composable () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val band = remember { AllDayBandHeight() }
+    Layout(content = { if (shown || band.open) content() }, modifier = Modifier.fillMaxWidth().clipToBounds()) { measurables, constraints ->
+        val placeable = measurables.firstOrNull()?.measure(constraints.copy(minHeight = 0))
+        val natural = placeable?.height ?: 0
+        band.request(if (shown) natural.toFloat() else 0f, motion, ready, scope)
+        val height = band.height.roundToInt().coerceIn(0, constraints.maxHeight)
+        val fade = minOf(natural, 24.dp.roundToPx()).coerceAtLeast(1)
+        layout(constraints.maxWidth, height) {
+            placeable?.placeRelativeWithLayer(0, 0) { alpha = (height.toFloat() / fade).coerceIn(0f, 1f) }
+        }
     }
 }
 

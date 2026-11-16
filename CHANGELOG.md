@@ -1,5 +1,13 @@
 # Changes
 
+## 0.8.1
+
+Event reminders show how long until the event starts, along with its date and time. All day events use their calendar date, and reminders for events already underway say so.
+
+The update screen keeps its action visible while checking the downloaded file, so the button and text no longer briefly collapse before installation.
+
+The All day band in continuous Week opens and closes smoothly as you scroll between days. Quick changes in direction continue from the current height, and disabled animations take effect immediately.
+
 ## 0.8.0
 
 The current time line stays visible over events in Day and Week. The timeline clock follows minute changes more closely and refreshes when the phone's date or time changes.

@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.ContentProvider
 import android.content.pm.ProviderInfo
+import android.content.res.Configuration
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
@@ -30,9 +31,11 @@ import io.github.sunsind.sunlith.data.CalendarRepository
 import io.github.sunsind.sunlith.data.EventDraft
 import io.github.sunsind.sunlith.system.ReminderNotifications
 import io.github.sunsind.sunlith.system.ReminderScheduler
+import io.github.sunsind.sunlith.system.SnoozedReminders
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.system.CalendarReminderReceiver
 import java.util.UUID
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -122,6 +125,53 @@ class ReminderNotificationsTest {
         }
         assertTrue("The notification Dismiss action must remove the notification.", manager.activeNotifications.none { it.key == active.key })
         device.pressBack()
+    }
+
+    @Test
+    fun notificationTimingUsesEnglishAndFrenchResourceText() {
+        val event = createEvent(System.currentTimeMillis() + 2 * 86_400_000L, "Localized timing test")
+        val english = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.ENGLISH) })
+        val french = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.CANADA_FRENCH) })
+
+        assertTrue(ReminderNotifications.post(english, event, 15, repeat = true))
+        waitForNotificationText(event.title, "Starts ")
+        val englishText = manager.activeNotifications.single { it.notification.extras.getString(Notification.EXTRA_TITLE) == event.title }
+            .notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
+        assertTrue(englishText.contains("In 2 days"))
+        assertTrue(englishText.contains("Starts "))
+        assertTrue(englishText.contains("Laval"))
+
+        assertTrue(ReminderNotifications.post(french, event, 15, repeat = true))
+        waitForNotificationText(event.title, "Commence ")
+        val frenchText = manager.activeNotifications.single { it.notification.extras.getString(Notification.EXTRA_TITLE) == event.title }
+            .notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
+        assertTrue(frenchText.contains("Dans 2 jours"))
+        assertTrue(frenchText.contains("Commence "))
+        assertTrue(frenchText.contains("Laval"))
+    }
+
+    @Test
+    fun restoringSnoozesRemovesTheOriginalMalformedKeys() {
+        val prefs = context.getSharedPreferences("snoozed_reminders", Context.MODE_PRIVATE)
+        prefs.edit().clear().putLong("bad:1:0", System.currentTimeMillis() + 60_000)
+            .putLong("007:1:0", System.currentTimeMillis() + 60_000).commit()
+        SnoozedReminders.restore(context)
+        assertTrue(prefs.all.isEmpty())
+    }
+
+    @Test
+    fun separateRecurringOccurrenceStartsKeepSeparateNotificationIdentity() {
+        val first = createEvent(System.currentTimeMillis() + 3_600_000L, "Recurring occurrence identity test")
+        val second = first.copy(startMillis = first.startMillis + 86_400_000L, endMillis = first.endMillis + 86_400_000L)
+
+        assertTrue(ReminderNotifications.post(context, first, 15, repeat = true))
+        assertTrue(ReminderNotifications.post(context, second, 15, repeat = true))
+        awaitNotification("Both recurring occurrences must be posted") {
+            manager.activeNotifications.count { it.notification.extras.getString(Notification.EXTRA_TITLE) == first.title } == 2
+        }
+        assertEquals(2, manager.activeNotifications.count {
+            it.notification.extras.getString(Notification.EXTRA_TITLE) == first.title
+        })
     }
 
     @Test
@@ -247,9 +297,12 @@ class ReminderNotificationsTest {
                 exported = false
             })
         })
-        val countingContext = object : ContextWrapper(context) {
+        val repositoryContext = object : ContextWrapper(context) {
             override fun getApplicationContext(): Context = this
             override fun getContentResolver() = resolver
+        }
+        val countingContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = repositoryContext
         }
         try {
             ReminderNotifications.postProviderAlerts(countingContext)
@@ -279,5 +332,16 @@ class ReminderNotificationsTest {
             SystemClock.sleep(100)
         }
         assertTrue("A reminder notification for '$title' must be posted before the timeout.", manager.activeNotifications.any { it.notification.extras.getString(Notification.EXTRA_TITLE) == title })
+    }
+
+    private fun waitForNotificationText(title: String, text: String) = awaitNotification("'$title' must contain '$text'") {
+        manager.activeNotifications.any { it.notification.extras.getString(Notification.EXTRA_TITLE) == title &&
+            it.notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains(text) }
+    }
+
+    private fun awaitNotification(message: String, condition: () -> Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + 5_000
+        while (!condition() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(50)
+        assertTrue(message, condition())
     }
 }

@@ -1,6 +1,6 @@
 # Versioning
 
-The current version is **v0.8.0**. Android and the companion use `0.8.0`, and Android's `versionCode` is `23`. This update fixes the current time indicator and improves calendar efficiency. Earlier published releases and their files stay unchanged.
+The current version is **v0.8.1**. Android and the companion use `0.8.1`, and Android's `versionCode` is `24`. This update improves reminder timing, the update screen and the Week All day band. Earlier published releases and their files stay unchanged.
 
 The app only checks for updates when the user taps Check for updates. It reads the latest stable GitHub release, downloads the APK named for that version, and checks it against the GitHub digest, `SHA256SUMS.txt`, the package name, the signing certificate and the version code before Android shows its install screen. Keep publishing both files with these exact names, signed with the same key, or the in app update will refuse the release.
 

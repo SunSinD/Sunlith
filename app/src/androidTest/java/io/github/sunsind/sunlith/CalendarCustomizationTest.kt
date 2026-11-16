@@ -21,6 +21,7 @@ import android.provider.CalendarContract
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -35,12 +36,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getAllSemanticsNodes
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -71,6 +77,7 @@ import io.github.sunsind.sunlith.data.CalendarRepository
 import io.github.sunsind.sunlith.data.EventDraft
 import io.github.sunsind.sunlith.system.SettingsStore
 import io.github.sunsind.sunlith.ui.DarkPalette
+import io.github.sunsind.sunlith.ui.AllDayBandHeight
 import io.github.sunsind.sunlith.ui.CourseColors
 import io.github.sunsind.sunlith.ui.eventColors
 import io.github.sunsind.sunlith.ui.LightPalette
@@ -100,6 +107,9 @@ import java.util.UUID
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -561,6 +571,263 @@ class CalendarCustomizationTest {
         onMain { vm.select(shown) }
         awaitUi { vm.timelineViewportStart == shown && !device.hasObject(band) }
         captureMinor("continuous-empty-all-day-band")
+    }
+
+    @Test
+    fun allDayBandHeightGlidesBothWaysAndTurnsAroundWithoutJumping() {
+        val clock = BroadcastFrameClock()
+        val scope = CoroutineScope(Dispatchers.Unconfined + clock)
+        var time = 0L
+        fun AllDayBandHeight.frame(): Float {
+            time += 16_000_000L
+            clock.sendFrame(time)
+            return height
+        }
+        fun AllDayBandHeight.settle(target: Float): List<Float> {
+            val seen = mutableListOf<Float>()
+            while (height != target) {
+                assertTrue("The band must settle on $target, seen=$seen", seen.size < 240)
+                seen += frame()
+            }
+            return seen
+        }
+        fun List<Float>.between(from: Float, to: Float) = count { it > minOf(from, to) + 0.5f && it < maxOf(from, to) - 0.5f }
+        try {
+            val band = AllDayBandHeight()
+            band.request(0f, motion = true, ready = true, scope = scope)
+            assertEquals(0f, band.height)
+            assertFalse(band.open)
+
+            band.request(120f, motion = true, ready = true, scope = scope)
+            assertEquals("Opening must start from the closed band, not jump.", 0f, band.height)
+            val opening = List(6) { band.frame() }
+            assertTrue("Opening needs intermediate frames: $opening", opening.between(0f, 120f) >= 4)
+            assertTrue("Opening must only grow: $opening", opening.zipWithNext().all { (a, b) -> b >= a })
+            assertTrue(band.open)
+
+            val turn = band.height
+            band.request(0f, motion = true, ready = true, scope = scope)
+            assertEquals("A quick swipe back must continue from the current height.", turn, band.height)
+            val reversed = band.settle(0f)
+            assertTrue("The reversal must stay inside the band: $reversed", reversed.all { it in 0f..120f })
+            assertTrue("The reversal must not jump: $reversed", (listOf(turn) + reversed).zipWithNext().all { (a, b) -> kotlin.math.abs(b - a) <= 30f })
+            assertEquals(0f, reversed.last())
+            assertFalse("A closed band must leave composition.", band.open)
+
+            band.request(120f, motion = true, ready = true, scope = scope)
+            band.settle(120f)
+            band.request(0f, motion = true, ready = true, scope = scope)
+            assertEquals(120f, band.height)
+            val closing = band.settle(0f)
+            assertTrue("Closing needs intermediate frames: $closing", closing.between(0f, 120f) >= 4)
+            assertTrue("Closing must only shrink: $closing", closing.zipWithNext().all { (a, b) -> b <= a })
+            assertFalse(band.open)
+
+            band.request(120f, motion = true, ready = true, scope = scope)
+            List(3) { band.frame() }
+            val partial = band.height
+            band.request(0f, motion = true, ready = true, scope = scope)
+            List(2) { band.frame() }
+            band.request(120f, motion = true, ready = true, scope = scope)
+            val reopened = band.settle(120f)
+            assertTrue("Retargeting twice must stay smooth: partial=$partial $reopened",
+                reopened.all { it in 0f..120f } && reopened.zipWithNext().all { (a, b) -> kotlin.math.abs(b - a) <= 30f })
+
+            band.request(60f, motion = true, ready = true, scope = scope)
+            val fewer = band.settle(60f)
+            assertTrue("Fewer banners must shrink the band without dipping below them: $fewer", fewer.all { it in 59.5f..120f })
+
+            band.request(120f, motion = true, ready = true, scope = scope)
+            List(3) { band.frame() }
+            band.request(120f, motion = false, ready = true, scope = scope)
+            assertEquals("Turning motion off must settle at once.", 120f, band.height)
+            band.request(0f, motion = false, ready = true, scope = scope)
+            assertEquals("Without motion the band must close in the same frame.", 0f, band.height)
+            assertFalse(band.open)
+            band.request(80f, motion = false, ready = true, scope = scope)
+            assertEquals("Without motion the band must open in the same frame.", 80f, band.height)
+            assertTrue(band.open)
+
+            val fresh = AllDayBandHeight()
+            fresh.request(90f, motion = true, ready = false, scope = scope)
+            assertEquals("Before the strip is placed the band must not glide.", 90f, fresh.height)
+            fresh.request(100f, motion = true, ready = true, scope = scope)
+            assertEquals("The first placed height must show at once.", 100f, fresh.height)
+            assertEquals(100f, fresh.frame())
+            fresh.request(0f, motion = true, ready = true, scope = scope)
+            assertTrue("Later changes glide.", fresh.frame() > 0f && fresh.frame() < 100f)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun continuousAllDayBandGlidesBothWaysAndReversesWithoutMovingTheHourScroll() {
+        val density = context.resources.displayMetrics.density
+        val shown = date.plusDays(20)
+        val bannerDay = shown.plusDays(4)
+        repository.saveEvent(EventDraft(calendarId = calendarId, title = "Gliding all day notice",
+            startMillis = CalendarDates.allDayMillis(bannerDay), endMillis = CalendarDates.allDayMillis(bannerDay.plusDays(1)),
+            allDay = true, timeZone = "UTC", reminderMinutes = emptyList()))
+        onMain {
+            vm.changeNavigationAnimation(false)
+            vm.changeGroupEmptyHours(false)
+            vm.changeWeekLayout("continuous")
+            vm.changeVisibleWeekDays(3)
+            vm.changeViewMode(ViewMode.Week)
+            vm.select(shown)
+            vm.reload()
+        }
+        val band = By.pkg(context.packageName).res("calendar_timeline_all_day")
+        awaitUi { !vm.loadingEvents && vm.timelineViewportStart == shown && vm.coversRange(shown, bannerDay) &&
+            vm.timelineNavigationRequest == vm.handledTimelineNavigation &&
+            device.hasObject(By.pkg(context.packageName).res("calendar_continuous_timeline")) && !device.hasObject(band) }
+        val frames = TimelineFrames(composeRoot())
+        try {
+            val rest = frames.awaitSettled(0) { it.band == 0f }
+            fun show(day: LocalDate): Int {
+                val from = frames.size
+                instrumentation.runOnMainSync { vm.select(day) }
+                return from
+            }
+            fun isOpen(frame: TimelineFrame) = frame.band > 0f
+            fun isClosed(frame: TimelineFrame) = frame.band == 0f && kotlin.math.abs(frame.top - rest.top) <= 0.5f
+
+            var from = show(bannerDay.minusDays(2))
+            val opened = frames.awaitSettled(from, ::isOpen)
+            val rise = opened.top - rest.top
+            assertTrue("A visible banner must open the band: rest=$rest opened=$opened", rise > 8 * density)
+            assertEquals("At rest the band shows its whole height above the hours.", rise, opened.band + density, 2f)
+            fun instant(list: List<TimelineFrame>) = assertTrue("Without motion every frame must be closed or fully open: $list",
+                list.all { kotlin.math.abs(it.top - rest.top) <= 1f || kotlin.math.abs(it.top - opened.top) <= 1f })
+            instant(frames.since(from))
+            from = show(shown)
+            frames.awaitSettled(from, ::isClosed)
+            instant(frames.since(from))
+            awaitUi { !device.hasObject(band) }
+
+            fun assertGlide(list: List<TimelineFrame>, start: Float, end: Float) {
+                val tops = list.map { it.top }
+                val toward = if (end > start) 1f else -1f
+                assertTrue("The band must pass through intermediate heights: $tops",
+                    tops.count { it > minOf(start, end) + 1f && it < maxOf(start, end) - 1f } >= 2)
+                assertTrue("The band must move one way only: $tops", tops.zipWithNext().all { (a, b) -> (b - a) * toward >= -1f })
+                assertTrue("The band must not jump: $tops", (listOf(start) + tops).zipWithNext().all { (a, b) -> kotlin.math.abs(b - a) <= rise * 0.75f })
+            }
+            fun assertSmooth(list: List<TimelineFrame>, start: Float) {
+                val tops = list.map { it.top }
+                assertTrue("A reversal must stay between closed and open: $tops", tops.all { it >= rest.top - 1f && it <= opened.top + 1f })
+                assertTrue("A reversal must not jump: $tops", (listOf(start) + tops).zipWithNext().all { (a, b) -> kotlin.math.abs(b - a) <= rise * 0.75f })
+            }
+            fun partial(frame: TimelineFrame) = frame.top > rest.top + 1f && frame.top < opened.top - 1f
+
+            assumeTrue("Gliding needs enabled system animation.", android.provider.Settings.Global.getFloat(context.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f)
+            onMain { vm.changeNavigationAnimation(true) }
+            frames.awaitSettled(frames.size, ::isClosed)
+
+            from = show(bannerDay.minusDays(2))
+            frames.awaitSettled(from) { kotlin.math.abs(it.top - opened.top) <= 0.5f }
+            assertGlide(frames.since(from), rest.top, opened.top)
+            from = show(shown)
+            frames.awaitSettled(from, ::isClosed)
+            assertGlide(frames.since(from), opened.top, rest.top)
+            awaitUi { !device.hasObject(band) }
+
+            from = show(bannerDay.minusDays(2))
+            frames.awaitFrame(from, ::partial)
+            instrumentation.runOnMainSync { vm.select(shown) }
+            frames.awaitSettled(from, ::isClosed)
+            val turnedBack = frames.since(from)
+            assertTrue("A quick return must turn the opening around: ${turnedBack.map { it.top }}", turnedBack.maxOf { it.top } < opened.top - 1f)
+            assertSmooth(turnedBack, rest.top)
+            awaitUi { !device.hasObject(band) }
+
+            from = show(bannerDay.minusDays(2))
+            frames.awaitSettled(from) { kotlin.math.abs(it.top - opened.top) <= 0.5f }
+            from = show(shown)
+            frames.awaitFrame(from, ::partial)
+            instrumentation.runOnMainSync { vm.select(bannerDay.minusDays(2)) }
+            frames.awaitSettled(from) { kotlin.math.abs(it.top - opened.top) <= 0.5f }
+            val reopened = frames.since(from)
+            assertTrue("Coming back must turn the closing around: ${reopened.map { it.top }}", reopened.minOf { it.top } > rest.top + 1f)
+            assertSmooth(reopened, opened.top)
+
+            from = show(shown)
+            frames.awaitSettled(from, ::isClosed)
+            awaitUi { !device.hasObject(band) }
+            val all = frames.since(0)
+            assertTrue("The hour grid must expose its vertical scroll.", rest.scroll != null)
+            assertTrue("Opening and closing the band must keep the hour scroll: ${all.map { it.scroll }.distinct()}",
+                all.all { it.scroll != null && kotlin.math.abs(it.scroll - rest.scroll!!) <= 0.5f })
+            captureMinor("continuous-all-day-band-glide")
+        } finally {
+            frames.stop()
+        }
+    }
+
+    private data class TimelineFrame(val top: Float, val band: Float, val scroll: Float?)
+
+    private fun composeRoot(): ViewRootForTest {
+        var found: ViewRootForTest? = null
+        instrumentation.runOnMainSync {
+            fun visit(view: View) {
+                if (found != null) return
+                if (view is ViewRootForTest) found = view
+                else if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
+            }
+            visit(requireNotNull(activity).window.decorView)
+        }
+        return requireNotNull(found) { "No Compose root in the activity." }
+    }
+
+    /** Reads the hour grid and All day band once per display frame, straight from the live layout. */
+    private inner class TimelineFrames(private val root: ViewRootForTest) : android.view.Choreographer.FrameCallback {
+        private val seen = java.util.Collections.synchronizedList(mutableListOf<TimelineFrame>())
+        @Volatile private var running = true
+        val size get() = seen.size
+
+        init { instrumentation.runOnMainSync { android.view.Choreographer.getInstance().postFrameCallback(this) } }
+
+        override fun doFrame(frameTimeNanos: Long) {
+            if (!running) return
+            val nodes = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false)
+            fun tagged(tag: String) = nodes.firstOrNull { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
+            tagged("calendar_timeline")?.let { hours ->
+                val range = hours.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+                    ?: nodes.firstNotNullOfOrNull { node ->
+                        node.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)?.takeIf { node.boundsInRoot.top == hours.boundsInRoot.top }
+                    }
+                seen += TimelineFrame(hours.boundsInRoot.top, tagged("calendar_timeline_all_day")?.boundsInRoot?.height ?: 0f, range?.value?.invoke())
+            }
+            android.view.Choreographer.getInstance().postFrameCallback(this)
+        }
+
+        fun stop() { running = false }
+
+        fun since(from: Int): List<TimelineFrame> = synchronized(seen) { seen.drop(from) }
+
+        fun awaitFrame(from: Int, condition: (TimelineFrame) -> Boolean): TimelineFrame {
+            val deadline = SystemClock.elapsedRealtime() + 5_000
+            while (SystemClock.elapsedRealtime() < deadline) {
+                since(from).firstOrNull(condition)?.let { return it }
+                SystemClock.sleep(2)
+            }
+            throw AssertionError("No frame matched after $from: ${since(from)}")
+        }
+
+        /** Waits until 10 frames in a row show the same layout and it meets [condition]. */
+        fun awaitSettled(from: Int, condition: (TimelineFrame) -> Boolean): TimelineFrame {
+            val deadline = SystemClock.elapsedRealtime() + 5_000
+            while (SystemClock.elapsedRealtime() < deadline) {
+                val tail = since(from).takeLast(10)
+                val last = tail.lastOrNull()
+                if (last != null && tail.size == 10 && condition(last) &&
+                    tail.all { kotlin.math.abs(it.top - last.top) <= 0.5f && kotlin.math.abs(it.band - last.band) <= 0.5f }) return last
+                SystemClock.sleep(16)
+            }
+            throw AssertionError("The timeline did not settle after $from: ${since(from).takeLast(40)}")
+        }
     }
 
     @Test
@@ -3440,7 +3707,7 @@ class CalendarCustomizationTest {
             requireNotNull(listItem(trio[1])).click()
             awaitUi { opened.get() == trio[1] && popup.value.isEmpty() }
             opened.set(null)
-            assertTrue(device.click(cards[1].bounds.centerX(), cards[1].bounds.centerY()))
+            node(By.pkg(context.packageName).res("timeline_event_${evening.id}")).click()
             awaitUi { opened.get() == evening }
         }
     }

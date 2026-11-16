@@ -12,19 +12,24 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.CalendarContract
+import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import io.github.sunsind.sunlith.MainActivity
 import io.github.sunsind.sunlith.R
 import io.github.sunsind.sunlith.data.CalendarEvent
+import io.github.sunsind.sunlith.data.CalendarDates
 import io.github.sunsind.sunlith.data.CalendarRepository
+import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
+import java.time.Duration
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 object ReminderNotifications {
     const val CHANNEL = "event_reminders"
@@ -47,9 +52,14 @@ object ReminderNotifications {
             .putExtra("event_id", event.id).putExtra("event_begin", event.startMillis), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val snooze = PendingIntent.getBroadcast(context, id, eventIntent(context, "SNOOZE", event, minutes), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val dismiss = PendingIntent.getBroadcast(context, id, eventIntent(context, "DISMISS", event, minutes), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val format = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withZone(ZoneId.systemDefault())
-        val time = if (event.allDay) context.getString(R.string.all_day) else context.getString(R.string.notification_time_range, format.format(Instant.ofEpochMilli(event.startMillis)), format.format(Instant.ofEpochMilli(event.endMillis)))
-        val text = if (event.location.isBlank()) time else context.getString(R.string.notification_location_separator, time, event.location)
+        val time = if (event.allDay) context.getString(R.string.all_day) else context.getString(
+            R.string.notification_time_range,
+            formatLocalTime(context, event.startMillis),
+            formatLocalTime(context, event.endMillis),
+        )
+        val details = if (event.location.isBlank()) time else context.getString(R.string.notification_location_separator, time, event.location)
+        val timing = formatTiming(context, event, System.currentTimeMillis())
+        val text = context.getString(R.string.notification_content, timing, details)
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification).setContentTitle(event.title).setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -137,6 +147,82 @@ object ReminderNotifications {
         groups += group
         return groups
     }
+}
+
+internal enum class ReminderTimingState { FUTURE, STARTING, ONGOING, PAST }
+
+internal data class ReminderTiming(val state: ReminderTimingState, val amount: Duration, val startMillis: Long)
+
+internal fun reminderTiming(event: CalendarEvent, nowMillis: Long, zone: ZoneId): ReminderTiming {
+    val start = if (event.allDay) CalendarDates.allDayDate(event.startMillis).atStartOfDay(zone).toInstant().toEpochMilli() else event.startMillis
+    val end = if (event.allDay) CalendarDates.allDayDate(event.endMillis).atStartOfDay(zone).toInstant().toEpochMilli() else event.endMillis
+    return when {
+        nowMillis < start -> ReminderTiming(ReminderTimingState.FUTURE, Duration.ofMillis(start - nowMillis), start)
+        nowMillis == start || (nowMillis - start < 60_000L && nowMillis < end) -> ReminderTiming(ReminderTimingState.STARTING, Duration.ZERO, start)
+        nowMillis < end && end > start -> ReminderTiming(ReminderTimingState.ONGOING, Duration.ofMillis(nowMillis - start), start)
+        else -> ReminderTiming(ReminderTimingState.PAST, Duration.ofMillis(nowMillis - start), start)
+    }
+}
+
+private fun formatTiming(context: Context, event: CalendarEvent, nowMillis: Long): String {
+    val zone = ZoneId.systemDefault()
+    val timing = reminderTiming(event, nowMillis, zone)
+    val start = formatStart(context, event, zone)
+    val starts = context.getString(R.string.notification_starts_at, start)
+    val started = context.getString(R.string.notification_started_at, start)
+    return when (timing.state) {
+        ReminderTimingState.FUTURE -> context.getString(R.string.notification_timing_future, futureDistance(context, timing.amount), starts)
+        ReminderTimingState.STARTING -> context.getString(R.string.notification_timing_now, starts)
+        ReminderTimingState.ONGOING -> context.getString(R.string.notification_timing_ongoing, started)
+        ReminderTimingState.PAST -> context.getString(R.string.notification_timing_past, pastDistance(context, timing.amount), start)
+    }
+}
+
+private fun futureDistance(context: Context, duration: Duration): String = distance(context, duration, R.string.notification_in_less_than_minute,
+    R.plurals.notification_in_minutes, R.plurals.notification_in_hours, R.plurals.notification_in_days)
+
+private fun pastDistance(context: Context, duration: Duration): String = distance(context, duration, R.string.notification_less_than_minute_ago,
+    R.plurals.notification_minutes_ago, R.plurals.notification_hours_ago, R.plurals.notification_days_ago)
+
+internal enum class ReminderDistanceUnit { LESS_THAN_MINUTE, MINUTES, HOURS, DAYS }
+
+internal data class ReminderDistance(val unit: ReminderDistanceUnit, val count: Long)
+
+internal fun reminderDistance(duration: Duration): ReminderDistance {
+    val millis = duration.toMillis().coerceAtLeast(0)
+    if (millis < 60_000L) return ReminderDistance(ReminderDistanceUnit.LESS_THAN_MINUTE, 0)
+    fun rounded(unit: Long) = millis / unit + if (millis % unit >= unit / 2) 1 else 0
+    val minutes = rounded(60_000L)
+    if (minutes < 60) return ReminderDistance(ReminderDistanceUnit.MINUTES, minutes)
+    val hours = rounded(3_600_000L)
+    if (hours < 24) return ReminderDistance(ReminderDistanceUnit.HOURS, hours)
+    return ReminderDistance(ReminderDistanceUnit.DAYS, rounded(86_400_000L))
+}
+
+private fun distance(context: Context, duration: Duration, lessThanMinute: Int, minutesId: Int, hoursId: Int, daysId: Int): String {
+    val distance = reminderDistance(duration)
+    val resource = when (distance.unit) {
+        ReminderDistanceUnit.LESS_THAN_MINUTE -> return context.getString(lessThanMinute)
+        ReminderDistanceUnit.MINUTES -> minutesId
+        ReminderDistanceUnit.HOURS -> hoursId
+        ReminderDistanceUnit.DAYS -> daysId
+    }
+    return context.resources.getQuantityString(resource, distance.count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), distance.count)
+}
+
+private fun formatLocalTime(context: Context, millis: Long): String {
+    val locale = context.resources.configuration.locales[0] ?: Locale.getDefault()
+    val pattern = DateFormat.getBestDateTimePattern(locale, if (DateFormat.is24HourFormat(context)) "Hm" else "hm")
+    return SimpleDateFormat(pattern, locale).apply { timeZone = TimeZone.getDefault() }.format(Date(millis))
+}
+
+private fun formatStart(context: Context, event: CalendarEvent, zone: ZoneId): String {
+    val locale = context.resources.configuration.locales[0] ?: Locale.getDefault()
+    val pattern = DateFormat.getBestDateTimePattern(locale, "yMMMd")
+    val instant = if (event.allDay) {
+        CalendarDates.allDayDate(event.startMillis).atStartOfDay(zone).toInstant()
+    } else Instant.ofEpochMilli(event.startMillis)
+    return SimpleDateFormat(pattern, locale).apply { timeZone = TimeZone.getDefault() }.format(Date.from(instant))
 }
 
 object ReminderScheduler {
@@ -243,6 +329,7 @@ internal object SnoozedReminders {
             val intent = Intent(context, NotificationActionReceiver::class.java)
                 .putExtra("event_id", parts[0].toLongOrNull() ?: -1).putExtra("event_begin", parts[1].toLongOrNull() ?: -1)
                 .putExtra("minutes", parts[2].toIntOrNull() ?: 0)
+            if (key(intent) != key) { prefs.edit().remove(key).apply(); return@forEach }
             if (at < now - 86_400_000L || runCatching { ReminderScheduler.resolve(context, intent) }.getOrNull() == null) cancel(context, intent)
             else if (at <= now) fire(context, intent)
             else ReminderScheduler.scheduleAlarm(context.getSystemService(AlarmManager::class.java), at, pending(context, intent))

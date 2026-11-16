@@ -93,31 +93,39 @@ internal fun AppUpdateSection(controller: AppUpdateController, openOverride: ((I
         }
     }
 
-    Column(Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }) {
-        when (val shown = state) {
-            AppUpdateState.Idle -> UpdateRow(stringResource(R.string.app_update_check), onClick = controller::check)
-            AppUpdateState.UpToDate -> UpdateRow(stringResource(R.string.app_update_check), stringResource(R.string.app_update_up_to_date), onClick = controller::check)
-            AppUpdateState.Checking -> UpdateRow(stringResource(R.string.app_update_checking), spinner = true)
-            is AppUpdateState.Available -> UpdateRow(stringResource(R.string.app_update_available, shown.version),
-                action = stringResource(R.string.app_update_action_update), onAction = controller::update)
-            is AppUpdateState.Downloading -> {
-                val fraction = (shown.bytes.toFloat() / shown.total.coerceAtLeast(1)).coerceIn(0f, 1f)
-                UpdateRow(stringResource(R.string.app_update_downloading, shown.version),
-                    stringResource(R.string.app_update_percent, (fraction * 100).toInt()), progress = fraction,
-                    action = stringResource(R.string.action_cancel), onAction = controller::cancel)
-            }
-            is AppUpdateState.Preparing -> UpdateRow(stringResource(R.string.app_update_preparing), spinner = true)
-            is AppUpdateState.NeedsPermission -> UpdateRow(stringResource(R.string.app_update_permission), stringResource(R.string.app_update_permission_detail),
-                action = stringResource(R.string.app_update_action_allow), onAction = controller::install)
-            is AppUpdateState.Ready -> UpdateRow(stringResource(R.string.app_update_ready, shown.version),
-                action = stringResource(R.string.app_update_action_install), onAction = controller::install)
-            is AppUpdateState.Installing -> UpdateRow(stringResource(R.string.app_update_installing, shown.version), stringResource(R.string.app_update_installing_detail),
-                action = stringResource(R.string.app_update_action_install), onAction = controller::install)
-            is AppUpdateState.Failed -> UpdateRow(stringResource(problemText(shown.problem)),
-                action = stringResource(R.string.action_retry), onAction = controller::retry)
+    // Each state only describes the row; the single UpdateRow call keeps the same row and button in place between steps.
+    val row = when (val shown = state) {
+        AppUpdateState.Idle -> RowSpec(stringResource(R.string.app_update_check), onClick = controller::check)
+        AppUpdateState.UpToDate -> RowSpec(stringResource(R.string.app_update_check), stringResource(R.string.app_update_up_to_date), onClick = controller::check)
+        AppUpdateState.Checking -> RowSpec(stringResource(R.string.app_update_checking), spinner = true)
+        is AppUpdateState.Available -> RowSpec(stringResource(R.string.app_update_available, shown.version),
+            action = stringResource(R.string.app_update_action_update), onAction = controller::update)
+        is AppUpdateState.Downloading -> {
+            val fraction = (shown.bytes.toFloat() / shown.total.coerceAtLeast(1)).coerceIn(0f, 1f)
+            RowSpec(stringResource(R.string.app_update_downloading, shown.version),
+                stringResource(R.string.app_update_percent, (fraction * 100).toInt()), progress = fraction,
+                action = stringResource(R.string.action_cancel), onAction = controller::cancel)
         }
+        // Same shape as Downloading and Installing, so the button never disappears while the file is checked.
+        is AppUpdateState.Preparing -> RowSpec(stringResource(R.string.app_update_preparing), stringResource(R.string.app_update_preparing_detail),
+            waiting = true, action = stringResource(R.string.app_update_action_install), actionEnabled = false)
+        is AppUpdateState.NeedsPermission -> RowSpec(stringResource(R.string.app_update_permission), stringResource(R.string.app_update_permission_detail),
+            action = stringResource(R.string.app_update_action_allow), onAction = controller::install)
+        is AppUpdateState.Ready -> RowSpec(stringResource(R.string.app_update_ready, shown.version),
+            action = stringResource(R.string.app_update_action_install), onAction = controller::install)
+        is AppUpdateState.Installing -> RowSpec(stringResource(R.string.app_update_installing, shown.version), stringResource(R.string.app_update_installing_detail),
+            action = stringResource(R.string.app_update_action_install), onAction = controller::install)
+        is AppUpdateState.Failed -> RowSpec(stringResource(problemText(shown.problem)),
+            action = stringResource(R.string.action_retry), onAction = controller::retry)
     }
+    Column(Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }) { UpdateRow(row) }
 }
+
+private class RowSpec(
+    val title: String, val detail: String? = null, val spinner: Boolean = false,
+    val progress: Float? = null, val waiting: Boolean = false,
+    val action: String? = null, val actionEnabled: Boolean = true, val onAction: () -> Unit = {}, val onClick: (() -> Unit)? = null,
+)
 
 private fun problemText(problem: UpdateProblem) = when (problem) {
     UpdateProblem.NETWORK -> R.string.app_update_error_network
@@ -129,35 +137,34 @@ private fun problemText(problem: UpdateProblem) = when (problem) {
 }
 
 @Composable
-private fun UpdateRow(
-    title: String, detail: String? = null, spinner: Boolean = false, progress: Float? = null,
-    action: String? = null, onAction: () -> Unit = {}, onClick: (() -> Unit)? = null,
-) {
+private fun UpdateRow(row: RowSpec) {
     val p = LocalPalette.current
     val base = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("app_update_row")
+    val onClick = row.onClick
     Column(
         (if (onClick != null) base.clickable(role = Role.Button, onClick = onClick) else base).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(title, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyLarge, color = p.ink)
-                detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = p.muted) }
+                Text(row.title, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyLarge, color = p.ink)
+                row.detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = p.muted) }
             }
-            if (spinner) CircularProgressIndicator(Modifier.padding(start = 12.dp).size(20.dp), color = p.muted, strokeWidth = 2.dp)
+            if (row.spinner) CircularProgressIndicator(Modifier.padding(start = 12.dp).size(20.dp), color = p.muted, strokeWidth = 2.dp)
         }
-        if (progress != null) {
-            val label = stringResource(R.string.app_update_progress)
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp).testTag("app_update_progress").semantics { contentDescription = label },
-                color = p.accent, trackColor = p.raised,
-            )
+        val progress = row.progress
+        if (progress != null || row.waiting) {
+            val bar = Modifier.fillMaxWidth().padding(top = 10.dp).testTag("app_update_progress")
+            if (progress != null) {
+                val label = stringResource(R.string.app_update_progress)
+                LinearProgressIndicator(progress = { progress }, modifier = bar.semantics { contentDescription = label },
+                    color = p.accent, trackColor = p.raised)
+            } else LinearProgressIndicator(bar, color = p.accent, trackColor = p.raised)
         }
-        if (action != null) {
+        if (row.action != null) {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp).testTag("app_update_action"),
-                    colors = ButtonDefaults.textButtonColors(contentColor = p.ink)) { Text(action) }
+                TextButton(onClick = row.onAction, enabled = row.actionEnabled, modifier = Modifier.heightIn(min = 48.dp).testTag("app_update_action"),
+                    colors = ButtonDefaults.textButtonColors(contentColor = p.ink, disabledContentColor = p.muted)) { Text(row.action) }
             }
         }
     }

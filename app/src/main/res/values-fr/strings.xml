@@ -262,6 +262,39 @@
     <string name="time_range">%1$s - %2$s</string>
     <string name="notification_time_range">%1$s - %2$s</string>
     <string name="notification_location_separator">%1$s, %2$s</string>
+    <string name="notification_content">%1$s\n%2$s</string>
+    <string name="notification_starts_at">Commence le %1$s</string>
+    <string name="notification_started_at">A commencé le %1$s</string>
+    <string name="notification_timing_future">%1$s\n%2$s</string>
+    <string name="notification_timing_now">Commence maintenant\n%1$s</string>
+    <string name="notification_timing_ongoing">En cours\n%1$s</string>
+    <string name="notification_timing_past">%1$s\n%2$s</string>
+    <string name="notification_in_less_than_minute">Dans moins d’une minute</string>
+    <plurals name="notification_in_minutes">
+        <item quantity="one">Dans %d minute</item>
+        <item quantity="other">Dans %d minutes</item>
+    </plurals>
+    <plurals name="notification_in_hours">
+        <item quantity="one">Dans %d heure</item>
+        <item quantity="other">Dans %d heures</item>
+    </plurals>
+    <plurals name="notification_in_days">
+        <item quantity="one">Dans %d jour</item>
+        <item quantity="other">Dans %d jours</item>
+    </plurals>
+    <string name="notification_less_than_minute_ago">A commencé il y a moins d’une minute</string>
+    <plurals name="notification_minutes_ago">
+        <item quantity="one">A commencé il y a %d minute</item>
+        <item quantity="other">A commencé il y a %d minutes</item>
+    </plurals>
+    <plurals name="notification_hours_ago">
+        <item quantity="one">A commencé il y a %d heure</item>
+        <item quantity="other">A commencé il y a %d heures</item>
+    </plurals>
+    <plurals name="notification_days_ago">
+        <item quantity="one">A commencé il y a %d jour</item>
+        <item quantity="other">A commencé il y a %d jours</item>
+    </plurals>
     <string name="local_calendar_name">Sunlith (sur cet appareil)</string>
     <string name="ai_intro_title">Votre agenda, connecté</string>
     <string name="ai_intro_lead">Ajoutez, modifiez et supprimez des événements du téléphone depuis votre ordinateur.</string>

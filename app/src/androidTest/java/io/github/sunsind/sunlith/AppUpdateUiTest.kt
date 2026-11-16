@@ -2,10 +2,12 @@ package io.github.sunsind.sunlith
 
 import android.content.ComponentName
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -14,6 +16,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -53,7 +57,10 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.net.URI
+import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -78,6 +85,7 @@ class AppUpdateUiTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val dir get() = File(context.cacheDir, AppUpdater.DIR)
     private val opened = CopyOnWriteArrayList<Intent>()
+    private var localizedContext: android.content.Context? = null
     private val apk = ByteArray(120_000) { (it * 7 % 253).toByte() }
     private val transport = Transport()
     private val platform = Platform()
@@ -95,6 +103,8 @@ class AppUpdateUiTest {
 
     @After
     fun tearDown() {
+        transport.apkGate?.countDown()
+        platform.archiveGate?.countDown()
         activity?.let { current -> instrumentation.runOnMainSync { current.finish() } }
         instrumentation.waitForIdleSync()
         scope.cancel()
@@ -216,6 +226,60 @@ class AppUpdateUiTest {
     }
 
     @Test
+    fun checkingTheFileKeepsTheRowAndADisabledActionInPlace() {
+        val controller = show()
+        node(By.text(text(R.string.app_update_check))).click()
+        node(By.text(text(R.string.app_update_available, "0.7.0")))
+        val download = CountDownLatch(1).also { transport.apkGate = it }
+        val verify = CountDownLatch(1).also { platform.archiveGate = it }
+        node(By.text(text(R.string.app_update_action_update))).click()
+        node(By.text(text(R.string.app_update_percent, SPLIT * 100 / apk.size)))
+        val downloading = node(tag("app_update_row")).visibleBounds
+        val cancel = node(tag("app_update_action")).visibleBounds
+
+        download.countDown()
+        node(By.text(text(R.string.app_update_preparing)))
+        assertPreparingKeepsItsShape(downloading.height(), downloading.bottom - cancel.bottom)
+
+        verify.countDown()
+        node(By.text(text(R.string.app_update_installing, "0.7.0")))
+        waitUntil { opened.size == 1 }
+        val install = node(tag("app_update_action"))
+        node(By.text(text(R.string.app_update_action_install)))
+        assertTrue(install.isEnabled)
+
+        instrumentation.runOnMainSync { controller.onInstallerReturned() }
+        node(By.text(text(R.string.app_update_ready, "0.7.0")))
+        val ready = node(tag("app_update_row")).visibleBounds
+        val readyAction = node(tag("app_update_action")).visibleBounds
+        val again = CountDownLatch(1).also { platform.archiveGate = it }
+        node(By.text(text(R.string.app_update_action_install))).click()
+        node(By.text(text(R.string.app_update_preparing)))
+        assertPreparingKeepsItsShape(ready.height(), ready.bottom - readyAction.bottom)
+        again.countDown()
+        node(By.text(text(R.string.app_update_installing, "0.7.0")))
+        waitUntil { opened.size == 2 }
+        assertEquals(3, transport.requests.size)
+    }
+
+    private fun assertPreparingKeepsItsShape(minHeight: Int, actionBottomInset: Int) {
+        node(By.text(text(R.string.app_update_preparing_detail)))
+        node(tag("app_update_progress"))
+        val row = node(tag("app_update_row")).visibleBounds
+        val action = node(tag("app_update_action"))
+        node(By.text(text(R.string.app_update_action_install)))
+        assertFalse(action.isEnabled)
+        assertTrue("$row must not shrink below $minHeight", row.height() >= minHeight - 1)
+        assertEquals("The action must keep its position at the bottom of the row", actionBottomInset.toDouble(),
+            (row.bottom - action.visibleBounds.bottom).toDouble(), 1.0)
+        val shown = opened.size
+        action.click()
+        idle()
+        assertTrue(device.hasObject(By.text(text(R.string.app_update_preparing))))
+        assertEquals(shown, opened.size)
+    }
+
+    @Test
     fun offlineFailureOffersRetry() {
         transport.offline = true
         show()
@@ -228,11 +292,40 @@ class AppUpdateUiTest {
 
     @Test
     fun availableUpdateFitsANarrowColumnAtDoubleTextSize() {
+        showNarrow()
+        node(By.text(text(R.string.app_update_check))).click()
+        val title = node(By.text(text(R.string.app_update_available, "0.7.0")))
+        assertNarrowControlsFit(title)
+    }
+
+    @Test
+    fun preparingFitsFrenchAtDoubleTextSizeWithoutAnActiveInstallAction() {
+        showNarrow(Locale.CANADA_FRENCH)
+        node(By.text(text(R.string.app_update_check))).click()
+        node(By.text(text(R.string.app_update_available, "0.7.0")))
+        val verify = CountDownLatch(1).also { platform.archiveGate = it }
+        node(By.text(text(R.string.app_update_action_update))).click()
+        val title = node(By.text(text(R.string.app_update_preparing)))
+        node(By.text(text(R.string.app_update_preparing_detail)))
+        node(tag("app_update_progress"))
+        assertNarrowControlsFit(title, R.string.app_update_action_install)
+        assertFalse(node(tag("app_update_action")).isEnabled)
+        assertTrue(opened.isEmpty())
+        verify.countDown()
+        waitUntil { opened.size == 1 }
+    }
+
+    private fun showNarrow(locale: Locale? = null) {
         val controller = controller()
+        val config = Configuration(requireNotNull(activity).resources.configuration).apply { locale?.let(::setLocale) }
+        val localized = requireNotNull(activity).createConfigurationContext(config)
+        localizedContext = localized
         instrumentation.runOnMainSync {
             requireNotNull(activity).setContent {
                 val base = LocalDensity.current
-                CompositionLocalProvider(LocalDensity provides Density(base.density, 2f)) {
+                CompositionLocalProvider(LocalDensity provides Density(base.density, 2f),
+                    LocalContext provides localized, LocalConfiguration provides config,
+                    LocalActivityResultRegistryOwner provides requireNotNull(activity)) {
                     UpdateHost {
                         Box(Modifier.width(200.dp).semantics { testTagsAsResourceId = true }.testTag("app_update_narrow")) {
                             AppUpdateSection(controller) { opened += it }
@@ -241,10 +334,11 @@ class AppUpdateUiTest {
                 }
             }
         }
-        node(By.text(text(R.string.app_update_check))).click()
-        val title = node(By.text(text(R.string.app_update_available, "0.7.0")))
+    }
+
+    private fun assertNarrowControlsFit(title: UiObject2, actionLabel: Int = R.string.app_update_action_update) {
         val action = node(tag("app_update_action"))
-        val label = node(By.text(text(R.string.app_update_action_update)))
+        val label = node(By.text(text(actionLabel)))
         val column = node(tag("app_update_narrow")).visibleBounds
         listOf(title.visibleBounds, action.visibleBounds, label.visibleBounds).forEach { bounds ->
             assertTrue("$bounds must stay inside $column", bounds.left >= column.left && bounds.right <= column.right && bounds.height() > 0)
@@ -268,7 +362,7 @@ class AppUpdateUiTest {
         return controller
     }
 
-    private fun text(id: Int, vararg arguments: Any): String = requireNotNull(activity).getString(id, *arguments)
+    private fun text(id: Int, vararg arguments: Any): String = (localizedContext ?: requireNotNull(activity)).getString(id, *arguments)
 
     @Composable
     private fun UpdateHost(content: @Composable () -> Unit) {
@@ -306,6 +400,7 @@ class AppUpdateUiTest {
 
     private inner class Transport : UpdateTransport {
         @Volatile var offline = false
+        @Volatile var apkGate: CountDownLatch? = null
         val requests = CopyOnWriteArrayList<Pair<String, Boolean>>()
         override fun open(uri: URI, api: Boolean): UpdateResponse {
             requests += uri.toString() to api
@@ -320,20 +415,35 @@ class AppUpdateUiTest {
                 "${base}Sunlith-v0.7.0.apk" -> apk
                 else -> return UpdateResponse(404, null, null, 0, ByteArrayInputStream(ByteArray(0)))
             }
-            return UpdateResponse(200, null, "application/octet-stream", body.size.toLong(), ByteArrayInputStream(body))
+            val gate = apkGate
+            val stream = if (gate != null && body === apk) GatedStream(body, gate) else ByteArrayInputStream(body)
+            return UpdateResponse(200, null, "application/octet-stream", body.size.toLong(), stream)
         }
     }
 
     private inner class Platform : UpdatePlatform {
         @Volatile var canInstall = true
+        @Volatile var archiveGate: CountDownLatch? = null
         override fun installed() = PackageFacts(APP_PACKAGE, "0.6.10", 21, setOf("key"), setOf("key"), false)
-        override fun archive(file: File) = if (file.isFile) PackageFacts(APP_PACKAGE, "0.7.0", 22, setOf("key"), setOf("key"), false) else null
+        override fun archive(file: File) = if (archiveGate?.await(8, TimeUnit.SECONDS) != false && file.isFile) PackageFacts(APP_PACKAGE, "0.7.0", 22, setOf("key"), setOf("key"), false) else null
         override fun canInstallPackages() = canInstall
+    }
+
+    /** Serves the first [SPLIT] bytes, then waits, so the test can look at the row mid-download. */
+    private class GatedStream(bytes: ByteArray, private val gate: CountDownLatch) : ByteArrayInputStream(bytes) {
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (pos >= SPLIT) gate.await(8, TimeUnit.SECONDS)
+            return super.read(b, off, if (pos < SPLIT) minOf(len, SPLIT - pos) else len)
+        }
     }
 
     private class Store : PendingStore {
         @Volatile private var pending: PendingUpdate? = null
         override fun load() = pending
         override fun save(pending: PendingUpdate?) { this.pending = pending }
+    }
+
+    private companion object {
+        const val SPLIT = 65_536
     }
 }

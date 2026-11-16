@@ -152,7 +152,7 @@ class CalendarReadabilityUiTest {
         settings = SettingsStore(app).apply {
             selectedCalendarIds = setOf(calendarId)
             hasChosenCalendars = true
-            themeMode = "light"
+            themeMode = if (arguments.getString("readabilityCapture") == "readme-dark") "dark" else "light"
             materialYou = false
             remindersEnabled = false
             navigationAnimation = false
@@ -607,6 +607,21 @@ class CalendarReadabilityUiTest {
     @Test
     fun optInSyntheticReadabilityDisplayCheckpoints() = checked {
         assumeTrue("Explicit synthetic readability screenshot opt-in required", arguments.getString("readabilityCapture") != null)
+        if (arguments.getString("readabilityCapture") == "readme-dark") {
+            timeline(friday.minusDays(2), 3)
+            capture("week")
+            showDay(friday)
+            onMain { vm.changeDayLayout("cards") }
+            loaded(friday)
+            node(By.res("calendar_day_cards"))
+            await("Day cards must finish positioning") { !vm.pendingDayFocus }
+            capture("day")
+            onMain { vm.changeMonthLayout("full"); vm.changeViewMode(ViewMode.Month); vm.select(friday) }
+            loaded(friday)
+            node(By.res("calendar_full_month"))
+            capture("month")
+            return@checked
+        }
         timeline(friday, 5)
         capture("five-day-start")
         assertWindowReachable(friday, 5)
@@ -1149,6 +1164,16 @@ class CalendarReadabilityUiTest {
             add(item("absent", "340-ABSENT", if (language == "fr") "Philosophie et réflexion critique" else "Philosophy and critical thinking", friday, 17 * 60, 17 * 60 + 50, "MON-A300", absent = true))
             add(item("distant", "NEW-DISTANT", "Synthetic distant course", distant, 10 * 60, 11 * 60, "MON-D400"))
             add(item("distant-existing", "243-C0", courseTitles[0], distant, 12 * 60, 12 * 60 + 50, "MON-D410"))
+            if (arguments.getString("readabilityCapture") == "readme-dark") {
+                for (dayNumber in 1..friday.lengthOfMonth()) {
+                    val day = friday.withDayOfMonth(dayNumber)
+                    if (day == friday || day.dayOfWeek.value > 5) continue
+                    for (index in 0..2) {
+                        add(item("readme-$day-$index", "243-C$index", courseTitles[index], day,
+                            (9 + index * 2) * 60, (10 + index * 2) * 60 + 20, "MON-C${100 + index}"))
+                    }
+                }
+            }
         }
         val writer = SchoolCalendarWriter(app)
         val record = SchoolRecord("https://synthetic.invalid/ColNet/", "synthetic-readability", "synthetic-unused-password", zone.id,

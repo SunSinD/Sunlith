@@ -8,6 +8,7 @@
     <string name="app_update_percent">%1$d%%</string>
     <string name="app_update_progress">Download progress</string>
     <string name="app_update_preparing">Getting the update ready</string>
+    <string name="app_update_preparing_detail">Checking the downloaded file.</string>
     <string name="app_update_permission">Allow Sunlith to install updates</string>
     <string name="app_update_permission_detail">Android asks for this before it installs the update.</string>
     <string name="app_update_action_allow">Allow</string>

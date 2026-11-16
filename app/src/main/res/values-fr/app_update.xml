@@ -8,6 +8,7 @@
     <string name="app_update_percent">%1$d%%</string>
     <string name="app_update_progress">Progression du téléchargement</string>
     <string name="app_update_preparing">Préparation de la mise à jour</string>
+    <string name="app_update_preparing_detail">Vérification du fichier téléchargé.</string>
     <string name="app_update_permission">Autorisez Sunlith à installer des mises à jour</string>
     <string name="app_update_permission_detail">Android le demande avant d\'installer la mise à jour.</string>
     <string name="app_update_action_allow">Autoriser</string>
