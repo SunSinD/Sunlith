@@ -220,7 +220,7 @@ class ReminderNotificationsTest {
                     put(CalendarAlerts.EVENT_ID, id)
                     put(CalendarAlerts.BEGIN, start)
                     put(CalendarAlerts.END, start + 3_600_000)
-                    put(CalendarAlerts.ALARM_TIME, now - 1_000)
+                    put(CalendarAlerts.ALARM_TIME, now - minutes * 1_000L)
                     put(CalendarAlerts.CREATION_TIME, now)
                     put(CalendarAlerts.RECEIVED_TIME, 0)
                     put(CalendarAlerts.NOTIFY_TIME, 0)

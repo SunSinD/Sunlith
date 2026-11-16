@@ -2264,7 +2264,7 @@ class CalendarCustomizationTest {
             @Suppress("UNCHECKED_CAST")
             (vm.eventsByDay as MutableMap<LocalDate, List<CalendarEvent>>)[today] = counted
         }
-        mountContinuousTimelineHost(mutableStateOf(660.dp), clock)
+        mountContinuousTimelineHost(mutableStateOf(330.dp), clock, density = 2f)
         fun paintedLineY(): Int {
             val card = node(By.res("timeline_event_$id")).visibleBounds
             val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
@@ -2380,13 +2380,14 @@ class CalendarCustomizationTest {
     private fun mountContinuousTimelineHost(
         width: androidx.compose.runtime.State<androidx.compose.ui.unit.Dp>,
         clock: androidx.compose.runtime.State<Int>? = null,
+        density: Float = 1f,
     ) {
         val formats = Formats(english, Locale.ENGLISH)
         onMain {
             requireNotNull(activity).setContent {
                 SunlithTheme("light", false) {
                     Box(Modifier.fillMaxSize().background(LightPalette.background).safeDrawingPadding().semantics { testTagsAsResourceId = true }) {
-                        CompositionLocalProvider(LocalDensity provides Density(1f), LocalCurrentMinute provides clock) {
+                        CompositionLocalProvider(LocalDensity provides Density(density), LocalCurrentMinute provides clock) {
                             Box(Modifier.width(width.value).height(900.dp)) {
                                 ContinuousTimeline(vm, formats, LocalDate.now(), vm.navigationAnimation, rememberScrollState(), onOpen = {})
                             }
