@@ -152,18 +152,15 @@ class CalendarUiTest {
         node(By.text(text(R.string.beta_settings_appearance))).click()
         scrollToSetting(text(R.string.settings_theme)).click()
         node(By.pkg(context.packageName).res("settings_choice_light")).click()
-        device.waitForIdle()
-        assertEquals("light", settings.themeMode)
+        awaitTheme("light")
         assertBackground(dark = false)
         scrollToSetting(text(R.string.settings_theme)).click()
         node(By.pkg(context.packageName).res("settings_choice_dark")).click()
-        device.waitForIdle()
-        assertEquals("dark", settings.themeMode)
+        awaitTheme("dark")
         assertBackground(dark = true)
         scrollToSetting(text(R.string.settings_theme)).click()
         node(By.pkg(context.packageName).res("settings_choice_system")).click()
-        device.waitForIdle()
-        assertEquals("system", settings.themeMode)
+        awaitTheme("system")
         val systemDark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         assertBackground(dark = systemDark)
     }
@@ -286,6 +283,12 @@ class CalendarUiTest {
     }
 
     private fun firstEditorField(): UiObject2 = node(By.pkg(context.packageName).clazz("android.widget.EditText"))
+
+    private fun awaitTheme(expected: String) {
+        val deadline = SystemClock.elapsedRealtime() + 5_000
+        while (settings.themeMode != expected && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(50)
+        assertEquals(expected, settings.themeMode)
+    }
 
     private fun assertBackground(dark: Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 5_000

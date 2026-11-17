@@ -2,6 +2,80 @@
 
 The provider tests run against Android's real calendar provider. They create isolated local calendars and delete only calendars they own. They refuse to run on a physical phone.
 
+## 0.8.1 reminder and timeline verification, 16 November 2026
+
+The distribution APK is version 0.8.1/code 24, nondebuggable and R8 minified,
+with resource shrinking enabled. It contains 2,752,395 bytes and uses the same
+signing certificate as v0.8.0. Production sources match commit `2e477fe`.
+Test APK B matches `f2eb0e0`. Test APK C adds bounded synchronization for theme
+selection and waits for Today navigation before measuring a controlled clock tick.
+These final changes affect tests and verification documentation only.
+
+| Artifact | SHA256 |
+| --- | --- |
+| Distribution APK | `cb882fc02aca8048a4a6cc6c0af1d13723a3f50025c732caf78ea4c33b5d5dcb` |
+| Test APK A | `bd650c1e04ff580f392ac68487ec342f3e53942f7cfce214af85d1029c4f560e` |
+| Test APK B | `6e235e15c7e8bd1d033100d633750354ee85f63f42c8de78be2a98ec41be7a5b` |
+| Test APK C | `6d4197852a1e385117c2e337dd6f0019b7491b5da931f871b096b10f6038c2bb` |
+| Signing certificate | `059358bfcb9aeccb20258343b6bab48dfb88c8f30c4e19035f4c14d5b3dd9039` |
+
+| Completed full suite | API 30 / Android 11 | API 36 / Android 16 |
+| --- | --- | --- |
+| Test APK | A | B |
+| Declared tests | 418 | 421 |
+| Passed | 411 | 413 |
+| Explicit assumption skips | 7 | 8 |
+| Failures | 0 | 0 |
+
+Both columns used the exact distribution APK above. Each declared test has one
+named terminal outcome, with no duplicate names. Earlier interrupted or failed
+runs are excluded. Skips are not passes. Animator duration was set to 1 so gesture
+and band tests could observe intermediate frames.
+
+Test APK B changes only the synthetic fling fixture. Wall clock pauses on the host
+could previously turn its injected movement into a stopped finger. It now uses
+monotonic input timestamps and verifies that release velocity exceeds Android's
+minimum fling velocity. The actual motion assertions remain. All 29 refinement
+tests passed on API 30 with B, including all four combinations of 3 or 7 days and
+motion on or off. The production APK stayed identical throughout.
+
+Test APK C passed the theme, controlled clock and fling checks on both APIs. Those three checks passed three
+consecutive times on API 30 at the CI screen size. Assertions still require the
+saved theme, visible line movement, unchanged event reads and real fling motion.
+
+Both APIs skip four optional synthetic display campaigns, the external computer
+client fixture and the private live portal fixture. API 30 also skips Material You
+because it requires API 31. API 36 instead skips two notification permission
+recovery fixtures that require a separate opt in and a revoked permission.
+
+Twenty additional focused checks passed on each API. They cover localized reminder
+timing, past and zero duration events, stable updater preparation, timeline clocks
+and the All day band. Separate band checks passed on a narrow display with 200%
+text and right to left layout. With system animations disabled, two band checks
+passed and the animated half of the third explicitly skipped after checking its
+instant transition path.
+
+All 238 JVM tests passed. Lint completed with zero errors, 99 warnings and 10 hints,
+including zero unused resource reports. The companion passed 44 tests with one
+optional external fixture skipped and no dependency audit vulnerabilities.
+
+[GitHub CI](https://github.com/SunSinD/Sunlith/actions/workflows/build.yml)
+checks Android builds, unit tests, lint and packaging. Companion checks run on
+Linux, Windows and macOS. Distribution runtime campaigns cover API 30 and 36.
+The workflow enables animator duration and includes the band and fling tests.
+Publication waits for this workflow to pass on the release commit. Its temporary
+signing key is used only for package checks. The official release uses the locally
+signed APK recorded above.
+
+The three README captures show synthetic events in dark mode with system bars
+cropped away. Packaging checks APK equality, companion source equality, media
+exclusion and relative links. Uploaded files are downloaded again and compared
+with their checksums before publication. Earlier releases remain unchanged.
+
+No physical phone, private live portal or external computer client was used.
+Updater UI tests use controlled downloads and capture installer intents.
+The complete real phone download and installation flow remains unverified here.
+
 ## 0.8.0 optimization verification, 16 November 2026
 
 The distribution APK is version 0.8.0/code 23, nondebuggable and R8 minified,

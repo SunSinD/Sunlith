@@ -2532,6 +2532,8 @@ class CalendarCustomizationTest {
             (vm.eventsByDay as MutableMap<LocalDate, List<CalendarEvent>>)[today] = counted
         }
         mountContinuousTimelineHost(mutableStateOf(330.dp), clock, density = 2f)
+        onMain { vm.goToday() }
+        awaitUi { vm.handledTimelineNavigation == vm.timelineNavigationRequest && !vm.loadingEvents }
         fun paintedLineY(): Int {
             val card = node(By.res("timeline_event_$id")).visibleBounds
             val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
@@ -2547,7 +2549,8 @@ class CalendarCustomizationTest {
         assertTrue("The initial time line must paint over the event", before >= 0)
         val composedReads = reads.get()
         onMain { clock.intValue = 90 }
-        awaitUi { paintedLineY() > before }
+        awaitUi(detail = { "before=$before, after=${paintedLineY()}, minute=${clock.intValue}, " +
+            "navigation=${vm.handledTimelineNavigation}/${vm.timelineNavigationRequest}" }) { paintedLineY() > before }
         assertEquals("A clock tick must not reread the event lists", composedReads, reads.get())
     }
 
