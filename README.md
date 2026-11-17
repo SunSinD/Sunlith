@@ -4,13 +4,13 @@ A clean calendar app for your phone, with direct computer control.
 
 Plan with the calendars already on your phone. You can also ask your computer to add, edit and remove events without a second calendar app or a Google account.
 
-<p>
-  <img src="docs/images/month.png" alt="Month view in dark mode with sample classes" width="32%" />
-  <img src="docs/images/week.png" alt="Week timeline in dark mode with three visible days" width="32%" />
-  <img src="docs/images/day.png" alt="Day cards in dark mode with class times and rooms" width="32%" />
+<p align="center">
+  <a href="docs/images/month.png"><img src="docs/images/month.png" alt="Month view in dark mode with sample classes" width="31%" /></a>
+  <a href="docs/images/week.png"><img src="docs/images/week.png" alt="Week timeline in dark mode with three visible days" width="31%" /></a>
+  <a href="docs/images/day.png"><img src="docs/images/day.png" alt="Day cards in dark mode with class times and rooms" width="31%" /></a>
 </p>
 
-Month, Week and Day in dark mode. Screenshots use sample events.
+<p align="center">Dark mode with sample events. Select a view to enlarge it.</p>
 
 ## Make it yours
 
