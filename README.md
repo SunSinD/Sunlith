@@ -54,11 +54,92 @@ Pick one in Settings > Appearance > App icon.
 
 ## Connect your computer
 
-Ask your assistant to add, move or remove events in the calendars already on your phone. Type a request or attach a screenshot if your assistant supports images.
+Set this up once, then ask your assistant to add, move or remove events on your phone. You can type a request or attach a screenshot if your assistant supports images. A direct connection works without a Google account.
 
-In Settings > Computer connection, pick which calendars to share and pair over WiFi or Tailscale. You can stop access from your phone and review changes in Activity history. A direct connection works without a Google account.
+You'll need an assistant installed on your computer, such as the [Codex CLI](https://developers.openai.com/codex/cli/) or [Claude Code](https://code.claude.com/docs/en/setup).
 
-The companion works on Windows, macOS and Linux. [Connection setup](docs/AI-INTEGRATION.md#direct-phone-connection)
+### 1. Install the companion
+
+1. Install [Node.js](https://nodejs.org/) version 22 or newer on your computer.
+2. Download the **Sunlith companion ZIP** from the [latest release](https://github.com/SunSinD/Sunlith/releases/latest) and extract it. Open the extracted folders until you see `START-HERE.md`. From there, open `integrations/mcp`. You should see `package.json`.
+3. Open a terminal in that folder. On Windows, click the File Explorer address bar, type `cmd` and press Enter. On macOS or Linux, open Terminal, type `cd` followed by a space, then drag the `mcp` folder into the window or paste its full path in quotes. Press Enter. Run this and wait for it to finish.
+
+   ```sh
+   npm ci
+   ```
+
+### 2. Pair your phone
+
+1. Put your phone and computer on the same home WiFi. If you use Tailscale, turn it on on both devices with the same account instead.
+2. In Sunlith, open **Settings > Computer connection**. Check the calendar you want your assistant to use, then tap **Connect computer**.
+3. Send the file privately to your computer using the share menu. If you use Tailscale, select it and pick your computer. Quick Share is another option if it's installed on your Windows computer.
+4. Look for `sunlith-pairing.json` in Downloads after the transfer. Move it to your user folder, outside the extracted companion. On Windows, type `%USERPROFILE%` into the File Explorer address bar to open your user folder. On macOS or Linux, use your home folder. Keep the original filename unless the transfer added a number like `(1)`. Treat the file like a password.
+
+### 3. Add Sunlith to your assistant
+
+Use the terminal you opened in step 1. Pick the command for your assistant. It looks for the pairing file in the user folder from step 2.
+
+<details>
+<summary>Windows commands</summary>
+
+**Codex**
+
+```bat
+codex mcp add sunlith --env "SUNLITH_DEVICE_CONFIG=%USERPROFILE%\sunlith-pairing.json" -- node "%CD%\src\index.js"
+```
+
+**Claude Code**
+
+```bat
+claude mcp add --scope user --env "SUNLITH_DEVICE_CONFIG=%USERPROFILE%\sunlith-pairing.json" --transport stdio sunlith -- node "%CD%\src\index.js"
+```
+
+</details>
+
+<details>
+<summary>macOS and Linux commands</summary>
+
+If you're using Tailscale on Linux, [receive the file](https://tailscale.com/docs/features/taildrop) before continuing.
+
+First, make the pairing file readable only by you.
+
+```sh
+chmod 600 "$HOME/sunlith-pairing.json"
+```
+
+**Codex**
+
+```sh
+codex mcp add sunlith --env "SUNLITH_DEVICE_CONFIG=$HOME/sunlith-pairing.json" -- node "$PWD/src/index.js"
+```
+
+**Claude Code**
+
+```sh
+claude mcp add --scope user --env "SUNLITH_DEVICE_CONFIG=$HOME/sunlith-pairing.json" --transport stdio sunlith -- node "$PWD/src/index.js"
+```
+
+</details>
+
+Using Cursor or another assistant that supports local MCP tools? [See the other setup options](docs/AI-INTEGRATION.md#direct-phone-connection).
+
+### 4. Try it
+
+1. On your phone, tap **Start connection**. Allow notifications if Android asks. When you see **Connection on**, tap **Open calendar**.
+2. Start a new session in your assistant and ask **“Which calendars can you see in Sunlith?”**
+3. Once it lists your calendar, try **“Add dinner at The Keg tomorrow at 6 PM for one hour.”** Open tomorrow in Sunlith to see the event.
+
+Next time, make sure both devices are on the same network and the phone says **Connection on**. Use **Stop connection** to pause access, **Unpair computer** to remove it, or **Activity history** to see what changed.
+
+<details>
+<summary>If it does not connect</summary>
+
+- **The assistant cannot find Sunlith.** Open a new session after setup. Check the registration with `codex mcp list` or `claude mcp list`.
+- **It cannot read the pairing file.** Check the filename and location from step 2. On Windows, use **View > Show > File name extensions** to check that the name ends in `.json` only once. On macOS and Linux, run the `chmod` command from step 3.
+- **It cannot reach your phone.** Check the network and tap **Start connection** if it is off. School or guest WiFi may block the connection. If your phone's WiFi address changed, tap **Unpair computer** and repeat step 2 to replace the old file.
+- **It cannot add events.** Check that the calendar is shared and that you can add an event to it on your phone. If it can add events but you cannot see them, check **Settings > Calendars** in Sunlith.
+
+</details>
 
 ## School schedules
 
