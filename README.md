@@ -1,59 +1,75 @@
-# Sunlith
-
-A clean calendar app for your phone, with direct computer control.
-
-Plan with the calendars already on your phone. You can also ask your computer to add, edit and remove events without a second calendar app or a Google account.
-
 <p align="center">
-  <a href="docs/images/month.png"><img src="docs/images/month.png" alt="Month view in dark mode with sample classes" width="31%" /></a>
-  <a href="docs/images/week.png"><img src="docs/images/week.png" alt="Week timeline in dark mode with three visible days" width="31%" /></a>
-  <a href="docs/images/day.png"><img src="docs/images/day.png" alt="Day cards in dark mode with class times and rooms" width="31%" /></a>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/sunlith-logo-dark.svg" />
+    <img src="docs/media/sunlith-logo.svg" alt="Sunlith logo" width="88" />
+  </picture>
 </p>
 
-<p align="center">Dark mode with sample events. Select a view to enlarge it.</p>
+<h1 align="center">Sunlith</h1>
 
-## Make it yours
+<p align="center">An Android calendar you can update with a prompt from your computer.</p>
 
-Choose month, week or day views, with lists and timelines. Hold a view tab to change its layout. Pinch a Week timeline to zoom.
+<p align="center">
+  <a href="https://github.com/SunSinD/Sunlith/releases/latest"><strong>Download for Android</strong></a><br />
+  Android 8.0 or newer. No ads or analytics.
+</p>
 
-Timelines show every hour by default. Group empty hours in Week is optional in Appearance. Opening a date from the Month grid shows that date alone as a list, with a toolbar button to switch to All hours.
+<p align="center">
+  <picture><img src="docs/media/sunlith-tour.webp" alt="A computer prompt adds dinner at The Keg tomorrow at 6 PM to Sunlith on Android" width="640" /></picture>
+</p>
 
-Week is one continuous timeline that you scroll day by day. Choose 3, 5 or 7 days, and every swipe settles on whole days. At normal text sizes the chosen days fit the screen. Selectable week headers are optional. Events at the same time sit side by side in separate rounded cards when there is room. When they would be too narrow to read, they are grouped into one card with a count, and tapping it shows them. Short events too close together for their titles share one compact card with a count, and tapping it lists each event with its times.
+<p align="center">
+  <picture><img src="docs/images/month.png" alt="Month view in dark mode with sample classes" width="31%" /></picture>
+  <picture><img src="docs/images/week.png" alt="Week timeline in dark mode with three visible days" width="31%" /></picture>
+  <picture><img src="docs/images/day.png" alt="Day cards in dark mode with class times and rooms" width="31%" /></picture>
+</p>
 
-Absent and cancelled classes get soft diagonal stripes. A partial absence stripes only the missed time. Background tint in Appearance sets how strong the empty hour tiles look.
+<details>
+<summary>Light mode screenshots</summary>
 
-Use wallpaper colors, light or dark themes, English or French, repeating events, reminders, search and calendar import or export. Mark events as tasks and check them off when they start. Add the agenda widget to your home screen.
+<p align="center">
+  <picture><img src="docs/media/month-light.webp" alt="Month grid in light mode with sample events" width="31%" /></picture>
+  <picture><img src="docs/media/week-light.webp" alt="Week timeline in light mode with three days" width="31%" /></picture>
+  <picture><img src="docs/media/day-light.webp" alt="Day cards in light mode with event times and locations" width="31%" /></picture>
+</p>
+
+</details>
+
+## Your calendar
+
+- **Month, Week and Day.** Hold a tab to change its layout. Scroll through Week in 3, 5 or 7 day views and pinch to zoom.
+- **Events and tasks.** Add reminders or repeating events, search your calendar, and mark events as tasks. See what’s coming up in the agenda widget.
+- **Appearance.** Choose light, dark or wallpaper colors, adjust the timeline tint, and use Sunlith in English or French.
+
+<details>
+<summary>Preview the app icons</summary>
+
+| Light | Dark |
+| :---: | :---: |
+| <picture><img src="docs/media/sunlith-logo.svg" alt="Light app icon" width="64" /></picture> | <picture><img src="docs/media/sunlith-logo-dark.svg" alt="Dark app icon" width="64" /></picture> |
+
+Pick one in Settings > Appearance > App icon.
+
+</details>
 
 ## Connect your computer
 
-Open Settings > Computer connection, choose which calendars to share, and pair over WiFi or Tailscale. Start or stop access from your phone and see changes in Activity history.
+Ask your assistant to add, move or remove events in the calendars already on your phone. Type a request or attach a screenshot if your assistant supports images.
 
-Follow the [connection setup](docs/AI-INTEGRATION.md#direct-phone-connection). The companion works on Windows, macOS and Linux with Node.js 22 or newer.
+In Settings > Computer connection, pick which calendars to share and pair over WiFi or Tailscale. You can stop access from your phone and review changes in Activity history. A direct connection works without a Google account.
+
+The companion works on Windows, macOS and Linux. [Connection setup](docs/AI-INTEGRATION.md#direct-phone-connection)
 
 ## School schedules
 
-Open Settings > Calendars > School schedule to connect Col.NET. Select Collège Montmorency and enter your Col.NET username and password. Its portal address and time zone are filled in for you. Other Col.NET schools need manual setup and have not been tested.
+I built this for Col.NET at Collège Montmorency, my own college. It brings classes, schedule changes and college notices into Sunlith. Find it in Settings > Calendars > School schedule.
 
-School events appear beside your personal events. Choose alerts for cancelled classes, schedule changes, assessments, school days and connection problems. Sync checks every five minutes while open. Background checks run about every fifteen minutes when Android allows them. Updates depend on what the school publishes.
-
-School sync connects directly from your phone. With a VPN active, it tries a direct network when Android permits it, then falls back to the default route if the connection fails. Network restrictions and portal outages can still prevent a connection.
-
-Open College messages in School schedule for messages from the Col.NET administration. Their titles and text stay in the original language. Recent messages and your credentials are encrypted on your phone. If the administration page is not recognized, the screen offers a link to Col.NET. The administration list and a message detail have been checked against the Montmorency portal.
-
-If a full message cannot be saved within the phone cache limit, its title stays visible with a link to Col.NET. Source text is never shortened to fit the cache.
-
-Recognized dated notices appear as calendar events. A confirmation or correction updates the notice for that day. Each notice includes its source and exceptions. Confirmed notices that cover regular classes can mark them as cancelled while keeping their times and event IDs. Limited or unclear notices stay as notices for you to check. Other deadlines open in the editor for you to review before saving.
-
-Enable Administration messages in School schedule alerts for new messages and corrections. Checks run every five minutes while Sunlith is open and about every fifteen minutes in the background when Android allows them. Opening College messages also checks for updates. These are periodic checks, so delivery is not instant. Google Calendar sync after a full reset has not been verified.
+Other Col.NET schools can be set up manually. If you’d like me to add support for your school, [open an issue and let me know](https://github.com/SunSinD/Sunlith/issues/new).
 
 ## Build and checks
-
-Requires Android 8.0 or newer. No ads or analytics.
-
-Open Settings > About > Check for updates to get the latest GitHub release from the app. Android asks you to confirm installation. Sunlith only checks for app updates when you press the button.
 
 ```sh
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-See [testing](docs/TESTING.md), [architecture](docs/ARCHITECTURE.md), [calendar imports](docs/MIGRATION.md) and [changes](CHANGELOG.md).
+See [testing](docs/TESTING.md), [architecture](docs/ARCHITECTURE.md), [calendar imports](docs/MIGRATION.md) and the [changelog](CHANGELOG.md). For updates in the app, open Settings > About > Check for updates.
